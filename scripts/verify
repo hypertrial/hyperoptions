@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+cd "$(dirname "$0")/.."
+git diff --check
+git diff --cached --check
+test -s README.md
+test -x scripts/dev
+sh -n scripts/dev
+sh -c 'cd backend && uv run pytest -q'
+sh -c 'cd frontend && npm audit && npm test && npm run lint && npm run check:api && npm run build && npx --no-install playwright test'

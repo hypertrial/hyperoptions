@@ -1,0 +1,14 @@
+{
+  "status": { "rCode": 200 },
+  "data": {
+    "asOf": "2026-09-11",
+    "rows": [
+      { "symbol": "CIFR", "name": "Cipher Mining Inc.", "sector": "Finance", "industry": "Crypto" },
+      { "symbol": "IREN", "name": "Iris Energy Limited", "sector": "Finance", "industry": "Crypto" },
+      { "symbol": "NBIS", "name": "Nebius Group N.V.", "sector": "Technology", "industry": "Software" },
+      { "symbol": "NONE", "name": "Missing Symbol Inc.", "sector": "Unknown", "industry": "Unknown" },
+      { "symbol": "NOOPT", "name": "No Options Corp.", "sector": "Energy", "industry": "Oil" },
+      { "symbol": "WULF", "name": "TeraWulf Inc.", "sector": "Finance", "industry": "Crypto" }
+    ]
+  }
+}

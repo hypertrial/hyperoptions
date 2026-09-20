@@ -1,0 +1,73 @@
+{
+  "data": {
+    "totalRecord": 4,
+    "lastTrade": "LAST TRADE: $43.93 (AS OF SEP 10, 2026 3:37 PM ET)",
+    "table": {
+      "asOf": null,
+      "rows": [
+        {
+          "expirygroup": "September 18, 2026",
+          "expiryDate": null,
+          "strike": null,
+          "c_Bid": null,
+          "c_Ask": null,
+          "p_Bid": null,
+          "p_Ask": null,
+          "drillDownURL": null
+        },
+        {
+          "expirygroup": "",
+          "expiryDate": "Sep 18",
+          "strike": "50.00",
+          "c_Bid": "0.50",
+          "c_Ask": "0.51",
+          "c_Openinterest": "55",
+          "p_Openinterest": "40",
+          "p_Bid": "6.25",
+          "p_Ask": "6.55",
+          "drillDownURL": "/market-activity/stocks/iren/option-chain/call-put-options/iren--260918c00050000"
+        },
+        {
+          "expirygroup": "",
+          "expiryDate": "Sep 18",
+          "strike": "48.00",
+          "c_Bid": "0.50",
+          "c_Ask": "0.51",
+          "c_Openinterest": "55",
+          "p_Openinterest": "33",
+          "p_Bid": "5.25",
+          "p_Ask": "5.55",
+          "drillDownURL": "/market-activity/stocks/iren/option-chain/call-put-options/iren--260918c00048000"
+        },
+        {
+          "expirygroup": "",
+          "expiryDate": "Sep 18",
+          "strike": "40.50",
+          "c_Bid": "--",
+          "c_Ask": "",
+          "c_Openinterest": "12",
+          "p_Openinterest": "18",
+          "p_Bid": "1.20",
+          "p_Ask": "not-a-number",
+          "drillDownURL": "/market-activity/stocks/iren/option-chain/call-put-options/iren--260918c00040500"
+        },
+        {
+          "expirygroup": "",
+          "expiryDate": "Sep 11",
+          "strike": "44.00",
+          "c_Bid": "0.88",
+          "c_Ask": "0.91",
+          "p_Bid": "0.92",
+          "p_Ask": "0.95",
+          "drillDownURL": "/market-activity/stocks/iren/option-chain/call-put-options/iren--260911c00044000"
+        }
+      ]
+    }
+  },
+  "message": null,
+  "status": {
+    "rCode": 200,
+    "bCodeMessage": null,
+    "developerMessage": null
+  }
+}

@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+cd "$(dirname "$0")/.."
+test -s README.md
+test -x scripts/dev
+sh -n scripts/dev
+sh -c 'cd backend && uv run pytest -q'
+sh -c 'cd frontend && npm test'

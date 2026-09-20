@@ -1,0 +1,1481 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Nasdaq option chain",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tickers": {
+      "get": {
+        "summary": "Search Tickers",
+        "operationId": "search_tickers_api_tickers_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 20,
+              "minimum": 1,
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TickerSearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/covered-calls/{ticker}": {
+      "get": {
+        "summary": "Get Covered Calls",
+        "operationId": "get_covered_calls_api_covered_calls__ticker__get",
+        "parameters": [
+          {
+            "name": "ticker",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8,
+              "title": "Ticker"
+            }
+          },
+          {
+            "name": "moneyness",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "itm",
+                    "otm",
+                    "all"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Moneyness"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoveredCallPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cash-secured-puts/{ticker}": {
+      "get": {
+        "summary": "Get Cash Secured Puts",
+        "operationId": "get_cash_secured_puts_api_cash_secured_puts__ticker__get",
+        "parameters": [
+          {
+            "name": "ticker",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8,
+              "title": "Ticker"
+            }
+          },
+          {
+            "name": "moneyness",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "itm",
+                    "otm",
+                    "all"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Moneyness"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CashSecuredPutPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CashSecuredPutContract": {
+        "properties": {
+          "expiration": {
+            "type": "string",
+            "title": "Expiration"
+          },
+          "dte": {
+            "type": "integer",
+            "title": "Dte"
+          },
+          "strike_cents": {
+            "type": "integer",
+            "title": "Strike Cents"
+          },
+          "in_the_money": {
+            "type": "boolean",
+            "title": "In The Money"
+          },
+          "put_bid_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Put Bid Cents"
+          },
+          "put_ask_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Put Ask Cents"
+          },
+          "put_spread_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Put Spread Cents"
+          },
+          "put_spread_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Put Spread Pct Tenths"
+          },
+          "put_volume": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Put Volume"
+          },
+          "put_open_interest": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Put Open Interest"
+          },
+          "premium_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Premium Cents"
+          },
+          "collateral_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collateral Cents"
+          },
+          "net_collateral_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Collateral Cents"
+          },
+          "breakeven_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Breakeven Cents"
+          },
+          "apr_collateral_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Apr Collateral Pct Tenths"
+          },
+          "apr_net_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Apr Net Pct Tenths"
+          },
+          "cushion_to_strike_pct_tenths": {
+            "type": "integer",
+            "title": "Cushion To Strike Pct Tenths"
+          },
+          "cushion_to_breakeven_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cushion To Breakeven Pct Tenths"
+          },
+          "vs_7d_low_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vs 7D Low Pct Tenths"
+          },
+          "vs_30d_low_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vs 30D Low Pct Tenths"
+          },
+          "vs_90d_low_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vs 90D Low Pct Tenths"
+          },
+          "vs_365d_low_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vs 365D Low Pct Tenths"
+          },
+          "iv_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iv Pct Tenths"
+          },
+          "delta_e4": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta E4"
+          },
+          "gamma_e4": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gamma E4"
+          },
+          "theta_e4": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Theta E4"
+          },
+          "vega_e4": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vega E4"
+          },
+          "rho_e4": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rho E4"
+          },
+          "greeks_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "bid",
+                  "mid"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Greeks Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expiration",
+          "dte",
+          "strike_cents",
+          "in_the_money",
+          "put_bid_cents",
+          "put_ask_cents",
+          "put_spread_cents",
+          "put_spread_pct_tenths",
+          "put_volume",
+          "put_open_interest",
+          "premium_cents",
+          "collateral_cents",
+          "net_collateral_cents",
+          "breakeven_cents",
+          "apr_collateral_pct_tenths",
+          "apr_net_pct_tenths",
+          "cushion_to_strike_pct_tenths",
+          "cushion_to_breakeven_pct_tenths",
+          "vs_7d_low_pct_tenths",
+          "vs_30d_low_pct_tenths",
+          "vs_90d_low_pct_tenths",
+          "vs_365d_low_pct_tenths"
+        ],
+        "title": "CashSecuredPutContract"
+      },
+      "CashSecuredPutExpiration": {
+        "properties": {
+          "expiration": {
+            "type": "string",
+            "title": "Expiration"
+          },
+          "dte": {
+            "type": "integer",
+            "title": "Dte"
+          },
+          "contracts": {
+            "items": {
+              "$ref": "#/components/schemas/CashSecuredPutContract"
+            },
+            "type": "array",
+            "title": "Contracts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expiration",
+          "dte",
+          "contracts"
+        ],
+        "title": "CashSecuredPutExpiration"
+      },
+      "CashSecuredPutPage": {
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "title": "Ticker"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "options_available": {
+            "type": "boolean",
+            "title": "Options Available"
+          },
+          "moneyness": {
+            "type": "string",
+            "enum": [
+              "itm",
+              "otm",
+              "all"
+            ],
+            "title": "Moneyness"
+          },
+          "fetched_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Fetched At"
+          },
+          "current_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Cents"
+          },
+          "current_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "stock_bid",
+                  "chain_last_trade"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Source"
+          },
+          "stock_bid_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Bid Cents"
+          },
+          "stock_ask_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Ask Cents"
+          },
+          "market_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market Session"
+          },
+          "is_real_time": {
+            "type": "boolean",
+            "title": "Is Real Time"
+          },
+          "quote_timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote Timestamp"
+          },
+          "last_trade": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Trade"
+          },
+          "last_trade_timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Trade Timestamp"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated"
+          },
+          "chain_from_cache": {
+            "type": "boolean",
+            "title": "Chain From Cache"
+          },
+          "info_from_cache": {
+            "type": "boolean",
+            "title": "Info From Cache"
+          },
+          "history_from_cache": {
+            "type": "boolean",
+            "title": "History From Cache"
+          },
+          "risk_free_rate_pct_tenths": {
+            "type": "integer",
+            "title": "Risk Free Rate Pct Tenths"
+          },
+          "lows": {
+            "$ref": "#/components/schemas/PeriodLows"
+          },
+          "expirations": {
+            "items": {
+              "$ref": "#/components/schemas/CashSecuredPutExpiration"
+            },
+            "type": "array",
+            "title": "Expirations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ticker",
+          "options_available",
+          "moneyness",
+          "fetched_at",
+          "current_cents",
+          "current_source",
+          "stock_bid_cents",
+          "stock_ask_cents",
+          "market_session",
+          "is_real_time",
+          "quote_timestamp",
+          "last_trade",
+          "last_trade_timestamp",
+          "truncated",
+          "chain_from_cache",
+          "info_from_cache",
+          "history_from_cache",
+          "risk_free_rate_pct_tenths",
+          "lows",
+          "expirations"
+        ],
+        "title": "CashSecuredPutPage"
+      },
+      "CoveredCallContract": {
+        "properties": {
+          "expiration": {
+            "type": "string",
+            "title": "Expiration"
+          },
+          "dte": {
+            "type": "integer",
+            "title": "Dte"
+          },
+          "strike_cents": {
+            "type": "integer",
+            "title": "Strike Cents"
+          },
+          "in_the_money": {
+            "type": "boolean",
+            "title": "In The Money"
+          },
+          "call_bid_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Bid Cents"
+          },
+          "call_ask_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Ask Cents"
+          },
+          "call_spread_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Spread Cents"
+          },
+          "call_spread_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Spread Pct Tenths"
+          },
+          "call_volume": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Volume"
+          },
+          "call_open_interest": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Open Interest"
+          },
+          "stock_cost_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Cost Cents"
+          },
+          "premium_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Premium Cents"
+          },
+          "outlay_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outlay Cents"
+          },
+          "effective_cost_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Cost Cents"
+          },
+          "called_pnl_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Called Pnl Cents"
+          },
+          "called_pnl_per_share_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Called Pnl Per Share Cents"
+          },
+          "simple_apr_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Simple Apr Pct Tenths"
+          },
+          "stock_apr_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Apr Pct Tenths"
+          },
+          "drop_to_strike_pct_tenths": {
+            "type": "integer",
+            "title": "Drop To Strike Pct Tenths"
+          },
+          "drop_to_breakeven_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drop To Breakeven Pct Tenths"
+          },
+          "vs_7d_low_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vs 7D Low Pct Tenths"
+          },
+          "vs_30d_low_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vs 30D Low Pct Tenths"
+          },
+          "vs_90d_low_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vs 90D Low Pct Tenths"
+          },
+          "vs_365d_low_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vs 365D Low Pct Tenths"
+          },
+          "iv_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iv Pct Tenths"
+          },
+          "delta_e4": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta E4"
+          },
+          "gamma_e4": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gamma E4"
+          },
+          "theta_e4": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Theta E4"
+          },
+          "vega_e4": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vega E4"
+          },
+          "rho_e4": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rho E4"
+          },
+          "greeks_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "bid",
+                  "mid"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Greeks Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expiration",
+          "dte",
+          "strike_cents",
+          "in_the_money",
+          "call_bid_cents",
+          "call_ask_cents",
+          "call_spread_cents",
+          "call_spread_pct_tenths",
+          "call_volume",
+          "call_open_interest",
+          "stock_cost_cents",
+          "premium_cents",
+          "outlay_cents",
+          "effective_cost_cents",
+          "called_pnl_cents",
+          "called_pnl_per_share_cents",
+          "simple_apr_pct_tenths",
+          "stock_apr_pct_tenths",
+          "drop_to_strike_pct_tenths",
+          "drop_to_breakeven_pct_tenths",
+          "vs_7d_low_pct_tenths",
+          "vs_30d_low_pct_tenths",
+          "vs_90d_low_pct_tenths",
+          "vs_365d_low_pct_tenths"
+        ],
+        "title": "CoveredCallContract"
+      },
+      "CoveredCallExpiration": {
+        "properties": {
+          "expiration": {
+            "type": "string",
+            "title": "Expiration"
+          },
+          "dte": {
+            "type": "integer",
+            "title": "Dte"
+          },
+          "contracts": {
+            "items": {
+              "$ref": "#/components/schemas/CoveredCallContract"
+            },
+            "type": "array",
+            "title": "Contracts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expiration",
+          "dte",
+          "contracts"
+        ],
+        "title": "CoveredCallExpiration"
+      },
+      "CoveredCallPage": {
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "title": "Ticker"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "options_available": {
+            "type": "boolean",
+            "title": "Options Available"
+          },
+          "moneyness": {
+            "type": "string",
+            "enum": [
+              "itm",
+              "otm",
+              "all"
+            ],
+            "title": "Moneyness"
+          },
+          "fetched_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Fetched At"
+          },
+          "current_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Cents"
+          },
+          "current_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "stock_bid",
+                  "chain_last_trade"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Source"
+          },
+          "stock_bid_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Bid Cents"
+          },
+          "stock_ask_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Ask Cents"
+          },
+          "market_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market Session"
+          },
+          "is_real_time": {
+            "type": "boolean",
+            "title": "Is Real Time"
+          },
+          "quote_timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote Timestamp"
+          },
+          "last_trade": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Trade"
+          },
+          "last_trade_timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Trade Timestamp"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated"
+          },
+          "chain_from_cache": {
+            "type": "boolean",
+            "title": "Chain From Cache"
+          },
+          "info_from_cache": {
+            "type": "boolean",
+            "title": "Info From Cache"
+          },
+          "history_from_cache": {
+            "type": "boolean",
+            "title": "History From Cache"
+          },
+          "risk_free_rate_pct_tenths": {
+            "type": "integer",
+            "title": "Risk Free Rate Pct Tenths"
+          },
+          "lows": {
+            "$ref": "#/components/schemas/PeriodLows"
+          },
+          "expirations": {
+            "items": {
+              "$ref": "#/components/schemas/CoveredCallExpiration"
+            },
+            "type": "array",
+            "title": "Expirations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ticker",
+          "options_available",
+          "moneyness",
+          "fetched_at",
+          "current_cents",
+          "current_source",
+          "stock_bid_cents",
+          "stock_ask_cents",
+          "market_session",
+          "is_real_time",
+          "quote_timestamp",
+          "last_trade",
+          "last_trade_timestamp",
+          "truncated",
+          "chain_from_cache",
+          "info_from_cache",
+          "history_from_cache",
+          "risk_free_rate_pct_tenths",
+          "lows",
+          "expirations"
+        ],
+        "title": "CoveredCallPage"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "HealthResponse"
+      },
+      "PeriodLows": {
+        "properties": {
+          "d7_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "D7 Cents"
+          },
+          "d30_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "D30 Cents"
+          },
+          "d90_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "D90 Cents"
+          },
+          "d365_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "D365 Cents"
+          }
+        },
+        "type": "object",
+        "required": [
+          "d7_cents",
+          "d30_cents",
+          "d90_cents",
+          "d365_cents"
+        ],
+        "title": "PeriodLows"
+      },
+      "TickerListing": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sector"
+          },
+          "industry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industry"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "name"
+        ],
+        "title": "TickerListing"
+      },
+      "TickerSearchResponse": {
+        "properties": {
+          "as_of": {
+            "type": "string",
+            "format": "date-time",
+            "title": "As Of"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/TickerListing"
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "as_of",
+          "total",
+          "results"
+        ],
+        "title": "TickerSearchResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

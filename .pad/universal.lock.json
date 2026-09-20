@@ -1,0 +1,12 @@
+{
+  "files": {
+    ".agents/skills/pad-engineering/SKILL.md": "3cb5185116663c2f8ee58764a4180784ff2604b05e2e75b2b6f13cc1ccfd0071",
+    "AGENTS.md": "8e0e7df28f0df8d847f4981da0978c28c2c9615b0382c3bfc62c6af90a52f6b1",
+    "PROJECT_AGENT.md": "b3db8b86b35a08ee83fc6abfa011b823b297849043665de5db799460506b35c4",
+    "scripts/verify": "eba12685736b8d954ea8b05a6b4f347d3bcdd618b76286b3fcf8539027bef6f7",
+    "scripts/verify-fast": "a4723a638ace93e4c999ae76cfe87820a51208244a3833cf654e265857ecdc41"
+  },
+  "repository": "hyperoptions",
+  "version": "1.1.0",
+  "workspace": "hyperoptions-engineering"
+}

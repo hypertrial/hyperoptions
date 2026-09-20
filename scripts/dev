@@ -1,0 +1,190 @@
+#!/bin/sh
+set -eu
+
+ROOT="$(CDPATH= cd "$(dirname "$0")/.." && pwd)"
+BACKEND_PORT=8000
+FRONTEND_PORT=5173
+BACKEND_PID=
+FRONTEND_PID=
+BACKEND_GROUP_ESTABLISHED=0
+FRONTEND_GROUP_ESTABLISHED=0
+STOPPING=0
+JOB_LIST=$(/usr/bin/mktemp "${TMPDIR:-/tmp}/options-dev-jobs.XXXXXX")
+
+die() {
+  printf 'error: %s\n' "$1" >&2
+  exit 1
+}
+
+need() {
+  command -v "$1" >/dev/null 2>&1 || die "missing $1 — install it and retry"
+}
+
+port_in_use() {
+  lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
+}
+
+http_ok() {
+  curl -sf "$1" >/dev/null 2>&1
+}
+
+owned_job_running() {
+  target_pid=$1
+  # dash retains completed jobs until their status has been collected.
+  jobs >/dev/null 2>&1
+  jobs -p > "$JOB_LIST"
+  while IFS= read -r job_pid; do
+    [ "$job_pid" = "$target_pid" ] && return 0
+  done < "$JOB_LIST"
+  return 1
+}
+
+wait_service_gone() {
+  pid=$1
+  group_established=$2
+  [ -n "$pid" ] || return 0
+  n=0
+  while [ "$n" -lt 20 ]; do
+    if [ "$group_established" -eq 1 ]; then
+      /bin/kill -0 -- "-$pid" 2>/dev/null || return 0
+    elif ! owned_job_running "$pid"; then
+      return 0
+    fi
+    n=$((n + 1))
+    sleep 0.1
+  done
+  return 1
+}
+
+signal_service() {
+  pid=$1
+  sig=$2
+  group_established=$3
+  [ -n "$pid" ] || return 0
+  if [ "$group_established" -eq 1 ]; then
+    /bin/kill -"$sig" -- "-$pid" 2>/dev/null || true
+  elif owned_job_running "$pid"; then
+    kill -"$sig" "$pid" 2>/dev/null || true
+  fi
+}
+
+stop() {
+  if [ "$STOPPING" -eq 1 ]; then
+    return
+  fi
+  STOPPING=1
+  if [ -z "$BACKEND_PID" ] && [ -z "$FRONTEND_PID" ]; then
+    return
+  fi
+  printf '\nstopping...\n'
+  signal_service "$FRONTEND_PID" TERM "$FRONTEND_GROUP_ESTABLISHED"
+  signal_service "$BACKEND_PID" TERM "$BACKEND_GROUP_ESTABLISHED"
+  wait_service_gone "$FRONTEND_PID" "$FRONTEND_GROUP_ESTABLISHED" || \
+    signal_service "$FRONTEND_PID" KILL "$FRONTEND_GROUP_ESTABLISHED"
+  wait_service_gone "$BACKEND_PID" "$BACKEND_GROUP_ESTABLISHED" || \
+    signal_service "$BACKEND_PID" KILL "$BACKEND_GROUP_ESTABLISHED"
+}
+
+on_signal() {
+  stop
+  exit 0
+}
+
+cleanup() {
+  stop
+  /bin/rm -f "$JOB_LIST"
+}
+
+trap on_signal INT TERM
+trap cleanup EXIT
+
+need uv
+need npm
+need python3
+need curl
+need lsof
+
+[ -d "$ROOT/backend" ] || die "backend/ not found"
+[ -d "$ROOT/frontend" ] || die "frontend/ not found"
+
+if port_in_use "$BACKEND_PORT"; then
+  die "port $BACKEND_PORT is already in use (backend)"
+fi
+if port_in_use "$FRONTEND_PORT"; then
+  die "port $FRONTEND_PORT is already in use (frontend)"
+fi
+
+printf 'syncing backend deps...\n'
+(cd "$ROOT/backend" && uv sync --group dev)
+
+printf 'installing frontend deps...\n'
+(cd "$ROOT/frontend" && npm install)
+
+printf 'starting backend on 127.0.0.1:%s\n' "$BACKEND_PORT"
+(
+  cd "$ROOT/backend"
+  exec python3 -c 'import os, sys; os.setpgrp(); os.execvp(sys.argv[1], sys.argv[1:])' \
+    uv run uvicorn options_api.main:app --reload --no-access-log --host 127.0.0.1 --port "$BACKEND_PORT"
+) &
+BACKEND_PID=$!
+while ! /bin/kill -0 -- "-$BACKEND_PID" 2>/dev/null; do
+  kill -0 "$BACKEND_PID" 2>/dev/null || die "backend exited before establishing its process group"
+done
+BACKEND_GROUP_ESTABLISHED=1
+
+printf 'waiting for http://127.0.0.1:%s/api/health\n' "$BACKEND_PORT"
+i=0
+while [ "$i" -lt 80 ]; do
+  if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+    die "backend exited before becoming healthy"
+  fi
+  if http_ok "http://127.0.0.1:${BACKEND_PORT}/api/health"; then
+    break
+  fi
+  i=$((i + 1))
+  sleep 0.25
+done
+if ! http_ok "http://127.0.0.1:${BACKEND_PORT}/api/health"; then
+  die "backend did not become healthy on port $BACKEND_PORT"
+fi
+
+printf 'starting frontend on 127.0.0.1:%s\n' "$FRONTEND_PORT"
+(
+  cd "$ROOT/frontend"
+  exec python3 -c 'import os, sys; os.setpgrp(); os.execvp(sys.argv[1], sys.argv[1:])' \
+    npm run dev -- --host 127.0.0.1 --port "$FRONTEND_PORT"
+) &
+FRONTEND_PID=$!
+while ! /bin/kill -0 -- "-$FRONTEND_PID" 2>/dev/null; do
+  kill -0 "$FRONTEND_PID" 2>/dev/null || die "frontend exited before establishing its process group"
+done
+FRONTEND_GROUP_ESTABLISHED=1
+
+printf 'waiting for http://127.0.0.1:%s/\n' "$FRONTEND_PORT"
+i=0
+while [ "$i" -lt 80 ]; do
+  if ! kill -0 "$FRONTEND_PID" 2>/dev/null; then
+    die "frontend exited before becoming ready"
+  fi
+  if http_ok "http://127.0.0.1:${FRONTEND_PORT}/"; then
+    break
+  fi
+  i=$((i + 1))
+  sleep 0.25
+done
+if ! http_ok "http://127.0.0.1:${FRONTEND_PORT}/"; then
+  die "frontend did not become ready on port $FRONTEND_PORT"
+fi
+
+printf '\nbackend  http://127.0.0.1:%s/api/health\n' "$BACKEND_PORT"
+printf 'frontend http://127.0.0.1:%s/\n' "$FRONTEND_PORT"
+printf 'Ctrl+C to stop both\n\n'
+
+while kill -0 "$BACKEND_PID" 2>/dev/null && kill -0 "$FRONTEND_PID" 2>/dev/null; do
+  sleep 1
+done
+
+if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+  die "backend exited unexpectedly"
+fi
+die "frontend exited unexpectedly"
