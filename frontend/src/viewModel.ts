@@ -8,9 +8,6 @@ export type SortState = { id: ColumnId; dir: "asc" | "desc" }
 
 export const DEFAULT_SORT: SortState = { id: "strike_cents", dir: "desc" }
 
-export type { FilterState } from "./filters"
-export { invertedDteRange } from "./filters"
-
 export const INITIAL_REVEAL = 250
 
 export type ExpiryGroup = {

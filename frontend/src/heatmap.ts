@@ -1,9 +1,6 @@
-import { METRIC_KEYS, type ColumnDef, type ColumnId, type SizedContract } from "./columns"
-
-export { METRIC_KEYS }
+import type { ColumnDef, SizedContract } from "./columns"
 
 export type MetricRange = { min: number; max: number }
-export type MetricKey = ColumnId
 export type MetricRanges = Record<string, MetricRange | null>
 
 export function metricRange(values: Array<number | null | undefined>): MetricRange | null {

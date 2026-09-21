@@ -4,7 +4,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { fetchChain, fetchTickers } from "./api"
-import { COPY_HEADERS, formatContractValues, formatRowClipboard } from "./copyRow"
+import { COPY_HEADERS, formatContractValues } from "./columns"
+import { formatRowClipboard } from "./copyRow"
 import ItmChain from "./ItmChain"
 import { largeChainPage, samplePage, samplePutPage } from "./testFixtures"
 import type { CoveredCallPage } from "./types"

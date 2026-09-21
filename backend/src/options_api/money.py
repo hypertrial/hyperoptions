@@ -4,7 +4,6 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 ZERO = Decimal("0")
-ONE = Decimal("1")
 TEN = Decimal("10")
 HUNDRED = Decimal("100")
 DAYS_PER_YEAR = Decimal("365")

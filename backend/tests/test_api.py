@@ -117,7 +117,7 @@ def _handler(fail_info: bool = False, fail_history: bool = False, fail_chain: bo
     return handler
 
 
-def test_health_and_allowlist(api: TestClient) -> None:
+def test_health_and_unknown_or_invalid_tickers(api: TestClient) -> None:
     assert api.get("/api/health").json() == {"ok": True}
     app.state.universe = _seed_universe()
     for ticker in ("AAPL", "MSFT", "NBI"):
@@ -338,7 +338,7 @@ def test_removed_planner_routes_are_gone(api: TestClient) -> None:
     assert api.post("/api/context-observations").status_code == 404
 
 
-def test_allowlisted_tickers_other_than_iren_are_accepted(api: TestClient) -> None:
+def test_universe_tickers_other_than_iren_are_accepted(api: TestClient) -> None:
     _install_service(_handler())
     for ticker in ("CIFR", "NBIS", "WULF"):
         response = api.get(f"/api/covered-calls/{ticker}")
