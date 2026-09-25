@@ -9,6 +9,7 @@ from typing import cast
 from zoneinfo import ZoneInfo
 
 from options_api.greeks import compute_greeks, risk_free_rate
+from options_api.memo import ContractMemo
 from options_api.models import (
     CashSecuredPutContract,
     CashSecuredPutExpiration,
@@ -23,6 +24,7 @@ from options_api.models import (
     OptionChainResponse,
     OptionQuote,
     PeriodLows,
+    Side,
     StockInfoResponse,
     Ticker,
 )
@@ -346,6 +348,7 @@ def _lows(history: HistoricalResponse, today: date) -> dict[str, Decimal | None]
 
 @dataclass(frozen=True)
 class _SideSpec:
+    side: Side
     in_the_money: Callable[[Decimal, Decimal], bool]
     open_interest: Callable[[OptionQuote], int | None]
     build: Callable[..., CoveredCallContract | CashSecuredPutContract]
@@ -354,6 +357,7 @@ class _SideSpec:
 
 
 CALLS = _SideSpec(
+    side="call",
     in_the_money=_call_in_the_money,
     open_interest=_call_open_interest,
     build=_call_contract,
@@ -361,6 +365,7 @@ CALLS = _SideSpec(
     page_model=CoveredCallPage,
 )
 PUTS = _SideSpec(
+    side="put",
     in_the_money=_put_in_the_money,
     open_interest=_put_open_interest,
     build=_put_contract,
@@ -379,6 +384,7 @@ def _assemble(
     moneyness: Moneyness,
     name: str | None,
     rate: Decimal | None,
+    memo: ContractMemo | None = None,
 ) -> CoveredCallPage | CashSecuredPutPage:
     info = info or _empty_info(chain.ticker, fetched_at)
     history = history or _empty_history(chain.ticker, fetched_at)
@@ -387,6 +393,11 @@ def _assemble(
     raw_lows = _lows(history, today)
     grouped: dict[str, list[CoveredCallContract | CashSecuredPutContract]] = {}
     seen: set[tuple[str, Decimal]] = set()
+    cached = (
+        memo.contracts(chain.ticker, spec.side, chain.rows, current, raw_lows, today, rate)
+        if memo is not None and current is not None
+        else None
+    )
     if current is not None and chain.options_available:
         for row in chain.rows:
             key = (row.expiration, row.strike)
@@ -402,9 +413,12 @@ def _assemble(
                 or not _passes_moneyness(in_the_money, moneyness)
             ):
                 continue
-            grouped.setdefault(row.expiration, []).append(
-                spec.build(row, dte, current, raw_lows, rate, in_the_money)
-            )
+            contract = cached.get(key) if cached is not None else None
+            if contract is None:
+                contract = spec.build(row, dte, current, raw_lows, rate, in_the_money)
+                if cached is not None:
+                    cached[key] = contract
+            grouped.setdefault(row.expiration, []).append(contract)
     expirations = []
     for expiration, contracts in sorted(grouped.items()):
         kept = sorted(contracts, key=lambda item: item.strike_cents, reverse=True)
@@ -432,10 +446,13 @@ def assemble_covered_calls(
     moneyness: Moneyness = "itm",
     name: str | None = None,
     rate: Decimal | None = None,
+    memo: ContractMemo | None = None,
 ) -> CoveredCallPage:
     return cast(
         CoveredCallPage,
-        _assemble(CALLS, chain, info, history, today, fetched_at, moneyness, name, rate),
+        _assemble(
+            CALLS, chain, info, history, today, fetched_at, moneyness, name, rate, memo
+        ),
     )
 
 
@@ -448,10 +465,13 @@ def assemble_cash_secured_puts(
     moneyness: Moneyness = "otm",
     name: str | None = None,
     rate: Decimal | None = None,
+    memo: ContractMemo | None = None,
 ) -> CashSecuredPutPage:
     return cast(
         CashSecuredPutPage,
-        _assemble(PUTS, chain, info, history, today, fetched_at, moneyness, name, rate),
+        _assemble(
+            PUTS, chain, info, history, today, fetched_at, moneyness, name, rate, memo
+        ),
     )
 
 
@@ -507,6 +527,7 @@ async def _load_side(
         moneyness or default_moneyness,
         name,
         rate,
+        service.memo,
     )
 
 

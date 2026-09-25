@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import httpx
 
 from options_api.cache import TickerCache
+from options_api.memo import ContractMemo
 from options_api.models import (
     HistoricalResponse,
     OptionChainResponse,
@@ -35,8 +36,10 @@ class OptionChainService:
         cache: TickerCache | None = None,
         info_cache: TickerCache | None = None,
         history_cache: TickerCache | None = None,
+        memo: ContractMemo | None = None,
     ) -> None:
         self._client = client
+        self.memo = memo or ContractMemo()
         self._chain_cache = cache or TickerCache(ttl_seconds=30.0)
         self._info_cache = info_cache or TickerCache(ttl_seconds=30.0)
         self._history_cache = history_cache or TickerCache(ttl_seconds=86_400.0)
