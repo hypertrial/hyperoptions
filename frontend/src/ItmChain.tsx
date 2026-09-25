@@ -7,6 +7,7 @@ import { CircleAlert, RefreshCw } from "lucide-react"
 import CommandBar, { type SessionInfo } from "./CommandBar"
 import { formatContractValues, visibleColumns } from "./columns"
 import { contractCountIsSafe, contractSizeLabel, parseContractCount } from "./contracts"
+import { plural } from "./format"
 import { copyRowStateKey, formatRowClipboard } from "./copyRow"
 import { useDensity } from "./density"
 import ExpiryTables from "./ExpiryTable"
@@ -199,8 +200,8 @@ export default function ItmChain() {
               <><span aria-hidden="true">·</span> Data unavailable</>
             ) : (
               <>
-                <span aria-hidden="true">·</span> {view.visibleCount.toLocaleString("en-US")} contracts
-                <span aria-hidden="true">·</span> {view.visibleGroups.length.toLocaleString("en-US")} expirations
+                <span aria-hidden="true">·</span> {view.visibleCount.toLocaleString("en-US")} {plural(view.visibleCount, "contract")}
+                <span aria-hidden="true">·</span> {view.visibleGroups.length.toLocaleString("en-US")} {plural(view.visibleGroups.length, "expiration")}
               </>
             )}
           </p>
@@ -282,9 +283,9 @@ export default function ItmChain() {
           <p className="visually-hidden" role="status" aria-live="polite">{copiedNotice}</p>
           {view.remainingCount > 0 ? (
             <div className="reveal-cluster">
-              <p className="control-note">Displaying {view.mountedCount.toLocaleString("en-US")} of {view.expandedVisibleCount.toLocaleString("en-US")} rows in expanded expirations</p>
+              <p className="control-note">Displaying {view.mountedCount.toLocaleString("en-US")} of {view.expandedVisibleCount.toLocaleString("en-US")} {plural(view.expandedVisibleCount, "row")} in expanded expirations</p>
               <Button type="button" variant="outline" onClick={() => reveal.update((current) => current + INITIAL_REVEAL)}>
-                Show {INITIAL_REVEAL} more
+                Show {Math.min(INITIAL_REVEAL, view.remainingCount).toLocaleString("en-US")} more
               </Button>
               <Button type="button" variant="outline" onClick={() => reveal.update(Number.POSITIVE_INFINITY)}>
                 Show all

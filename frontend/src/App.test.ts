@@ -8,7 +8,7 @@ import App from "./App"
 import { contractSizeLabel, contractCountIsSafe, parseContractCount, scaleByContracts, shareCount, stockCapitalCents } from "./contracts"
 import { copyRowAccessibleName, copyRowStateKey, formatRowClipboard } from "./copyRow"
 import { meetsMaximum, parseThreshold, passesFilters } from "./filters"
-import { integer, moneyCents, percentTenths, signedE4, unsignedPercentTenths } from "./format"
+import { dateTime, integer, moneyCents, percentTenths, plural, signedE4, unsignedPercentTenths } from "./format"
 import { heatmapHue, heatmapStop, metricRange } from "./heatmap"
 import { CALL_COLUMNS, CALL_DEFAULT_COLUMN_IDS, PUT_DEFAULT_COLUMN_IDS, defaultColumnIds, formatContractValues, mobilePriorityColumns, visibleColumns, type ColumnDef } from "./columns"
 import type { CoveredCallContract } from "./types"
@@ -71,6 +71,12 @@ describe("formatters", () => {
     expect(signedE4(6368)).toBe("+0.6368")
     expect(signedE4(-176)).toBe("-0.0176")
     expect(signedE4(null)).toBe("—")
+    expect(plural(1, "expiration")).toBe("expiration")
+    expect(plural(0, "contract")).toBe("contracts")
+    expect(dateTime(null)).toBe("—")
+    expect(dateTime("not-a-date")).toBe("not-a-date")
+    expect(dateTime("2026-09-11T14:00:00Z")).toMatch(/Sep 1[12], 2026/)
+    expect(dateTime("2026-09-11T14:00:00Z")).not.toMatch(/\d{1,2}\/\d{1,2}\/\d{4}/)
     expect(moneyCents(undefined)).toBe("—")
     expect(moneyCents(Number.NaN)).toBe("—")
     expect(moneyCents(0)).toBe("$0.00")

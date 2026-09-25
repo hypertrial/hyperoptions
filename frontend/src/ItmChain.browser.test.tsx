@@ -680,6 +680,9 @@ describe("chain interactions", () => {
 
     await selectTicker("CIFR")
     await waitFor(() => expect(screen.getByRole("button", { name: "Copy row CIFR 2026-09-18 strike $50.00" })).toBeTruthy())
+    expect(document.querySelector(".results-count")?.textContent).toBe("1 contract · 1 expiration")
+    expect(document.querySelector(".chain-context")?.textContent).toContain("1 contract")
+    expect(document.querySelector(".chain-context")?.textContent).toContain("1 expiration")
     expect(screen.getByRole("button", { name: "Copy row CIFR 2026-09-18 strike $50.00" }).getAttribute("data-copied")).toBeNull()
     expect(screen.queryByText("Copied")).toBeNull()
   })
@@ -689,7 +692,7 @@ describe("chain interactions", () => {
     render(<ItmChain />)
     await waitFor(() => expect(screen.getByText(/Displaying 250 of 400 rows/)).toBeTruthy())
     expect(document.querySelectorAll("tbody tr")).toHaveLength(250)
-    fireEvent.click(screen.getByRole("button", { name: "Show 250 more" }))
+    fireEvent.click(screen.getByRole("button", { name: "Show 150 more" }))
     expect(screen.queryByText(/Displaying/)).toBeNull()
     expect(document.querySelectorAll("tbody tr")).toHaveLength(400)
   })

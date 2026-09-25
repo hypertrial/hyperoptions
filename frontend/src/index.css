@@ -804,8 +804,9 @@
 
   .table-scroll {
     max-width: 100%;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
+    max-height: max(16rem, calc(100dvh - 14rem));
+    overflow: auto;
+    overscroll-behavior: contain;
     background: var(--card);
     -webkit-overflow-scrolling: touch;
   }

@@ -41,8 +41,20 @@ export function signedE4(value: number | null | undefined): string {
   return `${sign}${whole}.${frac}`
 }
 
+const fetchedAtFormat = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+})
+
+export function plural(count: number, singular: string): string {
+  return count === 1 ? singular : `${singular}s`
+}
+
 export function dateTime(value: string | null | undefined): string {
   if (!value) return "—"
   const parsed = new Date(value)
-  return Number.isNaN(parsed.valueOf()) ? value : parsed.toLocaleString()
+  return Number.isNaN(parsed.valueOf()) ? value : fetchedAtFormat.format(parsed)
 }

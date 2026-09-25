@@ -79,7 +79,7 @@ Greeks are a European, no-dividend Black-Scholes approximation of American equit
 
 Every matching expiration has a collapsible header with date, DTE, and row count. Only the nearest expiration opens after ticker, strategy, or moneyness changes. Expand all and Collapse all are available; filtering, sorting, columns, and density preserve session-local expansion choices. Collapsed bodies are unmounted.
 
-Large filtered result sets render progressively across expanded groups only: all expiration headers remain discoverable, while the first 250 expanded rows mount. Accessible **Show 250 more** and **Show all** controls reveal the rest. Heat ranges still use the complete filtered expiration. The reveal limit resets when the chain identity or filters change.
+Large filtered result sets render progressively across expanded groups only: all expiration headers remain discoverable, while the first 250 expanded rows mount. Accessible **Show 250 more** (or the remaining count, when fewer than 250 rows are left) and **Show all** controls reveal the rest. Heat ranges still use the complete filtered expiration. The reveal limit resets when the chain identity or filters change.
 
 Below 40rem, the table becomes compact disclosure rows. Each summary shows up to four selected priority metrics—Strike, Bid, APR net, and breakeven protection, with selected-order fallback. Opening a row shows every remaining selected metric and Copy. Sorting remains available above the mobile rows.
 

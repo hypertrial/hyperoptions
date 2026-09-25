@@ -9,6 +9,7 @@ import ColumnPicker from "./ColumnPicker"
 import type { Density } from "./density"
 import type { ExactDecimal } from "./decimal"
 import { filterFieldSpecs, type FilterId, type FilterState, type FilterTexts } from "./filters"
+import { plural } from "./format"
 import type { Side } from "./types"
 
 type Props = {
@@ -106,9 +107,9 @@ export default function FilterControls({
     <Collapsible defaultOpen={false} className="results-controls">
       <div className="results-toolbar">
         <p className="results-count" aria-live="polite">
-          <strong>{visibleCount.toLocaleString("en-US")}</strong> contracts
+          <strong>{visibleCount.toLocaleString("en-US")}</strong> {plural(visibleCount, "contract")}
           <span aria-hidden="true"> · </span>
-          <strong>{expirationCount.toLocaleString("en-US")}</strong> expirations
+          <strong>{expirationCount.toLocaleString("en-US")}</strong> {plural(expirationCount, "expiration")}
         </p>
         <div className="toolbar-actions">
           <CollapsibleTrigger className="secondary-button toolbar-button">
