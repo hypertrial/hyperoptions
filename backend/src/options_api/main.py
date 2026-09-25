@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -200,9 +202,18 @@ def create_app(
         app.state.universe = TickerUniverse(client)
         app.state.clock = clock or (lambda: datetime.now(UTC))
         app.state.prefetch_universe = prefetch_universe
+        prefetch: asyncio.Task[bool] | None = None
+        if prefetch_universe:
+            prefetch = asyncio.create_task(app.state.universe.ensure())
         try:
             yield
         finally:
+            if prefetch is not None and not prefetch.done():
+                prefetch.cancel()
+            await app.state.universe.close()
+            if prefetch is not None:
+                with contextlib.suppress(asyncio.CancelledError):
+                    await prefetch
             await client.aclose()
 
     app = FastAPI(title="Nasdaq option chain", lifespan=lifespan)

@@ -8,7 +8,7 @@ The app binds to loopback only (`127.0.0.1`). Market data is fetched unofficiall
 
 The React + Vite frontend is Tailwind CSS v4 + shadcn/ui on Base UI primitives, with `@/` imports, self-hosted Geist Sans/Mono (no CDN fonts), and light/dark themes. Theme and table density persist in `localStorage` only — they are not URL params. `npm audit` is a completion gate; keep new frontend dependencies exact-pinned.
 
-The React browser client talks only to local FastAPI. Python is the only Nasdaq caller and caches option chains and stock quotes for 30 seconds and daily OHLCV for 24 hours. Computed contracts are reused while their inputs are unchanged. The Nasdaq-listed universe refreshes daily and fails closed when it cannot be loaded.
+The React browser client talks only to local FastAPI. Python is the only Nasdaq caller and caches option chains and stock quotes for 30 seconds and daily OHLCV for 24 hours. Computed contracts are reused while their inputs are unchanged. The Nasdaq-listed universe starts loading when the backend starts, refreshes daily, and fails closed when it cannot be loaded.
 
 ## Run
 

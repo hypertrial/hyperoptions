@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
@@ -71,6 +72,17 @@ class TickerUniverse:
             elif needle in item.name.upper():
                 named.append(item)
         return (prefix + named)[:limit]
+
+    async def close(self) -> None:
+        async with self._guard:
+            task = self._inflight
+            self._inflight = None
+        if task is None:
+            return
+        if not task.done():
+            task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
     async def ensure(self) -> bool:
         if self._fresh():
