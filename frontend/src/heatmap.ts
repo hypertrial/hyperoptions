@@ -15,25 +15,10 @@ export function metricRange(values: Array<number | null | undefined>): MetricRan
 }
 
 export function metricRanges(contracts: SizedContract[], columns: ColumnDef[]): MetricRanges {
-  const mins: Record<string, number> = {}
-  const maxs: Record<string, number> = {}
-  for (const row of contracts) {
-    for (const column of columns) {
-      if (!column.heatmap) continue
-      const value = column.accessor(row)
-      if (value == null || !Number.isFinite(value)) continue
-      const currentMin = mins[column.id]
-      const currentMax = maxs[column.id]
-      mins[column.id] = currentMin == null || value < currentMin ? value : currentMin
-      maxs[column.id] = currentMax == null || value > currentMax ? value : currentMax
-    }
-  }
   const ranges: MetricRanges = {}
   for (const column of columns) {
     if (!column.heatmap) continue
-    const min = mins[column.id]
-    const max = maxs[column.id]
-    ranges[column.id] = min == null || max == null ? null : { min, max }
+    ranges[column.id] = metricRange(contracts.map((row) => column.accessor(row)))
   }
   return ranges
 }
