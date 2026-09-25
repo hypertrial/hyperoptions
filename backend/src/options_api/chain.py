@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from typing import cast
 from zoneinfo import ZoneInfo
 
 from options_api.greeks import compute_greeks, risk_free_rate
@@ -20,7 +23,6 @@ from options_api.models import (
     OptionChainResponse,
     OptionQuote,
     PeriodLows,
-    Side,
     StockInfoResponse,
     Ticker,
 )
@@ -317,6 +319,110 @@ def _page_fields(
     }
 
 
+def _call_in_the_money(strike: Decimal, current: Decimal) -> bool:
+    return strike < current
+
+
+def _put_in_the_money(strike: Decimal, current: Decimal) -> bool:
+    return strike > current
+
+
+def _call_open_interest(row: OptionQuote) -> int | None:
+    return row.call_open_interest
+
+
+def _put_open_interest(row: OptionQuote) -> int | None:
+    return row.put_open_interest
+
+
+def _lows(history: HistoricalResponse, today: date) -> dict[str, Decimal | None]:
+    return {
+        "d7": period_low(history.bars, today, 7),
+        "d30": period_low(history.bars, today, 30),
+        "d90": period_low(history.bars, today, 90),
+        "d365": period_low(history.bars, today, 365),
+    }
+
+
+@dataclass(frozen=True)
+class _SideSpec:
+    in_the_money: Callable[[Decimal, Decimal], bool]
+    open_interest: Callable[[OptionQuote], int | None]
+    build: Callable[..., CoveredCallContract | CashSecuredPutContract]
+    expiration_model: type[CoveredCallExpiration] | type[CashSecuredPutExpiration]
+    page_model: type[CoveredCallPage] | type[CashSecuredPutPage]
+
+
+CALLS = _SideSpec(
+    in_the_money=_call_in_the_money,
+    open_interest=_call_open_interest,
+    build=_call_contract,
+    expiration_model=CoveredCallExpiration,
+    page_model=CoveredCallPage,
+)
+PUTS = _SideSpec(
+    in_the_money=_put_in_the_money,
+    open_interest=_put_open_interest,
+    build=_put_contract,
+    expiration_model=CashSecuredPutExpiration,
+    page_model=CashSecuredPutPage,
+)
+
+
+def _assemble(
+    spec: _SideSpec,
+    chain: OptionChainResponse,
+    info: StockInfoResponse | None,
+    history: HistoricalResponse | None,
+    today: date,
+    fetched_at: datetime,
+    moneyness: Moneyness,
+    name: str | None,
+    rate: Decimal | None,
+) -> CoveredCallPage | CashSecuredPutPage:
+    info = info or _empty_info(chain.ticker, fetched_at)
+    history = history or _empty_history(chain.ticker, fetched_at)
+    current, source = current_reference(info.bid, chain.spot)
+    rate = rate if rate is not None else risk_free_rate()
+    raw_lows = _lows(history, today)
+    grouped: dict[str, list[CoveredCallContract | CashSecuredPutContract]] = {}
+    seen: set[tuple[str, Decimal]] = set()
+    if current is not None and chain.options_available:
+        for row in chain.rows:
+            key = (row.expiration, row.strike)
+            if key in seen:
+                continue
+            seen.add(key)
+            dte = days_to_expiration(row.expiration, today)
+            in_the_money = spec.in_the_money(row.strike, current)
+            if (
+                dte is None
+                or dte <= 0
+                or not _qualifying_open_interest(spec.open_interest(row))
+                or not _passes_moneyness(in_the_money, moneyness)
+            ):
+                continue
+            grouped.setdefault(row.expiration, []).append(
+                spec.build(row, dte, current, raw_lows, rate, in_the_money)
+            )
+    expirations = []
+    for expiration, contracts in sorted(grouped.items()):
+        kept = sorted(contracts, key=lambda item: item.strike_cents, reverse=True)
+        expirations.append(
+            spec.expiration_model(
+                expiration=expiration,
+                dte=days_to_expiration(expiration, today) or 0,
+                contracts=kept,
+            )
+        )
+    return spec.page_model(
+        expirations=expirations,
+        **_page_fields(
+            chain, info, history, current, source, raw_lows, fetched_at, name, moneyness, rate
+        ),
+    )
+
+
 def assemble_covered_calls(
     chain: OptionChainResponse,
     info: StockInfoResponse | None,
@@ -327,51 +433,9 @@ def assemble_covered_calls(
     name: str | None = None,
     rate: Decimal | None = None,
 ) -> CoveredCallPage:
-    info = info or _empty_info(chain.ticker, fetched_at)
-    history = history or _empty_history(chain.ticker, fetched_at)
-    current, source = current_reference(info.bid, chain.spot)
-    rate = rate if rate is not None else risk_free_rate()
-    raw_lows = {
-        "d7": period_low(history.bars, today, 7),
-        "d30": period_low(history.bars, today, 30),
-        "d90": period_low(history.bars, today, 90),
-        "d365": period_low(history.bars, today, 365),
-    }
-    grouped: dict[str, list[CoveredCallContract]] = {}
-    seen: set[tuple[str, Decimal]] = set()
-    if current is not None and chain.options_available:
-        for row in chain.rows:
-            key = (row.expiration, row.strike)
-            if key in seen:
-                continue
-            seen.add(key)
-            dte = days_to_expiration(row.expiration, today)
-            in_the_money = row.strike < current
-            if (
-                dte is None
-                or dte <= 0
-                or not _qualifying_open_interest(row.call_open_interest)
-                or not _passes_moneyness(in_the_money, moneyness)
-            ):
-                continue
-            grouped.setdefault(row.expiration, []).append(
-                _call_contract(row, dte, current, raw_lows, rate, in_the_money)
-            )
-    expirations: list[CoveredCallExpiration] = []
-    for expiration, contracts in sorted(grouped.items()):
-        kept = sorted(contracts, key=lambda item: item.strike_cents, reverse=True)
-        expirations.append(
-            CoveredCallExpiration(
-                expiration=expiration,
-                dte=days_to_expiration(expiration, today) or 0,
-                contracts=kept,
-            )
-        )
-    return CoveredCallPage(
-        expirations=expirations,
-        **_page_fields(
-            chain, info, history, current, source, raw_lows, fetched_at, name, moneyness, rate
-        ),
+    return cast(
+        CoveredCallPage,
+        _assemble(CALLS, chain, info, history, today, fetched_at, moneyness, name, rate),
     )
 
 
@@ -385,51 +449,9 @@ def assemble_cash_secured_puts(
     name: str | None = None,
     rate: Decimal | None = None,
 ) -> CashSecuredPutPage:
-    info = info or _empty_info(chain.ticker, fetched_at)
-    history = history or _empty_history(chain.ticker, fetched_at)
-    current, source = current_reference(info.bid, chain.spot)
-    rate = rate if rate is not None else risk_free_rate()
-    raw_lows = {
-        "d7": period_low(history.bars, today, 7),
-        "d30": period_low(history.bars, today, 30),
-        "d90": period_low(history.bars, today, 90),
-        "d365": period_low(history.bars, today, 365),
-    }
-    grouped: dict[str, list[CashSecuredPutContract]] = {}
-    seen: set[tuple[str, Decimal]] = set()
-    if current is not None and chain.options_available:
-        for row in chain.rows:
-            key = (row.expiration, row.strike)
-            if key in seen:
-                continue
-            seen.add(key)
-            dte = days_to_expiration(row.expiration, today)
-            in_the_money = row.strike > current
-            if (
-                dte is None
-                or dte <= 0
-                or not _qualifying_open_interest(row.put_open_interest)
-                or not _passes_moneyness(in_the_money, moneyness)
-            ):
-                continue
-            grouped.setdefault(row.expiration, []).append(
-                _put_contract(row, dte, current, raw_lows, rate, in_the_money)
-            )
-    expirations: list[CashSecuredPutExpiration] = []
-    for expiration, contracts in sorted(grouped.items()):
-        kept = sorted(contracts, key=lambda item: item.strike_cents, reverse=True)
-        expirations.append(
-            CashSecuredPutExpiration(
-                expiration=expiration,
-                dte=days_to_expiration(expiration, today) or 0,
-                contracts=kept,
-            )
-        )
-    return CashSecuredPutPage(
-        expirations=expirations,
-        **_page_fields(
-            chain, info, history, current, source, raw_lows, fetched_at, name, moneyness, rate
-        ),
+    return cast(
+        CashSecuredPutPage,
+        _assemble(PUTS, chain, info, history, today, fetched_at, moneyness, name, rate),
     )
 
 
@@ -463,35 +485,54 @@ async def _load_context(
     return chain_result, info, history
 
 
-async def load_chain(
+async def _load_side(
     service: OptionChainService,
     ticker: Ticker,
-    side: Side,
     now: datetime,
-    moneyness: Moneyness | None = None,
-    name: str | None = None,
-    rate: Decimal | None = None,
+    spec: _SideSpec,
+    default_moneyness: Moneyness,
+    moneyness: Moneyness | None,
+    name: str | None,
+    rate: Decimal | None,
 ) -> CoveredCallPage | CashSecuredPutPage:
     today = today_new_york(now)
     chain, info, history = await _load_context(service, ticker, now)
-    if side == "put":
-        return assemble_cash_secured_puts(
-            chain,
-            info,
-            history,
-            today,
-            now,
-            moneyness=moneyness or "otm",
-            name=name,
-            rate=rate,
-        )
-    return assemble_covered_calls(
+    return _assemble(
+        spec,
         chain,
         info,
         history,
         today,
         now,
-        moneyness=moneyness or "itm",
-        name=name,
-        rate=rate,
+        moneyness or default_moneyness,
+        name,
+        rate,
+    )
+
+
+async def load_covered_calls(
+    service: OptionChainService,
+    ticker: Ticker,
+    now: datetime,
+    moneyness: Moneyness | None = None,
+    name: str | None = None,
+    rate: Decimal | None = None,
+) -> CoveredCallPage:
+    return cast(
+        CoveredCallPage,
+        await _load_side(service, ticker, now, CALLS, "itm", moneyness, name, rate),
+    )
+
+
+async def load_cash_secured_puts(
+    service: OptionChainService,
+    ticker: Ticker,
+    now: datetime,
+    moneyness: Moneyness | None = None,
+    name: str | None = None,
+    rate: Decimal | None = None,
+) -> CashSecuredPutPage:
+    return cast(
+        CashSecuredPutPage,
+        await _load_side(service, ticker, now, PUTS, "otm", moneyness, name, rate),
     )

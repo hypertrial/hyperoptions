@@ -769,7 +769,7 @@ def test_assembler_value_error_uses_static_malformed_detail(
     async def boom(*_args, **_kwargs):
         raise ValueError("duplicate historical date: 2026-09-10")
 
-    monkeypatch.setattr("options_api.main.load_chain", boom)
+    monkeypatch.setattr("options_api.main.load_covered_calls", boom)
     app.state.universe = _seed_universe()
     response = api.get("/api/covered-calls/IREN")
     assert response.status_code == 502

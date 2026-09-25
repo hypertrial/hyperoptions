@@ -143,7 +143,7 @@ class CoveredCallExpiration(BaseModel):
     contracts: list[CoveredCallContract]
 
 
-class CoveredCallPage(BaseModel):
+class _ChainPageBase(BaseModel):
     ticker: Ticker
     name: str | None = None
     options_available: bool
@@ -164,6 +164,9 @@ class CoveredCallPage(BaseModel):
     history_from_cache: bool
     risk_free_rate_pct_tenths: int
     lows: PeriodLows
+
+
+class CoveredCallPage(_ChainPageBase):
     expirations: list[CoveredCallExpiration]
 
 
@@ -205,27 +208,7 @@ class CashSecuredPutExpiration(BaseModel):
     contracts: list[CashSecuredPutContract]
 
 
-class CashSecuredPutPage(BaseModel):
-    ticker: Ticker
-    name: str | None = None
-    options_available: bool
-    moneyness: Moneyness
-    fetched_at: datetime
-    current_cents: int | None
-    current_source: CurrentSource | None
-    stock_bid_cents: int | None
-    stock_ask_cents: int | None
-    market_session: str | None
-    is_real_time: bool
-    quote_timestamp: str | None
-    last_trade: str | None
-    last_trade_timestamp: str | None
-    truncated: bool
-    chain_from_cache: bool
-    info_from_cache: bool
-    history_from_cache: bool
-    risk_free_rate_pct_tenths: int
-    lows: PeriodLows
+class CashSecuredPutPage(_ChainPageBase):
     expirations: list[CashSecuredPutExpiration]
 
 

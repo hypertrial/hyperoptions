@@ -3,7 +3,8 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Annotated, Literal
+from collections.abc import Awaitable, Callable
+from typing import Annotated
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request
@@ -13,7 +14,7 @@ from starlette.responses import PlainTextResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from options_api.cache import TickerCache
-from options_api.chain import load_chain
+from options_api.chain import load_cash_secured_puts, load_covered_calls
 from options_api.models import (
     CashSecuredPutPage,
     CoveredCallPage,
@@ -167,7 +168,7 @@ async def search_tickers(
 async def _load_page(
     request: Request,
     ticker: str,
-    side: Literal["call", "put"],
+    load: Callable[..., Awaitable[CoveredCallPage | CashSecuredPutPage]],
     moneyness: Moneyness | None,
 ) -> CoveredCallPage | CashSecuredPutPage:
     _check_origin(request)
@@ -176,10 +177,9 @@ async def _load_page(
     listing = universe.listing(normalized)
     service: OptionChainService = request.app.state.service
     try:
-        return await load_chain(
+        return await load(
             service,
             normalized,
-            side,
             _page_now(request.app),
             moneyness=moneyness,
             name=listing.name if listing else None,
@@ -198,9 +198,7 @@ async def get_covered_calls(
     ticker: Annotated[str, Path(min_length=1, max_length=8)],
     moneyness: Annotated[Moneyness | None, Query()] = None,
 ) -> CoveredCallPage:
-    page = await _load_page(request, ticker, "call", moneyness)
-    assert isinstance(page, CoveredCallPage)
-    return page
+    return await _load_page(request, ticker, load_covered_calls, moneyness)
 
 
 @app.get("/api/cash-secured-puts/{ticker}", response_model=CashSecuredPutPage)
@@ -209,6 +207,4 @@ async def get_cash_secured_puts(
     ticker: Annotated[str, Path(min_length=1, max_length=8)],
     moneyness: Annotated[Moneyness | None, Query()] = None,
 ) -> CashSecuredPutPage:
-    page = await _load_page(request, ticker, "put", moneyness)
-    assert isinstance(page, CashSecuredPutPage)
-    return page
+    return await _load_page(request, ticker, load_cash_secured_puts, moneyness)
