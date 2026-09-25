@@ -523,6 +523,22 @@ def test_request_timeout_is_capped_by_remaining_deadline() -> None:
     assert timeout.connect is not None and timeout.connect <= 0.45
 
 
+def test_fetch_policy_rejects_attempt_counts_outside_one_or_two() -> None:
+    kwargs = {
+        "name": "test",
+        "connect_timeout": 1.0,
+        "read_timeout": 1.0,
+        "write_timeout": 1.0,
+        "pool_timeout": 1.0,
+        "deadline_seconds": 1.0,
+        "backoff_seconds": 0.0,
+    }
+    with pytest.raises(ValueError, match="max_attempts"):
+        FetchPolicy(max_attempts=0, **kwargs)
+    with pytest.raises(ValueError, match="max_attempts"):
+        FetchPolicy(max_attempts=3, **kwargs)
+
+
 def test_request_timeout_raises_when_deadline_has_elapsed() -> None:
     started = time.monotonic() - CHAIN_POLICY.deadline_seconds
     with pytest.raises(NasdaqError) as caught:
@@ -542,8 +558,6 @@ async def test_fetch_payload_enforces_one_absolute_deadline() -> None:
         deadline_seconds=0.02,
         max_attempts=1,
         backoff_seconds=0.0,
-        retryable_exceptions=CHAIN_POLICY.retryable_exceptions,
-        retryable_status_codes=CHAIN_POLICY.retryable_status_codes,
     )
 
     async def handler(_request: httpx.Request) -> httpx.Response:
@@ -573,8 +587,6 @@ def test_chain_deadline_exhaustion_skips_the_second_attempt(
             deadline_seconds=0.05,
             max_attempts=2,
             backoff_seconds=1.0,
-            retryable_exceptions=CHAIN_POLICY.retryable_exceptions,
-            retryable_status_codes=CHAIN_POLICY.retryable_status_codes,
         ),
     )
 

@@ -39,13 +39,6 @@ NASDAQ_HEADERS = {
 logger = logging.getLogger("options_api.nasdaq")
 
 
-RETRYABLE_EXCEPTIONS: tuple[type[BaseException], ...] = (
-    httpx.TimeoutException,
-    httpx.RequestError,
-)
-RETRYABLE_STATUS_CODES: frozenset[int] = frozenset()
-
-
 @dataclass(frozen=True)
 class FetchPolicy:
     name: str
@@ -56,8 +49,12 @@ class FetchPolicy:
     deadline_seconds: float
     max_attempts: int
     backoff_seconds: float
-    retryable_exceptions: tuple[type[BaseException], ...]
-    retryable_status_codes: frozenset[int]
+
+    def __post_init__(self) -> None:
+        if self.max_attempts not in {1, 2}:
+            raise ValueError("max_attempts must be 1 or 2")
+        if self.deadline_seconds <= 0:
+            raise ValueError("deadline_seconds must be positive")
 
     def timeout(self) -> httpx.Timeout:
         return httpx.Timeout(
@@ -77,8 +74,6 @@ CHAIN_POLICY = FetchPolicy(
     deadline_seconds=22.0,
     max_attempts=2,
     backoff_seconds=0.2,
-    retryable_exceptions=RETRYABLE_EXCEPTIONS,
-    retryable_status_codes=RETRYABLE_STATUS_CODES,
 )
 
 CONTEXT_POLICY = FetchPolicy(
@@ -90,8 +85,6 @@ CONTEXT_POLICY = FetchPolicy(
     deadline_seconds=8.0,
     max_attempts=2,
     backoff_seconds=0.1,
-    retryable_exceptions=RETRYABLE_EXCEPTIONS,
-    retryable_status_codes=RETRYABLE_STATUS_CODES,
 )
 
 HTTP_TIMEOUT = CHAIN_POLICY.timeout()
@@ -158,12 +151,14 @@ def _map_http_error(response: httpx.Response) -> NasdaqError:
     return NasdaqError.unavailable()
 
 
-def _retryable_exception(exc: BaseException, policy: FetchPolicy) -> bool:
-    return isinstance(exc, policy.retryable_exceptions)
-
-
-def _retryable_status(status_code: int, policy: FetchPolicy) -> bool:
-    return status_code in policy.retryable_status_codes
+def _log(operation: str, attempt: int, started: float, result: str) -> None:
+    logger.info(
+        "nasdaq_fetch operation=%s attempt=%s elapsed_ms=%s result=%s",
+        operation,
+        attempt,
+        int((time.monotonic() - started) * 1000),
+        result,
+    )
 
 
 def _request_timeout(policy: FetchPolicy, started: float) -> httpx.Timeout:
@@ -203,98 +198,52 @@ async def _fetch_payload_with_retries(
     operation: str,
 ) -> dict[str, Any]:
     started = time.monotonic()
-    last_timeout: Exception | None = None
-    attempts = min(policy.max_attempts, 2)
-    for attempt in range(attempts):
-        elapsed = time.monotonic() - started
-        if elapsed >= policy.deadline_seconds:
-            logger.info(
-                "nasdaq_fetch operation=%s attempt=%s elapsed_ms=%s result=deadline",
-                operation,
-                attempt + 1,
-                int(elapsed * 1000),
-            )
+    for attempt in range(1, policy.max_attempts + 1):
+        if time.monotonic() - started >= policy.deadline_seconds:
+            _log(operation, attempt, started, "deadline")
             raise NasdaqError.timeout()
+        try:
+            timeout = _request_timeout(policy, started)
+        except NasdaqError:
+            _log(operation, attempt, started, "deadline")
+            raise
         try:
             response = await client.get(
                 url,
                 params=params,
                 headers=NASDAQ_HEADERS,
-                timeout=_request_timeout(policy, started),
+                timeout=timeout,
             )
-        except httpx.TimeoutException as exc:
-            last_timeout = exc
-            logger.info(
-                "nasdaq_fetch operation=%s attempt=%s elapsed_ms=%s result=timeout",
-                operation,
-                attempt + 1,
-                int((time.monotonic() - started) * 1000),
-            )
-            if not _retryable_exception(exc, policy) or attempt + 1 >= attempts:
-                raise NasdaqError.timeout() from last_timeout
-            await _backoff(policy, started)
-            continue
         except httpx.RequestError as exc:
-            last_timeout = exc
-            logger.info(
-                "nasdaq_fetch operation=%s attempt=%s elapsed_ms=%s result=request_error",
-                operation,
-                attempt + 1,
-                int((time.monotonic() - started) * 1000),
-            )
-            if not _retryable_exception(exc, policy) or attempt + 1 >= attempts:
-                raise NasdaqError.unavailable() from last_timeout
+            timed_out = isinstance(exc, httpx.TimeoutException)
+            _log(operation, attempt, started, "timeout" if timed_out else "request_error")
+            if attempt >= policy.max_attempts:
+                if timed_out:
+                    raise NasdaqError.timeout() from exc
+                raise NasdaqError.unavailable() from exc
             await _backoff(policy, started)
             continue
         if response.status_code == 429:
-            logger.info(
-                "nasdaq_fetch operation=%s attempt=%s elapsed_ms=%s result=429",
-                operation,
-                attempt + 1,
-                int((time.monotonic() - started) * 1000),
-            )
+            _log(operation, attempt, started, "429")
             raise _map_http_error(response)
         if response.status_code >= 400:
-            logger.info(
-                "nasdaq_fetch operation=%s attempt=%s elapsed_ms=%s result=http_%s",
-                operation,
-                attempt + 1,
-                int((time.monotonic() - started) * 1000),
-                response.status_code,
-            )
+            _log(operation, attempt, started, f"http_{response.status_code}")
             if response.status_code == 400:
                 missing = _symbol_not_exists_payload(response)
                 if missing is not None:
                     raise missing
-            if _retryable_status(response.status_code, policy) and attempt + 1 < attempts:
-                await _backoff(policy, started)
-                continue
             raise _map_http_error(response)
         if not response.content:
             raise NasdaqError.unavailable()
         try:
             payload = response.json()
         except ValueError as exc:
-            logger.info(
-                "nasdaq_fetch operation=%s attempt=%s elapsed_ms=%s result=invalid_json",
-                operation,
-                attempt + 1,
-                int((time.monotonic() - started) * 1000),
-            )
+            _log(operation, attempt, started, "invalid_json")
             raise NasdaqError.unavailable() from exc
         if not isinstance(payload, dict):
             raise NasdaqError.malformed()
-        logger.info(
-            "nasdaq_fetch operation=%s attempt=%s elapsed_ms=%s result=ok",
-            operation,
-            attempt + 1,
-            int((time.monotonic() - started) * 1000),
-        )
+        _log(operation, attempt, started, "ok")
         return payload
-    if last_timeout is not None and _retryable_exception(last_timeout, policy):
-        if isinstance(last_timeout, httpx.TimeoutException):
-            raise NasdaqError.timeout() from last_timeout
-        raise NasdaqError.unavailable() from last_timeout
     raise NasdaqError.timeout()
 
 
