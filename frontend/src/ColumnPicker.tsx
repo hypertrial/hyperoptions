@@ -17,7 +17,7 @@ const GROUPS = [
 
 type GroupId = typeof GROUPS[number]["id"]
 
-function columnGroup(column: ColumnDef): GroupId {
+export function columnGroup(column: ColumnDef): GroupId {
   if (column.greek) return "greeks"
   if (column.id.startsWith("vs_")) return "history"
   if (column.id.includes("breakeven") || column.id.includes("strike_pct")) return "risk"
