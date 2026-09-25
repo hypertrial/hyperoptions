@@ -2,7 +2,6 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import type { ColumnDef } from "./columns"
 import { defaultColumnIds, normalizeColumnIds, strategyColumns } from "./columns"
 import type { Side } from "./types"
 
@@ -14,17 +13,6 @@ const GROUPS = [
   { id: "history", label: "Historical lows" },
   { id: "greeks", label: "Greeks" },
 ] as const
-
-type GroupId = typeof GROUPS[number]["id"]
-
-export function columnGroup(column: ColumnDef): GroupId {
-  if (column.greek) return "greeks"
-  if (column.id.startsWith("vs_")) return "history"
-  if (column.id.includes("breakeven") || column.id.includes("strike_pct")) return "risk"
-  if (column.id.includes("apr") || column.id.includes("pnl")) return "returns"
-  if (["stock_cost_cents", "premium_cents", "outlay_cents", "effective_cost_cents", "collateral_cents", "net_collateral_cents"].includes(column.id)) return "capital"
-  return "market"
-}
 
 type Props = {
   side: Side
@@ -72,7 +60,7 @@ export default function ColumnPicker({ side, selected, onChange }: Props) {
         </div>
         <div className="column-picker-body">
           {GROUPS.map((group) => {
-            const grouped = columns.filter((column) => columnGroup(column) === group.id)
+            const grouped = columns.filter((column) => column.group === group.id)
             if (grouped.length === 0) return null
             return (
               <fieldset key={group.id}>

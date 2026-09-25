@@ -1,4 +1,10 @@
+import { visibleColumns } from "./columns"
+import { STRATEGIES } from "./strategy"
 import type { CashSecuredPutContract, CashSecuredPutPage, CoveredCallContract, CoveredCallPage } from "./types"
+
+export const COLUMN_HEADERS = visibleColumns("call", null)
+export const COPY_HEADERS = COLUMN_HEADERS.map((column) => column.label)
+export const METRIC_KEYS = [...STRATEGIES.call.heatmapIds]
 
 export function sampleContract(overrides: Partial<CoveredCallContract> = {}): CoveredCallContract {
   return {

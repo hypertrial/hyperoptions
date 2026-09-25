@@ -95,7 +95,7 @@ export default function ItmChain() {
       ? page.last_trade_timestamp?.trim()
       : undefined
   const parsedContracts = parseContractCount(contractsText)
-  const contractsUnsafe = parsedContracts != null && !contractCountIsSafe(parsedContracts, page)
+  const contractsUnsafe = parsedContracts != null && !contractCountIsSafe(parsedContracts, page, side)
   const contractsInvalid = contractsText.trim() !== "" && (parsedContracts == null || contractsUnsafe)
   const contracts = parsedContracts != null && !contractsUnsafe ? parsedContracts : 1
   const contractsHelp = contractsInvalid

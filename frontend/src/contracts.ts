@@ -1,5 +1,6 @@
 import { moneyCents } from "./format"
-import type { ChainPage } from "./types"
+import { STRATEGIES } from "./strategy"
+import type { ChainPage, Side } from "./types"
 
 const SHARES_PER_CONTRACT = 100
 
@@ -43,16 +44,13 @@ export function stockCapitalCents(
   return Number.isSafeInteger(capital) ? capital : null
 }
 
-const CALL_SCALED_FIELDS = ["stock_cost_cents", "premium_cents", "outlay_cents", "called_pnl_cents"] as const
-const PUT_SCALED_FIELDS = ["premium_cents", "collateral_cents", "net_collateral_cents"] as const
-
-export function contractCountIsSafe(contracts: number, page: ChainPage | null): boolean {
+export function contractCountIsSafe(contracts: number, page: ChainPage | null, side: Side): boolean {
   if (shareCount(contracts) == null) return false
   if (page?.current_cents != null && stockCapitalCents(contracts, page.current_cents) == null) return false
+  const fields = STRATEGIES[side].scaledFields
   for (const group of page?.expirations ?? []) {
     for (const row of group.contracts) {
       const record = row as unknown as Record<string, number | null>
-      const fields = "stock_cost_cents" in record ? CALL_SCALED_FIELDS : PUT_SCALED_FIELDS
       for (const field of fields) {
         const value = record[field]
         if (value != null && scaleByContracts(value, contracts) == null) return false

@@ -1,4 +1,5 @@
 import { meetsScaledMaximum, meetsScaledMinimum, parseExactToken, type ExactDecimal } from "./decimal"
+import { STRATEGIES } from "./strategy"
 import type { Side } from "./types"
 
 export function parseThreshold(raw: string): ExactDecimal | null {
@@ -40,15 +41,14 @@ export function passesFilters(
   row: Record<string, number | null | undefined>,
   filters: FilterState,
   side: Side,
+  inverted = invertedDteRange(filters),
 ): boolean {
-  if (invertedDteRange(filters)) return false
-  const primaryKey = side === "put" ? "premium_cents" : "called_pnl_cents"
-  const aprKey = side === "put" ? "apr_net_pct_tenths" : "simple_apr_pct_tenths"
-  const dropKey = side === "put" ? "cushion_to_breakeven_pct_tenths" : "drop_to_breakeven_pct_tenths"
+  if (inverted) return false
+  const metrics = STRATEGIES[side].filterMetrics
   return (
-    meetsMinimum(row[primaryKey], filters.primary, 2)
-    && meetsMinimum(row[aprKey], filters.apr, 1)
-    && meetsMinimum(row[dropKey], filters.drop, 1)
+    meetsMinimum(row[metrics.primary.key], filters.primary, metrics.primary.scale)
+    && meetsMinimum(row[metrics.apr.key], filters.apr, metrics.apr.scale)
+    && meetsMinimum(row[metrics.drop.key], filters.drop, metrics.drop.scale)
     && meetsMinimum(row.dte, filters.minDte, 0)
     && meetsMaximum(row.dte, filters.maxDte, 0)
   )

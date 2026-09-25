@@ -1,5 +1,6 @@
 import type { ColumnDef, ColumnId, SizedContract } from "./columns"
 import { scaleByContracts } from "./contracts"
+import { STRATEGIES } from "./strategy"
 import { invertedDteRange, passesFilters, type FilterState } from "./filters"
 import { metricRanges, type MetricRanges } from "./heatmap"
 import type { ChainPage, Side } from "./types"
@@ -25,7 +26,6 @@ export type VisibleGroup = {
 export type ChainView = {
   providerCount: number
   visibleCount: number
-  sizedContracts: number
   visibleGroups: VisibleGroup[]
   mountedGroups: VisibleGroup[]
   mountedCount: number
@@ -36,32 +36,11 @@ export type ChainView = {
 }
 
 function scaleRow(row: SizedContract, contracts: number, side: Side): SizedContract {
-  if (side === "put") {
-    const put = row as SizedContract & {
-      premium_cents: number | null
-      collateral_cents: number | null
-      net_collateral_cents: number | null
-    }
-    return {
-      ...put,
-      premium_cents: scaleByContracts(put.premium_cents, contracts),
-      collateral_cents: scaleByContracts(put.collateral_cents, contracts),
-      net_collateral_cents: scaleByContracts(put.net_collateral_cents, contracts),
-    }
+  const scaled: Record<string, unknown> = { ...row }
+  for (const field of STRATEGIES[side].scaledFields) {
+    scaled[field] = scaleByContracts(scaled[field] as number | null | undefined, contracts)
   }
-  const call = row as SizedContract & {
-    stock_cost_cents: number | null
-    premium_cents: number | null
-    outlay_cents: number | null
-    called_pnl_cents: number | null
-  }
-  return {
-    ...call,
-    stock_cost_cents: scaleByContracts(call.stock_cost_cents, contracts),
-    premium_cents: scaleByContracts(call.premium_cents, contracts),
-    outlay_cents: scaleByContracts(call.outlay_cents, contracts),
-    called_pnl_cents: scaleByContracts(call.called_pnl_cents, contracts),
-  }
+  return scaled as SizedContract
 }
 
 export function nearestMatchingExpiration(
@@ -70,6 +49,7 @@ export function nearestMatchingExpiration(
   filters: FilterState,
   side: Side,
 ): string | null {
+  const inverted = invertedDteRange(filters)
   let nearest: ChainPage["expirations"][number] | null = null
   for (const group of page?.expirations ?? []) {
     const matches = group.contracts.some((row) => (
@@ -77,6 +57,7 @@ export function nearestMatchingExpiration(
         scaleRow(row as SizedContract, contracts, side) as unknown as Record<string, number | null>,
         filters,
         side,
+        inverted,
       )
     ))
     if (matches && (nearest == null || group.dte < nearest.dte)) nearest = group
@@ -109,15 +90,14 @@ export function deriveChainView(
   expandedExpirations?: ReadonlySet<string>,
 ): ChainView {
   const invertedDte = invertedDteRange(filters)
-  const sizedContracts = contracts
   const providerCount = page?.expirations.reduce((total, group) => total + group.contracts.length, 0) ?? 0
   const visibleGroups: VisibleGroup[] = []
   if (page) {
     for (const group of page.expirations) {
       const visible: SizedContract[] = []
       for (const row of group.contracts) {
-        const sized = scaleRow(row as SizedContract, sizedContracts, side)
-        if (passesFilters(sized as unknown as Record<string, number | null>, filters, side)) {
+        const sized = scaleRow(row as SizedContract, contracts, side)
+        if (passesFilters(sized as unknown as Record<string, number | null>, filters, side, invertedDte)) {
           visible.push(sized)
         }
       }
@@ -146,7 +126,6 @@ export function deriveChainView(
   return {
     providerCount,
     visibleCount,
-    sizedContracts,
     visibleGroups,
     mountedGroups,
     mountedCount,

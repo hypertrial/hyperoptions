@@ -1,4 +1,3 @@
-import { COPY_HEADERS } from "./columns"
 import { integer, moneyCents } from "./format"
 
 export type RowCopyContext = {
@@ -20,8 +19,8 @@ export function copyRowStateKey(ticker: string, expiration: string, strikeCents:
 
 export function formatRowClipboard(
   context: RowCopyContext,
-  headers: readonly string[] = COPY_HEADERS,
-  values: readonly string[] = [],
+  headers: readonly string[],
+  values: readonly string[],
 ): string {
   const parts = [
     context.ticker,

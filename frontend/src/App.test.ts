@@ -10,9 +10,9 @@ import { copyRowAccessibleName, copyRowStateKey, formatRowClipboard } from "./co
 import { meetsMaximum, parseThreshold, passesFilters } from "./filters"
 import { integer, moneyCents, percentTenths, signedE4, unsignedPercentTenths } from "./format"
 import { heatmapHue, heatmapStop, metricRange } from "./heatmap"
-import { CALL_COLUMNS, CALL_DEFAULT_COLUMN_IDS, COLUMN_HEADERS, COPY_HEADERS, METRIC_KEYS, PUT_DEFAULT_COLUMN_IDS, defaultColumnIds, formatContractValues, mobilePriorityColumns, visibleColumns, type ColumnDef } from "./columns"
+import { CALL_COLUMNS, CALL_DEFAULT_COLUMN_IDS, PUT_DEFAULT_COLUMN_IDS, defaultColumnIds, formatContractValues, mobilePriorityColumns, visibleColumns, type ColumnDef } from "./columns"
 import type { CoveredCallContract } from "./types"
-import { largeChainPage, missingContract, sampleContract, samplePage } from "./testFixtures"
+import { COLUMN_HEADERS, COPY_HEADERS, METRIC_KEYS, largeChainPage, missingContract, sampleContract, samplePage } from "./testFixtures"
 import { deriveChainView, INITIAL_REVEAL } from "./viewModel"
 
 describe("ITM chain page", () => {
@@ -139,12 +139,12 @@ describe("contract sizing", () => {
     expect(contractSizeLabel(1, null)).toBe("1 contract · 100 sh")
     expect(contractSizeLabel(1, 4990)).toBe("1 contract · 100 sh · $4,990.00 stock")
     expect(contractSizeLabel(2, 4990)).toBe("2 contracts · 200 sh · $9,980.00 stock")
-    expect(contractCountIsSafe(2, samplePage())).toBe(true)
-    expect(contractCountIsSafe(Number.MAX_SAFE_INTEGER, samplePage())).toBe(false)
+    expect(contractCountIsSafe(2, samplePage(), "call")).toBe(true)
+    expect(contractCountIsSafe(Number.MAX_SAFE_INTEGER, samplePage(), "call")).toBe(false)
 
     const lastExactCount = Math.floor(Number.MAX_SAFE_INTEGER / 499_000)
-    expect(contractCountIsSafe(lastExactCount, samplePage())).toBe(true)
-    expect(contractCountIsSafe(lastExactCount + 1, samplePage())).toBe(false)
+    expect(contractCountIsSafe(lastExactCount, samplePage(), "call")).toBe(true)
+    expect(contractCountIsSafe(lastExactCount + 1, samplePage(), "call")).toBe(false)
   })
 })
 
@@ -382,7 +382,6 @@ describe("row filters", () => {
       COLUMN_HEADERS,
     )
     const priced = view.visibleGroups[0].visible[0] as CoveredCallContract
-    expect(view.sizedContracts).toBe(2)
     expect(priced.stock_cost_cents).toBe(998_000)
     expect(priced.premium_cents).toBe(10_000)
     expect(priced.outlay_cents).toBe(992_000)
@@ -417,7 +416,7 @@ const missingRow = missingContract()
 describe("row clipboard", () => {
   it("formats displayed values, em dashes, and ChatGPT markdown with optional contract context", () => {
     expect(COLUMN_HEADERS.map((column) => column.label)).toEqual([...COPY_HEADERS])
-    expect(formatContractValues(pricedContract)).toHaveLength(COLUMN_HEADERS.length)
+    expect(formatContractValues(pricedContract, COLUMN_HEADERS)).toHaveLength(COLUMN_HEADERS.length)
     expect([...COPY_HEADERS]).toEqual([
       "Strike",
       "Bid",
@@ -428,7 +427,7 @@ describe("row clipboard", () => {
       "APR (net)",
       "Drop (BE)",
     ])
-    expect(formatContractValues(pricedContract)).toEqual([
+    expect(formatContractValues(pricedContract, COLUMN_HEADERS)).toEqual([
       "$50.00",
       "$0.50",
       "2.0%",
@@ -438,7 +437,7 @@ describe("row clipboard", () => {
       "42.1%",
       "1.0%",
     ])
-    expect(formatContractValues(missingRow)).toEqual(["$40.50", "—", "—", "—", "—", "—", "—", "—"])
+    expect(formatContractValues(missingRow, COLUMN_HEADERS)).toEqual(["$40.50", "—", "—", "—", "—", "—", "—", "—"])
     expect(copyRowAccessibleName("IREN", "2026-09-18", "$50.00")).toBe("Copy row IREN 2026-09-18 strike $50.00")
     expect(copyRowStateKey("IREN", "2026-12-18", 5)).toBe("IREN-2026-12-18-5")
     expect(copyRowStateKey("CIFR", "2026-12-18", 5)).toBe("CIFR-2026-12-18-5")
@@ -452,7 +451,7 @@ describe("row clipboard", () => {
       currentCents: 4990,
       contracts: null,
     }
-    expect(formatRowClipboard(baseContext, COPY_HEADERS, formatContractValues(pricedContract))).toBe(
+    expect(formatRowClipboard(baseContext, COPY_HEADERS, formatContractValues(pricedContract, COLUMN_HEADERS))).toBe(
       [
         "IREN · 2026-09-18 · 7 DTE · Stock bid: $49.90",
         "",
@@ -461,8 +460,8 @@ describe("row clipboard", () => {
         "| $50.00 | $0.50 | 2.0% | 55 | $50.00 | $40.00 | 42.1% | 1.0% |",
       ].join("\n"),
     )
-    expect(formatRowClipboard(baseContext, COPY_HEADERS, formatContractValues(missingRow))).toContain("| $40.50 | — | — | — | — | — | — | — |")
-    expect(formatRowClipboard(baseContext, COPY_HEADERS, formatContractValues(pricedContract))).not.toContain("Copy")
+    expect(formatRowClipboard(baseContext, COPY_HEADERS, formatContractValues(missingRow, COLUMN_HEADERS))).toContain("| $40.50 | — | — | — | — | — | — | — |")
+    expect(formatRowClipboard(baseContext, COPY_HEADERS, formatContractValues(pricedContract, COLUMN_HEADERS))).not.toContain("Copy")
 
     const sized = formatRowClipboard(
       { ...baseContext, contracts: 2 },
@@ -473,7 +472,7 @@ describe("row clipboard", () => {
         premium_cents: 10_000,
         outlay_cents: 992_000,
         called_pnl_cents: 8000,
-      }),
+      }, COLUMN_HEADERS),
     )
     expect(sized).toContain("IREN · 2026-09-18 · 7 DTE · Stock bid: $49.90 · 2 contracts · 200 sh")
     expect(sized).not.toContain("budget")

@@ -4,10 +4,10 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { ApiError, fetchChain, fetchTickers } from "./api"
-import { COPY_HEADERS, formatContractValues } from "./columns"
+import { formatContractValues } from "./columns"
 import { formatRowClipboard } from "./copyRow"
 import ItmChain from "./ItmChain"
-import { largeChainPage, samplePage, samplePutPage } from "./testFixtures"
+import { COLUMN_HEADERS, COPY_HEADERS, largeChainPage, samplePage, samplePutPage } from "./testFixtures"
 import type { CoveredCallPage } from "./types"
 
 vi.mock("./api", async (importOriginal) => {
@@ -627,7 +627,7 @@ describe("chain interactions", () => {
         contracts: 1,
       },
       COPY_HEADERS,
-      formatContractValues(sample.expirations[0].contracts[0]),
+      formatContractValues(sample.expirations[0].contracts[0], COLUMN_HEADERS),
     ))
     expect(writeText.mock.calls[0][0]).toContain("1 contract · 100 sh")
     expect(writeText.mock.calls[0][0]).not.toMatch(/\| Copy \|/)

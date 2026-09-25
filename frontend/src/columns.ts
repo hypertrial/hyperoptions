@@ -1,5 +1,6 @@
 import type { CashSecuredPutContract, CoveredCallContract } from "./generated/types.gen"
 import { integer, moneyCents, percentTenths, signedE4, unsignedPercentTenths } from "./format"
+import { STRATEGIES } from "./strategy"
 import type { Side } from "./types"
 
 export type SizedCall = CoveredCallContract
@@ -8,41 +9,22 @@ export type SizedContract = SizedCall | SizedPut
 
 export type ColumnId = string
 
+export type ColumnGroup = "market" | "capital" | "returns" | "risk" | "history" | "greeks"
+
 export type ColumnDef<T extends SizedContract = SizedContract> = {
   id: ColumnId
   label: string
   info: string
   abbrev?: boolean
   heatmap: boolean
+  group: ColumnGroup
   greek?: boolean
   accessor: (row: T) => number | null | undefined
   format: (row: T) => string
 }
 
-export const CALL_DEFAULT_COLUMN_IDS = [
-  "strike_cents",
-  "call_bid_cents",
-  "call_spread_pct_tenths",
-  "call_open_interest",
-  "premium_cents",
-  "called_pnl_cents",
-  "simple_apr_pct_tenths",
-  "drop_to_breakeven_pct_tenths",
-] as const
-
-export const PUT_DEFAULT_COLUMN_IDS = [
-  "strike_cents",
-  "put_bid_cents",
-  "put_spread_pct_tenths",
-  "put_open_interest",
-  "premium_cents",
-  "breakeven_cents",
-  "apr_net_pct_tenths",
-  "cushion_to_breakeven_pct_tenths",
-] as const
-
-const CALL_HEATMAP_IDS = new Set(["called_pnl_cents", "simple_apr_pct_tenths", "drop_to_breakeven_pct_tenths"])
-const PUT_HEATMAP_IDS = new Set(["premium_cents", "apr_net_pct_tenths", "cushion_to_breakeven_pct_tenths"])
+export const CALL_DEFAULT_COLUMN_IDS = STRATEGIES.call.defaultColumnIds
+export const PUT_DEFAULT_COLUMN_IDS = STRATEGIES.put.defaultColumnIds
 
 const GREEK_INFO = {
   iv: "Black-Scholes implied volatility from the sell bid first, then mid. European no-dividend approximation. Shown as a percent.",
@@ -53,13 +35,116 @@ const GREEK_INFO = {
   rho: "Black-Scholes rho per 1 percentage-point change in the risk-free rate.",
 }
 
+
+function field(side: Side, suffix: string): keyof SizedContract {
+  return `${side}_${suffix}` as keyof SizedContract
+}
+
+function liquidityColumns(side: Side): ColumnDef[] {
+  const name = side === "call" ? "Call" : "Put"
+  return [
+    {
+      id: field(side, "ask_cents"),
+      label: "Ask",
+      info: `${name} ask. Shown with the bid so you can see the spread.`,
+      heatmap: false,
+      group: "market",
+      accessor: (row) => row[field(side, "ask_cents")] as number | null,
+      format: (row) => moneyCents(row[field(side, "ask_cents")] as number | null),
+    },
+    {
+      id: field(side, "spread_cents"),
+      label: "Spread",
+      info: `${name} ask minus ${side} bid, in dollars.`,
+      heatmap: false,
+      group: "market",
+      accessor: (row) => row[field(side, "spread_cents")] as number | null,
+      format: (row) => moneyCents(row[field(side, "spread_cents")] as number | null),
+    },
+    {
+      id: field(side, "spread_pct_tenths"),
+      label: "Sprd %",
+      info: "Bid-ask spread as a percent of the midpoint.",
+      abbrev: true,
+      heatmap: false,
+      group: "market",
+      accessor: (row) => row[field(side, "spread_pct_tenths")] as number | null,
+      format: (row) => unsignedPercentTenths(row[field(side, "spread_pct_tenths")] as number | null),
+    },
+    {
+      id: field(side, "volume"),
+      label: "Vol",
+      info: `${name} volume for this strike and expiration.`,
+      abbrev: true,
+      heatmap: false,
+      group: "market",
+      accessor: (row) => row[field(side, "volume")] as number | null,
+      format: (row) => integer(row[field(side, "volume")] as number | null),
+    },
+    {
+      id: field(side, "open_interest"),
+      label: "OI",
+      info: `${name} open interest. Missing OI or OI below 5 is omitted.`,
+      abbrev: true,
+      heatmap: false,
+      group: "market",
+      accessor: (row) => row[field(side, "open_interest")] as number | null,
+      format: (row) => integer(row[field(side, "open_interest")] as number | null),
+    },
+  ]
+}
+
+const LOW_COLUMNS: ColumnDef[] = [
+  {
+    id: "vs_7d_low_pct_tenths",
+    label: "7d",
+    info: "(strike − 7-day completed low) / 7-day low. Positive means the strike is above that low.",
+    abbrev: true,
+    heatmap: false,
+    group: "history",
+    accessor: (row) => row.vs_7d_low_pct_tenths,
+    format: (row) => percentTenths(row.vs_7d_low_pct_tenths),
+  },
+  {
+    id: "vs_30d_low_pct_tenths",
+    label: "30d",
+    info: "(strike − 30-day completed low) / 30-day low. Positive means the strike is above that low.",
+    abbrev: true,
+    heatmap: false,
+    group: "history",
+    accessor: (row) => row.vs_30d_low_pct_tenths,
+    format: (row) => percentTenths(row.vs_30d_low_pct_tenths),
+  },
+  {
+    id: "vs_90d_low_pct_tenths",
+    label: "90d",
+    info: "(strike − 90-day completed low) / 90-day low. Positive means the strike is above that low.",
+    abbrev: true,
+    heatmap: false,
+    group: "history",
+    accessor: (row) => row.vs_90d_low_pct_tenths,
+    format: (row) => percentTenths(row.vs_90d_low_pct_tenths),
+  },
+  {
+    id: "vs_365d_low_pct_tenths",
+    label: "365d",
+    info: "(strike − 365-day completed low) / 365-day low. Positive means the strike is above that low.",
+    abbrev: true,
+    heatmap: false,
+    group: "history",
+    accessor: (row) => row.vs_365d_low_pct_tenths,
+    format: (row) => percentTenths(row.vs_365d_low_pct_tenths),
+  },
+]
+
 export const GREEK_COLUMNS: ColumnDef[] = [
   {
     id: "iv_pct_tenths",
     label: "IV",
     info: GREEK_INFO.iv,
     abbrev: true,
-    heatmap: true,
+    heatmap: false,
+    group: "greeks",
     greek: true,
     accessor: (row) => row.iv_pct_tenths,
     format: (row) => unsignedPercentTenths(row.iv_pct_tenths),
@@ -68,7 +153,8 @@ export const GREEK_COLUMNS: ColumnDef[] = [
     id: "delta_e4",
     label: "Delta",
     info: GREEK_INFO.delta,
-    heatmap: true,
+    heatmap: false,
+    group: "greeks",
     greek: true,
     accessor: (row) => row.delta_e4,
     format: (row) => signedE4(row.delta_e4),
@@ -77,7 +163,8 @@ export const GREEK_COLUMNS: ColumnDef[] = [
     id: "gamma_e4",
     label: "Gamma",
     info: GREEK_INFO.gamma,
-    heatmap: true,
+    heatmap: false,
+    group: "greeks",
     greek: true,
     accessor: (row) => row.gamma_e4,
     format: (row) => signedE4(row.gamma_e4),
@@ -86,7 +173,8 @@ export const GREEK_COLUMNS: ColumnDef[] = [
     id: "theta_e4",
     label: "Theta",
     info: GREEK_INFO.theta,
-    heatmap: true,
+    heatmap: false,
+    group: "greeks",
     greek: true,
     accessor: (row) => row.theta_e4,
     format: (row) => signedE4(row.theta_e4),
@@ -95,7 +183,8 @@ export const GREEK_COLUMNS: ColumnDef[] = [
     id: "vega_e4",
     label: "Vega",
     info: GREEK_INFO.vega,
-    heatmap: true,
+    heatmap: false,
+    group: "greeks",
     greek: true,
     accessor: (row) => row.vega_e4,
     format: (row) => signedE4(row.vega_e4),
@@ -104,7 +193,8 @@ export const GREEK_COLUMNS: ColumnDef[] = [
     id: "rho_e4",
     label: "Rho",
     info: GREEK_INFO.rho,
-    heatmap: true,
+    heatmap: false,
+    group: "greeks",
     greek: true,
     accessor: (row) => row.rho_e4,
     format: (row) => signedE4(row.rho_e4),
@@ -116,7 +206,8 @@ export const CALL_COLUMNS: ColumnDef<SizedCall>[] = [
     id: "strike_cents",
     label: "Strike",
     info: "Call strike. Listed when open interest is at least 5 and the moneyness filter matches.",
-    heatmap: true,
+    heatmap: false,
+    group: "market",
     accessor: (row) => row.strike_cents,
     format: (row) => moneyCents(row.strike_cents),
   },
@@ -124,58 +215,19 @@ export const CALL_COLUMNS: ColumnDef<SizedCall>[] = [
     id: "call_bid_cents",
     label: "Bid",
     info: "Call bid. Premium is 100 × bid. Net outlay is 100 × (current − bid). Effective cost uses current − bid.",
-    heatmap: true,
+    heatmap: false,
+    group: "market",
     accessor: (row) => row.call_bid_cents,
     format: (row) => moneyCents(row.call_bid_cents),
   },
-  {
-    id: "call_ask_cents",
-    label: "Ask",
-    info: "Call ask. Shown with the bid so you can see the spread.",
-    heatmap: true,
-    accessor: (row) => row.call_ask_cents,
-    format: (row) => moneyCents(row.call_ask_cents),
-  },
-  {
-    id: "call_spread_cents",
-    label: "Spread",
-    info: "Call ask minus call bid, in dollars.",
-    heatmap: true,
-    accessor: (row) => row.call_spread_cents,
-    format: (row) => moneyCents(row.call_spread_cents),
-  },
-  {
-    id: "call_spread_pct_tenths",
-    label: "Sprd %",
-    info: "Bid-ask spread as a percent of the midpoint.",
-    abbrev: true,
-    heatmap: true,
-    accessor: (row) => row.call_spread_pct_tenths,
-    format: (row) => unsignedPercentTenths(row.call_spread_pct_tenths),
-  },
-  {
-    id: "call_volume",
-    label: "Vol",
-    info: "Call volume for this strike and expiration.",
-    abbrev: true,
-    heatmap: true,
-    accessor: (row) => row.call_volume,
-    format: (row) => integer(row.call_volume),
-  },
-  {
-    id: "call_open_interest",
-    label: "OI",
-    info: "Call open interest. Missing OI or OI below 5 is omitted.",
-    abbrev: true,
-    heatmap: true,
-    accessor: (row) => row.call_open_interest,
-    format: (row) => integer(row.call_open_interest),
-  },
+  ...liquidityColumns("call"),
+
   {
     id: "stock_cost_cents",
     label: "Stock cost",
     info: "Gross stock cost: 100 × current. Contracts multiplies this.",
-    heatmap: true,
+    heatmap: false,
+    group: "capital",
     accessor: (row) => row.stock_cost_cents,
     format: (row) => moneyCents(row.stock_cost_cents),
   },
@@ -183,7 +235,8 @@ export const CALL_COLUMNS: ColumnDef<SizedCall>[] = [
     id: "premium_cents",
     label: "Premium",
     info: "Call premium received: 100 × call bid. Contracts multiplies this.",
-    heatmap: true,
+    heatmap: false,
+    group: "capital",
     accessor: (row) => row.premium_cents,
     format: (row) => moneyCents(row.premium_cents),
   },
@@ -191,7 +244,8 @@ export const CALL_COLUMNS: ColumnDef<SizedCall>[] = [
     id: "outlay_cents",
     label: "Net outlay",
     info: "Stock cost − premium = 100 × (current − call bid). Contracts multiplies this.",
-    heatmap: true,
+    heatmap: false,
+    group: "capital",
     accessor: (row) => row.outlay_cents,
     format: (row) => moneyCents(row.outlay_cents),
   },
@@ -199,7 +253,8 @@ export const CALL_COLUMNS: ColumnDef<SizedCall>[] = [
     id: "effective_cost_cents",
     label: "Effective cost",
     info: "Effective stock cost: current − call bid. Contracts does not scale this.",
-    heatmap: true,
+    heatmap: false,
+    group: "capital",
     accessor: (row) => row.effective_cost_cents,
     format: (row) => moneyCents(row.effective_cost_cents),
   },
@@ -208,6 +263,7 @@ export const CALL_COLUMNS: ColumnDef<SizedCall>[] = [
     label: "Called P&L",
     info: "Profit if assigned: premium − (current − strike) × 100, i.e. 100 × strike − net outlay. Contracts multiplies this.",
     heatmap: true,
+    group: "returns",
     accessor: (row) => row.called_pnl_cents,
     format: (row) => moneyCents(row.called_pnl_cents),
   },
@@ -216,7 +272,8 @@ export const CALL_COLUMNS: ColumnDef<SizedCall>[] = [
     label: "P&L / sh",
     info: "Assigned profit per share: strike + call bid − current. Contracts does not scale this.",
     abbrev: true,
-    heatmap: true,
+    heatmap: false,
+    group: "returns",
     accessor: (row) => row.called_pnl_per_share_cents,
     format: (row) => moneyCents(row.called_pnl_per_share_cents),
   },
@@ -226,6 +283,7 @@ export const CALL_COLUMNS: ColumnDef<SizedCall>[] = [
     info: "APR from one-contract net outlay: (called P&L / net outlay) × 365 / DTE.",
     abbrev: true,
     heatmap: true,
+    group: "returns",
     accessor: (row) => row.simple_apr_pct_tenths,
     format: (row) => unsignedPercentTenths(row.simple_apr_pct_tenths),
   },
@@ -234,7 +292,8 @@ export const CALL_COLUMNS: ColumnDef<SizedCall>[] = [
     label: "APR (stock)",
     info: "APR from one-contract stock cost: (called P&L / gross stock cost) × 365 / DTE.",
     abbrev: true,
-    heatmap: true,
+    heatmap: false,
+    group: "returns",
     accessor: (row) => row.stock_apr_pct_tenths,
     format: (row) => unsignedPercentTenths(row.stock_apr_pct_tenths),
   },
@@ -243,7 +302,8 @@ export const CALL_COLUMNS: ColumnDef<SizedCall>[] = [
     label: "Drop (strike)",
     info: "Percent the stock would fall from current down to this strike.",
     abbrev: true,
-    heatmap: true,
+    heatmap: false,
+    group: "risk",
     accessor: (row) => row.drop_to_strike_pct_tenths,
     format: (row) => unsignedPercentTenths(row.drop_to_strike_pct_tenths),
   },
@@ -253,45 +313,12 @@ export const CALL_COLUMNS: ColumnDef<SizedCall>[] = [
     info: "Percent the stock would fall from current down to effective cost (current − call bid). Contracts does not scale this.",
     abbrev: true,
     heatmap: true,
+    group: "risk",
     accessor: (row) => row.drop_to_breakeven_pct_tenths,
     format: (row) => unsignedPercentTenths(row.drop_to_breakeven_pct_tenths),
   },
-  {
-    id: "vs_7d_low_pct_tenths",
-    label: "7d",
-    info: "(strike − 7-day completed low) / 7-day low. Positive means the strike is above that low.",
-    abbrev: true,
-    heatmap: true,
-    accessor: (row) => row.vs_7d_low_pct_tenths,
-    format: (row) => percentTenths(row.vs_7d_low_pct_tenths),
-  },
-  {
-    id: "vs_30d_low_pct_tenths",
-    label: "30d",
-    info: "(strike − 30-day completed low) / 30-day low. Positive means the strike is above that low.",
-    abbrev: true,
-    heatmap: true,
-    accessor: (row) => row.vs_30d_low_pct_tenths,
-    format: (row) => percentTenths(row.vs_30d_low_pct_tenths),
-  },
-  {
-    id: "vs_90d_low_pct_tenths",
-    label: "90d",
-    info: "(strike − 90-day completed low) / 90-day low. Positive means the strike is above that low.",
-    abbrev: true,
-    heatmap: true,
-    accessor: (row) => row.vs_90d_low_pct_tenths,
-    format: (row) => percentTenths(row.vs_90d_low_pct_tenths),
-  },
-  {
-    id: "vs_365d_low_pct_tenths",
-    label: "365d",
-    info: "(strike − 365-day completed low) / 365-day low. Positive means the strike is above that low.",
-    abbrev: true,
-    heatmap: true,
-    accessor: (row) => row.vs_365d_low_pct_tenths,
-    format: (row) => percentTenths(row.vs_365d_low_pct_tenths),
-  },
+  ...LOW_COLUMNS,
+
 ]
 
 export const PUT_COLUMNS: ColumnDef<SizedPut>[] = [
@@ -299,7 +326,8 @@ export const PUT_COLUMNS: ColumnDef<SizedPut>[] = [
     id: "strike_cents",
     label: "Strike",
     info: "Put strike. Listed when put open interest is at least 5 and the moneyness filter matches.",
-    heatmap: true,
+    heatmap: false,
+    group: "market",
     accessor: (row) => row.strike_cents,
     format: (row) => moneyCents(row.strike_cents),
   },
@@ -307,58 +335,19 @@ export const PUT_COLUMNS: ColumnDef<SizedPut>[] = [
     id: "put_bid_cents",
     label: "Bid",
     info: "Put bid. Premium is 100 × bid. Collateral is 100 × strike.",
-    heatmap: true,
+    heatmap: false,
+    group: "market",
     accessor: (row) => row.put_bid_cents,
     format: (row) => moneyCents(row.put_bid_cents),
   },
-  {
-    id: "put_ask_cents",
-    label: "Ask",
-    info: "Put ask. Shown with the bid so you can see the spread.",
-    heatmap: true,
-    accessor: (row) => row.put_ask_cents,
-    format: (row) => moneyCents(row.put_ask_cents),
-  },
-  {
-    id: "put_spread_cents",
-    label: "Spread",
-    info: "Put ask minus put bid, in dollars.",
-    heatmap: true,
-    accessor: (row) => row.put_spread_cents,
-    format: (row) => moneyCents(row.put_spread_cents),
-  },
-  {
-    id: "put_spread_pct_tenths",
-    label: "Sprd %",
-    info: "Bid-ask spread as a percent of the midpoint.",
-    abbrev: true,
-    heatmap: true,
-    accessor: (row) => row.put_spread_pct_tenths,
-    format: (row) => unsignedPercentTenths(row.put_spread_pct_tenths),
-  },
-  {
-    id: "put_volume",
-    label: "Vol",
-    info: "Put volume for this strike and expiration.",
-    abbrev: true,
-    heatmap: true,
-    accessor: (row) => row.put_volume,
-    format: (row) => integer(row.put_volume),
-  },
-  {
-    id: "put_open_interest",
-    label: "OI",
-    info: "Put open interest. Missing OI or OI below 5 is omitted.",
-    abbrev: true,
-    heatmap: true,
-    accessor: (row) => row.put_open_interest,
-    format: (row) => integer(row.put_open_interest),
-  },
+  ...liquidityColumns("put"),
+
   {
     id: "premium_cents",
     label: "Premium",
     info: "Put premium received: 100 × put bid. Contracts multiplies this.",
     heatmap: true,
+    group: "capital",
     accessor: (row) => row.premium_cents,
     format: (row) => moneyCents(row.premium_cents),
   },
@@ -366,7 +355,8 @@ export const PUT_COLUMNS: ColumnDef<SizedPut>[] = [
     id: "collateral_cents",
     label: "Collateral",
     info: "Cash required to secure the put: 100 × strike. Contracts multiplies this.",
-    heatmap: true,
+    heatmap: false,
+    group: "capital",
     accessor: (row) => row.collateral_cents,
     format: (row) => moneyCents(row.collateral_cents),
   },
@@ -374,7 +364,8 @@ export const PUT_COLUMNS: ColumnDef<SizedPut>[] = [
     id: "net_collateral_cents",
     label: "Net cash",
     info: "Collateral − premium. Contracts multiplies this.",
-    heatmap: true,
+    heatmap: false,
+    group: "capital",
     accessor: (row) => row.net_collateral_cents,
     format: (row) => moneyCents(row.net_collateral_cents),
   },
@@ -382,7 +373,8 @@ export const PUT_COLUMNS: ColumnDef<SizedPut>[] = [
     id: "breakeven_cents",
     label: "Breakeven",
     info: "Assigned breakeven: strike − put bid. Contracts does not scale this.",
-    heatmap: true,
+    heatmap: false,
+    group: "risk",
     accessor: (row) => row.breakeven_cents,
     format: (row) => moneyCents(row.breakeven_cents),
   },
@@ -391,7 +383,8 @@ export const PUT_COLUMNS: ColumnDef<SizedPut>[] = [
     label: "APR (coll.)",
     info: "APR from one-contract collateral: (premium / collateral) × 365 / DTE.",
     abbrev: true,
-    heatmap: true,
+    heatmap: false,
+    group: "returns",
     accessor: (row) => row.apr_collateral_pct_tenths,
     format: (row) => unsignedPercentTenths(row.apr_collateral_pct_tenths),
   },
@@ -401,6 +394,7 @@ export const PUT_COLUMNS: ColumnDef<SizedPut>[] = [
     info: "APR from one-contract net cash: (premium / net collateral) × 365 / DTE.",
     abbrev: true,
     heatmap: true,
+    group: "returns",
     accessor: (row) => row.apr_net_pct_tenths,
     format: (row) => unsignedPercentTenths(row.apr_net_pct_tenths),
   },
@@ -409,7 +403,8 @@ export const PUT_COLUMNS: ColumnDef<SizedPut>[] = [
     label: "Cushion (K)",
     info: "Percent the stock can fall from current down to this strike.",
     abbrev: true,
-    heatmap: true,
+    heatmap: false,
+    group: "risk",
     accessor: (row) => row.cushion_to_strike_pct_tenths,
     format: (row) => unsignedPercentTenths(row.cushion_to_strike_pct_tenths),
   },
@@ -419,50 +414,13 @@ export const PUT_COLUMNS: ColumnDef<SizedPut>[] = [
     info: "Percent the stock can fall from current down to breakeven (strike − put bid).",
     abbrev: true,
     heatmap: true,
+    group: "risk",
     accessor: (row) => row.cushion_to_breakeven_pct_tenths,
     format: (row) => unsignedPercentTenths(row.cushion_to_breakeven_pct_tenths),
   },
-  {
-    id: "vs_7d_low_pct_tenths",
-    label: "7d",
-    info: "(strike − 7-day completed low) / 7-day low. Positive means the strike is above that low.",
-    abbrev: true,
-    heatmap: true,
-    accessor: (row) => row.vs_7d_low_pct_tenths,
-    format: (row) => percentTenths(row.vs_7d_low_pct_tenths),
-  },
-  {
-    id: "vs_30d_low_pct_tenths",
-    label: "30d",
-    info: "(strike − 30-day completed low) / 30-day low. Positive means the strike is above that low.",
-    abbrev: true,
-    heatmap: true,
-    accessor: (row) => row.vs_30d_low_pct_tenths,
-    format: (row) => percentTenths(row.vs_30d_low_pct_tenths),
-  },
-  {
-    id: "vs_90d_low_pct_tenths",
-    label: "90d",
-    info: "(strike − 90-day completed low) / 90-day low. Positive means the strike is above that low.",
-    abbrev: true,
-    heatmap: true,
-    accessor: (row) => row.vs_90d_low_pct_tenths,
-    format: (row) => percentTenths(row.vs_90d_low_pct_tenths),
-  },
-  {
-    id: "vs_365d_low_pct_tenths",
-    label: "365d",
-    info: "(strike − 365-day completed low) / 365-day low. Positive means the strike is above that low.",
-    abbrev: true,
-    heatmap: true,
-    accessor: (row) => row.vs_365d_low_pct_tenths,
-    format: (row) => percentTenths(row.vs_365d_low_pct_tenths),
-  },
-]
+  ...LOW_COLUMNS,
 
-for (const column of CALL_COLUMNS) column.heatmap = CALL_HEATMAP_IDS.has(column.id)
-for (const column of PUT_COLUMNS) column.heatmap = PUT_HEATMAP_IDS.has(column.id)
-for (const column of GREEK_COLUMNS) column.heatmap = false
+]
 
 export function strategyColumns(side: Side): ColumnDef[] {
   const base = side === "put" ? PUT_COLUMNS : CALL_COLUMNS
@@ -470,7 +428,7 @@ export function strategyColumns(side: Side): ColumnDef[] {
 }
 
 export function defaultColumnIds(side: Side): string[] {
-  return [...(side === "put" ? PUT_DEFAULT_COLUMN_IDS : CALL_DEFAULT_COLUMN_IDS)]
+  return [...STRATEGIES[side].defaultColumnIds]
 }
 
 export function normalizeColumnIds(side: Side, selected: string[] | null): string[] | null {
@@ -488,9 +446,7 @@ export function visibleColumns(side: Side, selected: string[] | null): ColumnDef
 }
 
 export function mobilePriorityColumns(columns: ColumnDef[], side: Side): ColumnDef[] {
-  const preferred = side === "put"
-    ? ["strike_cents", "put_bid_cents", "apr_net_pct_tenths", "cushion_to_breakeven_pct_tenths"]
-    : ["strike_cents", "call_bid_cents", "simple_apr_pct_tenths", "drop_to_breakeven_pct_tenths"]
+  const preferred = [...STRATEGIES[side].mobilePriorityIds]
   const selected = new Map(columns.map((column) => [column.id, column]))
   const priority = preferred.map((id) => selected.get(id)).filter((column): column is ColumnDef => column != null)
   for (const column of columns) {
@@ -500,10 +456,6 @@ export function mobilePriorityColumns(columns: ColumnDef[], side: Side): ColumnD
   return priority
 }
 
-export const COLUMN_HEADERS = visibleColumns("call", null)
-export const COPY_HEADERS = COLUMN_HEADERS.map((column) => column.label)
-export const METRIC_KEYS = [...CALL_HEATMAP_IDS]
-
-export function formatContractValues(row: SizedContract, columns: ColumnDef[] = COLUMN_HEADERS): string[] {
+export function formatContractValues(row: SizedContract, columns: ColumnDef[]): string[] {
   return columns.map((column) => column.format(row))
 }
