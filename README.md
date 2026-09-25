@@ -116,4 +116,4 @@ scripts/verify
 
 `scripts/verify-fast` is browser-free: documentation, shell syntax, backend tests, and frontend unit tests.
 
-`scripts/verify` is the completion gate: whitespace checks, backend tests, frontend npm audit, frontend tests, lint, generated-contract cleanliness, production build, and Playwright. CI installs frozen dependencies and the pinned Chromium revision, then runs `scripts/verify` once.
+`scripts/verify` is the completion gate: whitespace checks, backend ruff, backend tests, frontend npm audit, frontend tests, lint, generated-contract cleanliness, production build, and Playwright. CI installs frozen dependencies and the pinned Chromium revision, then runs `scripts/verify` once.

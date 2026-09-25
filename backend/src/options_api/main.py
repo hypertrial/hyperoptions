@@ -43,7 +43,8 @@ def _allowed_host(value: str) -> bool:
         return False
     try:
         authority = urlsplit(f"//{value}")
-        authority.port
+        # Accessing port raises ValueError for an invalid port.
+        _ = authority.port
     except ValueError:
         return False
     return (

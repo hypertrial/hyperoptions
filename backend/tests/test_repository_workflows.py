@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import subprocess
@@ -272,10 +273,8 @@ def test_dev_cleanup_stops_a_launcher_before_its_process_group_exists_even_if_te
             dev.kill()
             dev.wait(timeout=5)
         if launched_pid is not None:
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 os.kill(launched_pid, 9)
-            except ProcessLookupError:
-                pass
 
 
 def test_readme_test_block_runs_from_repository_root(tmp_path: Path) -> None:
@@ -388,6 +387,14 @@ def test_gitignore_excludes_supported_database_names_and_sidecars(
     )
 
     assert status.stdout == "?? .gitignore\n"
+
+
+def test_verify_runs_backend_lint() -> None:
+    verify = (ROOT / "scripts" / "verify").read_text()
+    fast = (ROOT / "scripts" / "verify-fast").read_text()
+
+    assert "uv run ruff check src tests scripts" in verify
+    assert "ruff check" not in fast
 
 
 def test_verify_runs_frontend_npm_audit() -> None:

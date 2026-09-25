@@ -17,7 +17,7 @@ Greeks are a European, no-dividend Black-Scholes approximation. IV uses the sell
 ## Verification
 
 - Fast: `scripts/verify-fast` (backend pytest + frontend `npm test`, no Playwright)
-- Completion: `scripts/verify` (diff/docs/shell, backend tests, frontend npm audit, frontend tests, lint, generated contract, production build, Playwright)
+- Completion: `scripts/verify` (diff/docs/shell, backend ruff, backend tests, frontend npm audit, frontend tests, lint, generated contract, production build, Playwright)
 
 CI installs frozen uv/npm dependencies and the pinned Playwright Chromium revision, then invokes `scripts/verify` once.
 
