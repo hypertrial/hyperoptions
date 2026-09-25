@@ -3,17 +3,21 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { fetchChain, fetchTickers } from "./api"
+import { ApiError, fetchChain, fetchTickers } from "./api"
 import { COPY_HEADERS, formatContractValues } from "./columns"
 import { formatRowClipboard } from "./copyRow"
 import ItmChain from "./ItmChain"
 import { largeChainPage, samplePage, samplePutPage } from "./testFixtures"
 import type { CoveredCallPage } from "./types"
 
-vi.mock("./api", () => ({
-  fetchChain: vi.fn(),
-  fetchTickers: vi.fn(),
-}))
+vi.mock("./api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./api")>()
+  return {
+    ...actual,
+    fetchChain: vi.fn(),
+    fetchTickers: vi.fn(),
+  }
+})
 
 const fetchMock = vi.mocked(fetchChain)
 const tickersMock = vi.mocked(fetchTickers)
@@ -433,7 +437,7 @@ describe("chain interactions", () => {
   })
 
   it("disables ticker submit when the universe is unavailable", async () => {
-    tickersMock.mockRejectedValue(new Error("Ticker universe unavailable"))
+    tickersMock.mockRejectedValue(new ApiError(503, "Ticker universe unavailable"))
     render(<ItmChain />)
     await waitFor(() => expect(screen.getByText("Ticker list unavailable")).toBeTruthy())
     expect(screen.getByRole("combobox")).toHaveProperty("disabled", true)

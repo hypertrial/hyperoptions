@@ -660,6 +660,33 @@ def test_info_cache_keeps_ask_across_utc_minute_when_refetch_would_fail(
     assert calls["info"] == 1
 
 
+def test_malformed_info_payload_still_returns_the_chain(api: TestClient) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/info" in str(request.url):
+            return httpx.Response(200, json={"data": {}, "status": {"rCode": 200}})
+        return _handler()(request)
+
+    _install_service(handler)
+    response = api.get("/api/covered-calls/IREN")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["current_source"] == "chain_last_trade"
+    assert body["stock_bid_cents"] is None
+
+
+def test_info_runtime_error_propagates(
+    api: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install_service(_handler())
+
+    async def boom(*_args, **_kwargs):
+        raise RuntimeError("info exploded")
+
+    monkeypatch.setattr(OptionChainService, "get_info", boom)
+    with pytest.raises(RuntimeError, match="info exploded"):
+        api.get("/api/covered-calls/IREN")
+
+
 def test_info_or_history_failure_still_returns_the_chain(api: TestClient) -> None:
     _install_service(_handler(fail_info=True, fail_history=True))
     response = api.get("/api/covered-calls/IREN")

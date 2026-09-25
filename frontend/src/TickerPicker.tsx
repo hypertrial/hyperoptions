@@ -4,7 +4,7 @@ import {
   Combobox,
   ComboboxInput,
 } from "@/components/ui/combobox"
-import { fetchTickers } from "./api"
+import { ApiError, fetchTickers } from "./api"
 import type { TickerListing } from "./types"
 
 const DEBOUNCE_MS = 150
@@ -46,8 +46,7 @@ export default function TickerPicker({ ticker, disabled, onSelect }: Props) {
         setLoading(false)
       }).catch((error: unknown) => {
         if (id !== requestId.current) return
-        const message = error instanceof Error ? error.message : ""
-        setUnavailable(message === "Ticker universe unavailable")
+        setUnavailable(error instanceof ApiError && error.status === 503)
         setResults([])
         setLoading(false)
       })

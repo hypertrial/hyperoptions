@@ -4,7 +4,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 
@@ -97,14 +97,49 @@ CONTEXT_POLICY = FetchPolicy(
 HTTP_TIMEOUT = CHAIN_POLICY.timeout()
 
 
+NasdaqKind = Literal[
+    "invalid", "not_found", "rate_limited", "unavailable", "timeout", "malformed"
+]
+
+
 class NasdaqError(Exception):
     def __init__(
-        self, status_code: int, detail: str, retry_after: str | None = None
+        self,
+        status_code: int,
+        detail: str,
+        *,
+        kind: NasdaqKind,
+        retry_after: str | None = None,
     ) -> None:
         super().__init__(detail)
         self.status_code = status_code
         self.detail = detail
+        self.kind: NasdaqKind = kind
         self.retry_after = retry_after
+
+    @classmethod
+    def invalid(cls) -> NasdaqError:
+        return cls(400, "Invalid ticker", kind="invalid")
+
+    @classmethod
+    def not_found(cls) -> NasdaqError:
+        return cls(404, "Symbol not exists", kind="not_found")
+
+    @classmethod
+    def rate_limited(cls, retry_after: str | None = None) -> NasdaqError:
+        return cls(503, "Nasdaq unavailable", kind="rate_limited", retry_after=retry_after)
+
+    @classmethod
+    def unavailable(cls) -> NasdaqError:
+        return cls(502, "Nasdaq unavailable", kind="unavailable")
+
+    @classmethod
+    def timeout(cls) -> NasdaqError:
+        return cls(504, "Nasdaq timeout", kind="timeout")
+
+    @classmethod
+    def malformed(cls) -> NasdaqError:
+        return cls(502, "Nasdaq response is malformed", kind="malformed")
 
 
 def _retry_after(response: httpx.Response) -> str | None:
@@ -119,10 +154,8 @@ def _retry_after(response: httpx.Response) -> str | None:
 
 def _map_http_error(response: httpx.Response) -> NasdaqError:
     if response.status_code == 429:
-        return NasdaqError(
-            503, "Nasdaq unavailable", retry_after=_retry_after(response)
-        )
-    return NasdaqError(502, "Nasdaq unavailable")
+        return NasdaqError.rate_limited(_retry_after(response))
+    return NasdaqError.unavailable()
 
 
 def _retryable_exception(exc: BaseException, policy: FetchPolicy) -> bool:
@@ -136,7 +169,7 @@ def _retryable_status(status_code: int, policy: FetchPolicy) -> bool:
 def _request_timeout(policy: FetchPolicy, started: float) -> httpx.Timeout:
     remaining = policy.deadline_seconds - (time.monotonic() - started)
     if remaining <= 0:
-        raise NasdaqError(504, "Nasdaq timeout")
+        raise NasdaqError.timeout()
     base = policy.timeout()
     return httpx.Timeout(
         connect=min(base.connect or remaining, remaining),
@@ -159,7 +192,7 @@ async def _fetch_payload(
                 url, client, params, policy, operation
             )
     except TimeoutError as exc:
-        raise NasdaqError(504, "Nasdaq timeout") from exc
+        raise NasdaqError.timeout() from exc
 
 
 async def _fetch_payload_with_retries(
@@ -181,7 +214,7 @@ async def _fetch_payload_with_retries(
                 attempt + 1,
                 int(elapsed * 1000),
             )
-            raise NasdaqError(504, "Nasdaq timeout")
+            raise NasdaqError.timeout()
         try:
             response = await client.get(
                 url,
@@ -198,7 +231,7 @@ async def _fetch_payload_with_retries(
                 int((time.monotonic() - started) * 1000),
             )
             if not _retryable_exception(exc, policy) or attempt + 1 >= attempts:
-                raise NasdaqError(504, "Nasdaq timeout") from last_timeout
+                raise NasdaqError.timeout() from last_timeout
             await _backoff(policy, started)
             continue
         except httpx.RequestError as exc:
@@ -210,7 +243,7 @@ async def _fetch_payload_with_retries(
                 int((time.monotonic() - started) * 1000),
             )
             if not _retryable_exception(exc, policy) or attempt + 1 >= attempts:
-                raise NasdaqError(502, "Nasdaq unavailable") from last_timeout
+                raise NasdaqError.unavailable() from last_timeout
             await _backoff(policy, started)
             continue
         if response.status_code == 429:
@@ -238,7 +271,7 @@ async def _fetch_payload_with_retries(
                 continue
             raise _map_http_error(response)
         if not response.content:
-            raise NasdaqError(502, "Nasdaq unavailable")
+            raise NasdaqError.unavailable()
         try:
             payload = response.json()
         except ValueError as exc:
@@ -248,9 +281,9 @@ async def _fetch_payload_with_retries(
                 attempt + 1,
                 int((time.monotonic() - started) * 1000),
             )
-            raise NasdaqError(502, "Nasdaq unavailable") from exc
+            raise NasdaqError.unavailable() from exc
         if not isinstance(payload, dict):
-            raise NasdaqError(502, "Nasdaq response is malformed")
+            raise NasdaqError.malformed()
         logger.info(
             "nasdaq_fetch operation=%s attempt=%s elapsed_ms=%s result=ok",
             operation,
@@ -260,15 +293,15 @@ async def _fetch_payload_with_retries(
         return payload
     if last_timeout is not None and _retryable_exception(last_timeout, policy):
         if isinstance(last_timeout, httpx.TimeoutException):
-            raise NasdaqError(504, "Nasdaq timeout") from last_timeout
-        raise NasdaqError(502, "Nasdaq unavailable") from last_timeout
-    raise NasdaqError(504, "Nasdaq timeout")
+            raise NasdaqError.timeout() from last_timeout
+        raise NasdaqError.unavailable() from last_timeout
+    raise NasdaqError.timeout()
 
 
 async def _backoff(policy: FetchPolicy, started: float) -> None:
     remaining = policy.deadline_seconds - (time.monotonic() - started)
     if remaining <= 0:
-        raise NasdaqError(504, "Nasdaq timeout")
+        raise NasdaqError.timeout()
     delay = min(policy.backoff_seconds, remaining)
     if delay > 0:
         await asyncio.sleep(delay)
@@ -277,7 +310,7 @@ async def _backoff(policy: FetchPolicy, started: float) -> None:
 def require_ticker(ticker: Ticker) -> str:
     normalized = normalize_ticker(ticker)
     if normalized is None:
-        raise NasdaqError(400, "Invalid ticker")
+        raise NasdaqError.invalid()
     return normalized
 
 
@@ -287,7 +320,7 @@ def _symbol_not_exists_payload(response: httpx.Response) -> NasdaqError | None:
     except ValueError:
         return None
     if symbol_not_exists(payload):
-        return NasdaqError(404, "Symbol not exists")
+        return NasdaqError.not_found()
     return None
 
 

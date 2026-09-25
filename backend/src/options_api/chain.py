@@ -433,8 +433,14 @@ def assemble_cash_secured_puts(
     )
 
 
-def _transport_side_failure(exc: BaseException) -> bool:
-    return isinstance(exc, NasdaqError) and exc.detail != "Nasdaq response is malformed"
+def _optional[T](result: T | BaseException, fallback: T, *, degrade_malformed: bool) -> T:
+    if isinstance(result, NasdaqError) and (
+        degrade_malformed or result.kind != "malformed"
+    ):
+        return fallback
+    if isinstance(result, BaseException):
+        raise result
+    return result
 
 
 async def _load_context(
@@ -448,22 +454,12 @@ async def _load_context(
         service.get_history(ticker, history_from),
         return_exceptions=True,
     )
-    if isinstance(chain_result, Exception):
+    if isinstance(chain_result, BaseException):
         raise chain_result
-    info = (
-        _empty_info(ticker, now)
-        if isinstance(info_result, NasdaqError)
-        else info_result
+    info = _optional(info_result, _empty_info(ticker, now), degrade_malformed=True)
+    history = _optional(
+        history_result, _empty_history(ticker, now), degrade_malformed=False
     )
-    if isinstance(info, Exception):
-        raise info
-    history = (
-        _empty_history(ticker, now)
-        if _transport_side_failure(history_result)
-        else history_result
-    )
-    if isinstance(history, Exception):
-        raise history
     return chain_result, info, history
 
 

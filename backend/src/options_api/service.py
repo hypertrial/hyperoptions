@@ -45,17 +45,17 @@ class OptionChainService:
         async def fetch() -> OptionChainResponse:
             payload = await fetch_option_chain_payload(ticker, self._client)
             if symbol_not_exists(payload):
-                raise NasdaqError(404, "Symbol not exists")
+                raise NasdaqError.not_found()
             if not nasdaq_status_ok(payload):
-                raise NasdaqError(502, "Nasdaq response is malformed")
+                raise NasdaqError.malformed()
             try:
                 rows, truncated, last_trade, options_available = parse_option_chain(
                     ticker, payload
                 )
             except ValueError as exc:
-                raise NasdaqError(502, "Nasdaq response is malformed") from exc
+                raise NasdaqError.malformed() from exc
             if not rows and options_available:
-                raise NasdaqError(502, "Nasdaq response is malformed")
+                raise NasdaqError.malformed()
             return OptionChainResponse(
                 ticker=ticker,
                 fetched_at=datetime.now(UTC),
@@ -79,11 +79,11 @@ class OptionChainService:
         async def fetch() -> StockInfoResponse:
             payload = await fetch_stock_info_payload(ticker, self._client)
             if not nasdaq_status_ok(payload):
-                raise NasdaqError(502, "Nasdaq response is malformed")
+                raise NasdaqError.malformed()
             try:
                 return parse_stock_info(ticker, payload, scan_time or datetime.now(UTC))
             except ValueError as exc:
-                raise NasdaqError(502, "Nasdaq response is malformed") from exc
+                raise NasdaqError.malformed() from exc
 
         response, from_cache = await self._info_cache.get_or_fetch(ticker, fetch)
         return (
@@ -96,11 +96,11 @@ class OptionChainService:
         async def fetch() -> HistoricalResponse:
             payload = await fetch_historical_payload(ticker, self._client, from_date)
             if not nasdaq_status_ok(payload):
-                raise NasdaqError(502, "Nasdaq response is malformed")
+                raise NasdaqError.malformed()
             try:
                 bars = parse_historical_bars(payload)
             except ValueError as exc:
-                raise NasdaqError(502, "Nasdaq response is malformed") from exc
+                raise NasdaqError.malformed() from exc
             return HistoricalResponse(
                 ticker=ticker,
                 fetched_at=datetime.now(UTC),

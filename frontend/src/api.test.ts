@@ -3,7 +3,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { fetchChain, fetchCoveredCalls, fetchTickers } from "./api"
+import { ApiError, fetchChain, fetchCoveredCalls, fetchTickers } from "./api"
 import { samplePage } from "./testFixtures"
 
 describe("chain API", () => {
@@ -63,7 +63,12 @@ describe("chain API", () => {
       .mockResolvedValueOnce(new Response("not-json", { status: 504 })))
 
     await expect(fetchCoveredCalls("IREN", "itm")).rejects.toThrow("Nasdaq unavailable")
-    await expect(fetchTickers("IREN")).rejects.toThrow("Ticker universe unavailable")
+    const universe = fetchTickers("IREN")
+    await expect(universe).rejects.toBeInstanceOf(ApiError)
+    await expect(universe).rejects.toMatchObject({
+      status: 503,
+      message: "Ticker universe unavailable",
+    })
     await expect(fetchCoveredCalls("IREN", "itm")).rejects.toThrow("Nasdaq timeout")
   })
 

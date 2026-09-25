@@ -1,6 +1,16 @@
 import { zCashSecuredPutPage, zCoveredCallPage, zTickerSearchResponse } from "./generated/zod.gen"
 import type { CashSecuredPutPage, CoveredCallPage, Moneyness, Side, Ticker, TickerSearchResponse } from "./types"
 
+export class ApiError extends Error {
+  status: number
+
+  constructor(status: number, message: string) {
+    super(message)
+    this.name = "ApiError"
+    this.status = status
+  }
+}
+
 function errorMessage(status: number, body: unknown): string {
   if (body && typeof body === "object" && "detail" in body) {
     const detail = (body as { detail: unknown }).detail
@@ -25,7 +35,7 @@ async function fetchJson(url: string, init?: RequestInit): Promise<unknown> {
   } catch {
     // Status still provides a useful fallback error.
   }
-  if (!response.ok) throw new Error(errorMessage(response.status, body))
+  if (!response.ok) throw new ApiError(response.status, errorMessage(response.status, body))
   if (!body || typeof body !== "object") {
     throw new Error("Local API returned an invalid response")
   }
