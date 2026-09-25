@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -11,10 +11,12 @@ import { copyRowStateKey, formatRowClipboard } from "./copyRow"
 import { useDensity } from "./density"
 import ExpiryTables from "./ExpiryTable"
 import FilterControls from "./FilterControls"
-import { parseThreshold } from "./filters"
 import { useChainPage } from "./useChainPage"
+import { useChainFilters } from "./useChainFilters"
+import { useExpansion } from "./useExpansion"
+import { useRevealLimit } from "./useRevealLimit"
 import { defaultMoneyness, useUrlState } from "./useUrlState"
-import { DEFAULT_SORT, deriveChainView, INITIAL_REVEAL, nearestMatchingExpiration, type SortState } from "./viewModel"
+import { DEFAULT_SORT, deriveChainView, INITIAL_REVEAL, type SortState } from "./viewModel"
 import type { Moneyness, Side } from "./types"
 
 const OPEN_SESSIONS = new Set(["market", "regular market", "open"])
@@ -47,35 +49,16 @@ export default function ItmChain() {
   const identityKey = `${ticker}|${side}|${moneyness}`
   const { page, error, loading, beginTickerChange, beginRefresh } = useChainPage(ticker, side, moneyness)
   const [contractsText, setContractsText] = useState("")
-  const [minPrimaryText, setMinPrimaryText] = useState("")
-  const [minAprText, setMinAprText] = useState("")
-  const [minDropText, setMinDropText] = useState("")
-  const [minDteText, setMinDteText] = useState("")
-  const [maxDteText, setMaxDteText] = useState("")
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [copiedNotice, setCopiedNotice] = useState("")
-  const [revealState, setRevealState] = useState({ key: "", limit: INITIAL_REVEAL })
   const [sort, setSort] = useState<SortState>(DEFAULT_SORT)
-  const [expansionState, setExpansionState] = useState<{
-    identity: string
-    values: Set<string> | null
-    seed: { primary: string; apr: string; drop: string; minDte: string; maxDte: string; contracts: number }
-  }>(() => ({
-    identity: identityKey,
-    values: null,
-    seed: { primary: "", apr: "", drop: "", minDte: "", maxDte: "", contracts: 1 },
-  }))
+  const filtersState = useChainFilters()
   const { density, toggle: toggleDensity } = useDensity()
   const copiedClear = useRef<number | null>(null)
   const columns = visibleColumns(side, cols)
-  const filterKey = `${identityKey}|${minPrimaryText}|${minAprText}|${minDropText}|${minDteText}|${maxDteText}`
-  const revealLimit = revealState.key === filterKey ? revealState.limit : INITIAL_REVEAL
+  const filterKey = `${identityKey}|${filtersState.key}`
+  const reveal = useRevealLimit(filterKey)
   const effectiveSort = columns.some((column) => column.id === sort.id) ? sort : fallbackSort(columns)
-
-  const updateRevealLimit = (next: number | ((current: number) => number)) => {
-    const limit = typeof next === "function" ? next(revealLimit) : next
-    setRevealState({ key: filterKey, limit })
-  }
 
   useEffect(() => () => {
     if (copiedClear.current != null) window.clearTimeout(copiedClear.current)
@@ -103,79 +86,19 @@ export default function ItmChain() {
       ? "This contract count is too large to calculate exactly. Using 1 contract."
       : "Enter a whole number of 1 or more. Using 1 contract."
     : contractSizeLabel(contracts, page?.current_cents)
-  const minPrimary = parseThreshold(minPrimaryText)
-  const minApr = parseThreshold(minAprText)
-  const minDrop = parseThreshold(minDropText)
-  const minDte = parseThreshold(minDteText)
-  const maxDte = parseThreshold(maxDteText)
-  const filters = { primary: minPrimary, apr: minApr, drop: minDrop, minDte, maxDte }
-  const seededExpiration = useMemo(() => {
-    const seed = expansionState.identity === identityKey
-      ? expansionState.seed
-      : {
-          primary: minPrimaryText,
-          apr: minAprText,
-          drop: minDropText,
-          minDte: minDteText,
-          maxDte: maxDteText,
-          contracts,
-        }
-    return nearestMatchingExpiration(page, seed.contracts, {
-      primary: parseThreshold(seed.primary),
-      apr: parseThreshold(seed.apr),
-      drop: parseThreshold(seed.drop),
-      minDte: parseThreshold(seed.minDte),
-      maxDte: parseThreshold(seed.maxDte),
-    }, side)
-  }, [
-    page,
-    side,
-    identityKey,
-    expansionState,
-    minPrimaryText,
-    minAprText,
-    minDropText,
-    minDteText,
-    maxDteText,
-    contracts,
-  ])
-  const storedExpandedExpirations = expansionState.identity === identityKey ? expansionState.values : null
-  const expandedExpirations = useMemo(
-    () => storedExpandedExpirations ?? new Set(seededExpiration ? [seededExpiration] : []),
-    [seededExpiration, storedExpandedExpirations],
-  )
-  const view = deriveChainView(page, contracts, filters, revealLimit, side, columns, effectiveSort, expandedExpirations)
+  const filters = filtersState.parsed
+  const expansion = useExpansion(identityKey, page, side, filtersState.texts, contracts)
+  const expandedExpirations = expansion.expanded
+  const view = deriveChainView(page, contracts, filters, reveal.limit, side, columns, effectiveSort, expandedExpirations)
   const strategyLabel = side === "put" ? "Cash-secured puts" : "Covered calls"
   const expandedVisibleCount = view.visibleGroups.filter((item) => expandedExpirations.has(item.group.expiration)).length
-
-  const currentExpansionSeed = () => ({
-    primary: minPrimaryText,
-    apr: minAprText,
-    drop: minDropText,
-    minDte: minDteText,
-    maxDte: maxDteText,
-    contracts,
-  })
-
-  const resetExpansion = (nextIdentity: string) => {
-    setExpansionState({ identity: nextIdentity, values: null, seed: currentExpansionSeed() })
-  }
-
-  const updateExpandedExpirations = (next: Set<string> | ((current: Set<string>) => Set<string>)) => {
-    const values = typeof next === "function" ? next(expandedExpirations) : next
-    setExpansionState({
-      identity: identityKey,
-      values,
-      seed: expansionState.identity === identityKey ? expansionState.seed : currentExpansionSeed(),
-    })
-  }
 
   const selectTicker = (item: string) => {
     if (item === ticker) return
     if (copiedClear.current != null) window.clearTimeout(copiedClear.current)
     setCopiedKey(null)
     setCopiedNotice("")
-    resetExpansion(`${item}|${side}|${moneyness}`)
+    expansion.reset(`${item}|${side}|${moneyness}`)
     beginTickerChange()
     setState({ ...state, ticker: item })
   }
@@ -183,7 +106,7 @@ export default function ItmChain() {
   const selectSide = (next: Side) => {
     if (next === side) return
     const nextMoneyness = state.moneyness === "all" ? "all" : defaultMoneyness(next)
-    resetExpansion(`${ticker}|${next}|${nextMoneyness}`)
+    expansion.reset(`${ticker}|${next}|${nextMoneyness}`)
     beginTickerChange()
     setSort(DEFAULT_SORT)
     setState({ ...state, side: next, moneyness: nextMoneyness, cols: null })
@@ -191,7 +114,7 @@ export default function ItmChain() {
 
   const selectMoneyness = (next: Moneyness) => {
     if (next === moneyness) return
-    resetExpansion(`${ticker}|${side}|${next}`)
+    expansion.reset(`${ticker}|${side}|${next}`)
     beginTickerChange()
     setState({ ...state, moneyness: next })
   }
@@ -243,14 +166,6 @@ export default function ItmChain() {
     markCopied(copyRowStateKey(ticker, row.expiration, row.strike_cents))
   }
 
-  const clearFilters = () => {
-    setMinPrimaryText("")
-    setMinAprText("")
-    setMinDropText("")
-    setMinDteText("")
-    setMaxDteText("")
-  }
-
   return (
     <div className="chain-shell">
       <CommandBar
@@ -300,27 +215,15 @@ export default function ItmChain() {
               visibleCount={view.visibleCount}
               expirationCount={view.visibleGroups.length}
               expandedCount={expandedVisibleCount}
-              minPrimaryText={minPrimaryText}
-              minAprText={minAprText}
-              minDropText={minDropText}
-              minDteText={minDteText}
-              maxDteText={maxDteText}
-              minPrimary={minPrimary}
-              minApr={minApr}
-              minDrop={minDrop}
-              minDte={minDte}
-              maxDte={maxDte}
+              texts={filtersState.texts}
+              parsed={filters}
               invertedDte={view.invertedDte}
               onChangeColumns={selectColumns}
               onToggleDensity={toggleDensity}
-              onExpandAll={() => updateExpandedExpirations(new Set(view.visibleGroups.map((item) => item.group.expiration)))}
-              onCollapseAll={() => updateExpandedExpirations(new Set())}
-              onMinPrimaryChange={setMinPrimaryText}
-              onMinAprChange={setMinAprText}
-              onMinDropChange={setMinDropText}
-              onMinDteChange={setMinDteText}
-              onMaxDteChange={setMaxDteText}
-              onClearFilters={clearFilters}
+              onExpandAll={() => expansion.update(new Set(view.visibleGroups.map((item) => item.group.expiration)))}
+              onCollapseAll={() => expansion.update(new Set())}
+              onTextChange={filtersState.setText}
+              onClearFilters={filtersState.clear}
             />
           ) : null}
 
@@ -380,10 +283,10 @@ export default function ItmChain() {
           {view.remainingCount > 0 ? (
             <div className="reveal-cluster">
               <p className="control-note">Displaying {view.mountedCount.toLocaleString("en-US")} of {view.expandedVisibleCount.toLocaleString("en-US")} rows in expanded expirations</p>
-              <Button type="button" variant="outline" onClick={() => updateRevealLimit((current) => current + INITIAL_REVEAL)}>
+              <Button type="button" variant="outline" onClick={() => reveal.update((current) => current + INITIAL_REVEAL)}>
                 Show {INITIAL_REVEAL} more
               </Button>
-              <Button type="button" variant="outline" onClick={() => updateRevealLimit(Number.POSITIVE_INFINITY)}>
+              <Button type="button" variant="outline" onClick={() => reveal.update(Number.POSITIVE_INFINITY)}>
                 Show all
               </Button>
             </div>
@@ -399,7 +302,7 @@ export default function ItmChain() {
             copiedKey={copiedKey}
             sort={effectiveSort}
             density={density}
-            onToggleExpiration={(expiration) => updateExpandedExpirations((current) => {
+            onToggleExpiration={(expiration) => expansion.update((current) => {
               const next = new Set(current)
               if (next.has(expiration)) next.delete(expiration)
               else next.add(expiration)

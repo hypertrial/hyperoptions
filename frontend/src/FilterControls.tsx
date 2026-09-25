@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import ColumnPicker from "./ColumnPicker"
 import type { Density } from "./density"
 import type { ExactDecimal } from "./decimal"
+import { filterFieldSpecs, type FilterId, type FilterState, type FilterTexts } from "./filters"
 import type { Side } from "./types"
 
 type Props = {
@@ -17,26 +18,14 @@ type Props = {
   visibleCount: number
   expirationCount: number
   expandedCount: number
-  minPrimaryText: string
-  minAprText: string
-  minDropText: string
-  minDteText: string
-  maxDteText: string
-  minPrimary: ExactDecimal | null
-  minApr: ExactDecimal | null
-  minDrop: ExactDecimal | null
-  minDte: ExactDecimal | null
-  maxDte: ExactDecimal | null
+  texts: FilterTexts
+  parsed: FilterState
   invertedDte: boolean
   onChangeColumns: (ids: string[] | null) => void
   onToggleDensity: () => void
   onExpandAll: () => void
   onCollapseAll: () => void
-  onMinPrimaryChange: (value: string) => void
-  onMinAprChange: (value: string) => void
-  onMinDropChange: (value: string) => void
-  onMinDteChange: (value: string) => void
-  onMaxDteChange: (value: string) => void
+  onTextChange: (id: FilterId, value: string) => void
   onClearFilters: () => void
 }
 
@@ -86,38 +75,32 @@ export default function FilterControls({
   visibleCount,
   expirationCount,
   expandedCount,
-  minPrimaryText,
-  minAprText,
-  minDropText,
-  minDteText,
-  maxDteText,
-  minPrimary,
-  minApr,
-  minDrop,
-  minDte,
-  maxDte,
+  texts,
+  parsed,
   invertedDte,
   onChangeColumns,
   onToggleDensity,
   onExpandAll,
   onCollapseAll,
-  onMinPrimaryChange,
-  onMinAprChange,
-  onMinDropChange,
-  onMinDteChange,
-  onMaxDteChange,
+  onTextChange,
   onClearFilters,
 }: Props) {
-  const primaryLabel = side === "put" ? "Min Premium ($)" : "Min Called P&L ($)"
-  const aprLabel = "Min APR net (%)"
-  const dropLabel = side === "put" ? "Min Cushion to breakeven (%)" : "Min Drop to breakeven (%)"
-  const chips = [
-    { key: "primary", label: primaryLabel.replace(/^Min /, ""), value: minPrimaryText, clear: () => onMinPrimaryChange("") },
-    { key: "apr", label: aprLabel.replace(/^Min /, ""), value: minAprText, clear: () => onMinAprChange("") },
-    { key: "drop", label: dropLabel.replace(/^Min /, ""), value: minDropText, clear: () => onMinDropChange("") },
-    { key: "min-dte", label: "DTE ≥", value: minDteText, clear: () => onMinDteChange("") },
-    { key: "max-dte", label: "DTE ≤", value: maxDteText, clear: () => onMaxDteChange("") },
-  ].filter((chip) => chip.value.trim() !== "")
+  const specs = filterFieldSpecs(side)
+  const parsedById: Record<FilterId, ExactDecimal | null> = {
+    primary: parsed.primary,
+    apr: parsed.apr,
+    drop: parsed.drop,
+    minDte: parsed.minDte,
+    maxDte: parsed.maxDte,
+  }
+  const chips = specs
+    .map((spec) => ({
+      key: spec.chipKey,
+      label: spec.chipLabel,
+      value: texts[spec.id],
+      clear: () => onTextChange(spec.id, ""),
+    }))
+    .filter((chip) => chip.value.trim() !== "")
 
   return (
     <Collapsible defaultOpen={false} className="results-controls">
@@ -170,11 +153,17 @@ export default function FilterControls({
 
       <CollapsibleContent keepMounted className="filter-panel">
         <div className="filter-cluster">
-          <FilterField id="min-primary" label={primaryLabel} value={minPrimaryText} parsed={minPrimary} onChange={onMinPrimaryChange} />
-          <FilterField id="min-apr" label={aprLabel} value={minAprText} parsed={minApr} onChange={onMinAprChange} />
-          <FilterField id="min-drop" label={dropLabel} value={minDropText} parsed={minDrop} onChange={onMinDropChange} />
-          <FilterField id="min-dte" label="Min DTE" value={minDteText} parsed={minDte} invalidRange={invertedDte} onChange={onMinDteChange} />
-          <FilterField id="max-dte" label="Max DTE" value={maxDteText} parsed={maxDte} invalidRange={invertedDte} onChange={onMaxDteChange} />
+          {specs.map((spec) => (
+            <FilterField
+              key={spec.inputId}
+              id={spec.inputId}
+              label={spec.label}
+              value={texts[spec.id]}
+              parsed={parsedById[spec.id]}
+              invalidRange={spec.rowKey === "dte" && invertedDte}
+              onChange={(value) => onTextChange(spec.id, value)}
+            />
+          ))}
         </div>
       </CollapsibleContent>
     </Collapsible>
