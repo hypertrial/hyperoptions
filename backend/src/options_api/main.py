@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from collections.abc import Awaitable, Callable
 from typing import Annotated
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException, Path, Query, Request
+import httpx
+from fastapi import APIRouter, FastAPI, HTTPException, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.datastructures import Headers
 from starlette.responses import PlainTextResponse
@@ -72,35 +72,10 @@ class LocalHostMiddleware:
         await self.app(scope, receive, send)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    client = create_http_client()
-    app.state.http_client = client
-    app.state.service = OptionChainService(
-        client=client,
-        cache=TickerCache(ttl_seconds=30.0, max_entries=64),
-        info_cache=TickerCache(ttl_seconds=30.0, max_entries=64),
-        history_cache=TickerCache(ttl_seconds=86_400.0, max_entries=64),
-    )
-    app.state.universe = TickerUniverse(client)
-    try:
-        yield
-    finally:
-        await client.aclose()
+router = APIRouter()
 
 
-app = FastAPI(title="Nasdaq option chain", lifespan=lifespan)
-app.add_middleware(LocalHostMiddleware)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=sorted(ALLOWED_ORIGINS),
-    allow_credentials=False,
-    allow_methods=["GET"],
-    allow_headers=["*"],
-)
-
-
-@app.get("/api/health", response_model=HealthResponse)
+@router.get("/api/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     return HealthResponse(ok=True)
 
@@ -113,14 +88,10 @@ def _http_nasdaq_error(exc: NasdaqError) -> HTTPException:
 
 
 def _page_now(app: FastAPI) -> datetime:
-    configured = getattr(app.state, "now", None)
-    if isinstance(configured, datetime):
-        return (
-            configured
-            if configured.tzinfo is not None
-            else configured.replace(tzinfo=UTC)
-        )
-    return datetime.now(UTC)
+    configured = app.state.clock()
+    if not isinstance(configured, datetime):
+        configured = datetime.now(UTC)
+    return configured if configured.tzinfo is not None else configured.replace(tzinfo=UTC)
 
 
 def _check_origin(request: Request) -> None:
@@ -144,7 +115,7 @@ async def _known_ticker(request: Request, ticker: str) -> str:
     return normalized
 
 
-@app.get("/api/tickers", response_model=TickerSearchResponse)
+@router.get("/api/tickers", response_model=TickerSearchResponse)
 async def search_tickers(
     request: Request,
     q: Annotated[str, Query(max_length=32)] = "",
@@ -192,7 +163,7 @@ async def _load_page(
         ) from exc
 
 
-@app.get("/api/covered-calls/{ticker}", response_model=CoveredCallPage)
+@router.get("/api/covered-calls/{ticker}", response_model=CoveredCallPage)
 async def get_covered_calls(
     request: Request,
     ticker: Annotated[str, Path(min_length=1, max_length=8)],
@@ -201,10 +172,50 @@ async def get_covered_calls(
     return await _load_page(request, ticker, load_covered_calls, moneyness)
 
 
-@app.get("/api/cash-secured-puts/{ticker}", response_model=CashSecuredPutPage)
+@router.get("/api/cash-secured-puts/{ticker}", response_model=CashSecuredPutPage)
 async def get_cash_secured_puts(
     request: Request,
     ticker: Annotated[str, Path(min_length=1, max_length=8)],
     moneyness: Annotated[Moneyness | None, Query()] = None,
 ) -> CashSecuredPutPage:
     return await _load_page(request, ticker, load_cash_secured_puts, moneyness)
+
+
+def create_app(
+    *,
+    client_factory: Callable[[], httpx.AsyncClient] = create_http_client,
+    clock: Callable[[], datetime] | None = None,
+    prefetch_universe: bool = True,
+) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        client = client_factory()
+        app.state.http_client = client
+        app.state.service = OptionChainService(
+            client=client,
+            cache=TickerCache(ttl_seconds=30.0, max_entries=64),
+            info_cache=TickerCache(ttl_seconds=30.0, max_entries=64),
+            history_cache=TickerCache(ttl_seconds=86_400.0, max_entries=64),
+        )
+        app.state.universe = TickerUniverse(client)
+        app.state.clock = clock or (lambda: datetime.now(UTC))
+        app.state.prefetch_universe = prefetch_universe
+        try:
+            yield
+        finally:
+            await client.aclose()
+
+    app = FastAPI(title="Nasdaq option chain", lifespan=lifespan)
+    app.add_middleware(LocalHostMiddleware)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=sorted(ALLOWED_ORIGINS),
+        allow_credentials=False,
+        allow_methods=["GET"],
+        allow_headers=["*"],
+    )
+    app.include_router(router)
+    return app
+
+
+app = create_app()

@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from options_api.cache import TickerCache
-from options_api.main import app
+from options_api.main import create_app
 from options_api.models import TickerListing
 from options_api.nasdaq import (
     CHAIN_POLICY,
@@ -26,6 +26,29 @@ from options_api.universe import TickerUniverse
 from .conftest import load_fixture
 
 NOW = datetime(2026, 9, 11, 14, tzinfo=UTC)
+
+
+class MutableClock:
+    def __init__(self, moment: datetime) -> None:
+        self.moment = moment
+
+    def __call__(self) -> datetime:
+        return self.moment
+
+
+def _offline_client() -> httpx.AsyncClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"offline client received {request.url}")
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+clock = MutableClock(NOW)
+app = create_app(
+    client_factory=_offline_client,
+    clock=clock,
+    prefetch_universe=False,
+)
 
 
 def _seed_universe(client: httpx.AsyncClient | None = None) -> TickerUniverse:
@@ -58,8 +81,8 @@ def _install_service(handler) -> None:
 
 @pytest.fixture
 def api() -> Iterator[TestClient]:
+    clock.moment = NOW
     with TestClient(app, base_url="http://127.0.0.1") as client:
-        app.state.now = NOW
         yield client
 
 
@@ -647,9 +670,9 @@ def test_info_cache_keeps_ask_across_utc_minute_when_refetch_would_fail(
         raise AssertionError(url)
 
     _install_service(handler)
-    app.state.now = datetime(2026, 9, 11, 14, 0, 50, tzinfo=UTC)
+    clock.moment = datetime(2026, 9, 11, 14, 0, 50, tzinfo=UTC)
     first = api.get("/api/covered-calls/IREN")
-    app.state.now = datetime(2026, 9, 11, 14, 1, 5, tzinfo=UTC)
+    clock.moment = datetime(2026, 9, 11, 14, 1, 5, tzinfo=UTC)
     second = api.get("/api/covered-calls/IREN")
 
     assert first.status_code == 200

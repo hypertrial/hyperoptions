@@ -1,22 +1,14 @@
 from __future__ import annotations
 
 import json
-from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import httpx
 import uvicorn
 
-from options_api import main as main_module
-from options_api import nasdaq as nasdaq_module
-from options_api.cache import TickerCache
-from options_api.main import app
-from options_api.models import TickerListing
+from options_api.main import create_app
 from options_api.nasdaq import HTTP_TIMEOUT
-from options_api.parser import parse_screener_listings
-from options_api.service import OptionChainService
-from options_api.universe import TickerUniverse
 
 FIXTURE = (
     Path(__file__).resolve().parents[2]
@@ -108,49 +100,7 @@ def create_mock_client() -> httpx.AsyncClient:
     )
 
 
-def _seeded_universe(client: httpx.AsyncClient) -> TickerUniverse:
-    universe = TickerUniverse(client)
-    listings = parse_screener_listings(json.loads(SCREENER.read_text()))
-    if not listings:
-        listings = [
-            TickerListing(symbol="CIFR", name="Cipher Mining Inc."),
-            TickerListing(symbol="IREN", name="Iris Energy Limited"),
-            TickerListing(symbol="NBIS", name="Nebius Group N.V."),
-            TickerListing(symbol="NONE", name="Missing Symbol Inc."),
-            TickerListing(symbol="NOOPT", name="No Options Corp."),
-            TickerListing(symbol="WULF", name="TeraWulf Inc."),
-        ]
-    universe.seed(listings, as_of=NOW)
-    return universe
-
-
-def install_mock_service() -> None:
-    nasdaq_module.create_http_client = create_mock_client
-    main_module.create_http_client = create_mock_client
-    client = create_mock_client()
-    app.state.http_client = client
-    app.state.now = NOW
-    app.state.service = OptionChainService(
-        client=client,
-        cache=TickerCache(ttl_seconds=30, max_entries=64),
-        info_cache=TickerCache(ttl_seconds=30, max_entries=64),
-        history_cache=TickerCache(ttl_seconds=86_400, max_entries=64),
-    )
-    app.state.universe = _seeded_universe(client)
-
-
-@asynccontextmanager
-async def e2e_lifespan(_app):
-    install_mock_service()
-    try:
-        yield
-    finally:
-        client = getattr(app.state, "http_client", None)
-        if client is not None:
-            await client.aclose()
-
-
-app.router.lifespan_context = e2e_lifespan
+app = create_app(client_factory=create_mock_client, clock=lambda: NOW)
 
 
 def main() -> None:
