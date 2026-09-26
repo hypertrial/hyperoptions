@@ -9,7 +9,7 @@ import { copyRowAccessibleName, copyRowStateKey } from "./copyRow"
 import type { Density } from "./density"
 import { integer, moneyStrike } from "./format"
 import { heatmapHue, heatmapStop, type MetricRange } from "./heatmap"
-import { oddsAvailable, oddsLabel, oddsMessage } from "./marketOdds"
+import { oddsAvailable, oddsLabel, oddsMessage, predictiveAvailable, unavailableReasons } from "./marketOdds"
 import OddsValues from "./OddsValues"
 import type { Side } from "./types"
 import { useMediaQuery } from "./useMediaQuery"
@@ -102,7 +102,7 @@ function DesktopResults({
                       {active ? (sort.dir === "asc" ? <ArrowUp aria-hidden="true" /> : <ArrowDown aria-hidden="true" />) : null}
                     </button>
                   </th>
-                  {index === 0 ? <th scope="col" title="Risk-neutral odds that the regular-session expiry close is in or out of the money">ITM / OTM odds</th> : null}
+                  {index === 0 ? <th scope="col" title="Current market-implied odds when available; otherwise a separately labeled historical forecast for the expiry-session close">ITM / OTM odds</th> : null}
                 </Fragment>
               )
             })}
@@ -126,9 +126,9 @@ function DesktopResults({
                       {column.format(row)}
                     </HeatCell>
                     {index === 0 ? <td className="odds-cell">
-                      <OddsValues odds={row.market_odds} compact />
+                      <OddsValues odds={row.market_odds} predictiveOdds={row.predictive_odds} compact />
                       {!oddsAvailable(row.market_odds) && row.market_odds?.status !== "pending" ? (
-                        <details className="odds-reason"><summary>Why unavailable?</summary><p>{oddsMessage(row.market_odds)}</p></details>
+                        <details className="odds-reason"><summary>{predictiveAvailable(row.predictive_odds) ? "Why market odds unavailable?" : "Why unavailable?"}</summary><p>{predictiveAvailable(row.predictive_odds) ? oddsMessage(row.market_odds) : unavailableReasons(row.market_odds, row.predictive_odds)}</p></details>
                       ) : null}
                     </td> : null}
                   </Fragment>
@@ -202,9 +202,10 @@ function MobileResults({
           const rowName = `${ticker} ${row.expiration} strike ${strike}`
           const summary = priority.map((column) => `${column.label} ${column.format(row)}`).join(", ")
           const odds = row.market_odds
+          const predictive = row.predictive_odds
           return (
             <Collapsible key={row.watch_key ?? `${row.expiration}-${row.strike_exact ?? row.strike_cents}-${index}`} className="mobile-option-row">
-              <CollapsibleTrigger className="mobile-row-summary" aria-label={`Show details for ${rowName}. ${summary}. Market odds: ${oddsLabel(odds)}`}>
+              <CollapsibleTrigger className="mobile-row-summary" aria-label={`Show details for ${rowName}. ${summary}. Odds: ${oddsLabel(odds, predictive)}`}>
                 <span className="mobile-row-main">
                   <span className="mobile-priority-grid">
                     {priority.map((column) => (
@@ -214,12 +215,12 @@ function MobileResults({
                       </span>
                     ))}
                   </span>
-                  <span className="mobile-row-odds"><OddsValues odds={odds} compact /></span>
+                  <span className="mobile-row-odds"><OddsValues odds={odds} predictiveOdds={predictive} compact /></span>
                 </span>
                 <ChevronRight className="row-chevron" aria-hidden="true" />
               </CollapsibleTrigger>
               <CollapsibleContent className="mobile-row-details">
-                {!oddsAvailable(odds) && odds?.status !== "pending" ? <p className="mobile-odds-reason"><strong>Why odds are unavailable:</strong> {oddsMessage(odds)}</p> : null}
+                {!oddsAvailable(odds) && odds?.status !== "pending" ? <p className="mobile-odds-reason"><strong>{predictiveAvailable(predictive) ? "Why market odds are unavailable:" : "Why odds are unavailable:"}</strong> {predictiveAvailable(predictive) ? oddsMessage(odds) : unavailableReasons(odds, predictive)}</p> : null}
                 {remaining.length > 0 ? (
                   <dl>
                     {remaining.map((column) => (

@@ -668,8 +668,37 @@
             ],
             "title": "Greeks Source"
           },
+          "greeks_rate_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Greeks Rate Pct Tenths"
+          },
+          "greeks_rate_as_of_session": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Greeks Rate As Of Session"
+          },
           "market_odds": {
             "$ref": "#/components/schemas/MarketOddsView"
+          },
+          "predictive_odds": {
+            "$ref": "#/components/schemas/PredictiveOddsView"
+          },
+          "hypothetical_risk": {
+            "$ref": "#/components/schemas/HypotheticalRiskView"
           }
         },
         "type": "object",
@@ -759,6 +788,11 @@
             "type": "string",
             "format": "date-time",
             "title": "Fetched At"
+          },
+          "chain_fetched_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Chain Fetched At"
           },
           "current_cents": {
             "anyOf": [
@@ -883,7 +917,14 @@
             "title": "History From Cache"
           },
           "risk_free_rate_pct_tenths": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Risk Free Rate Pct Tenths"
           },
           "lows": {
@@ -903,6 +944,7 @@
           "options_available",
           "moneyness",
           "fetched_at",
+          "chain_fetched_at",
           "current_cents",
           "current_source",
           "stock_bid_cents",
@@ -1266,8 +1308,37 @@
             ],
             "title": "Greeks Source"
           },
+          "greeks_rate_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Greeks Rate Pct Tenths"
+          },
+          "greeks_rate_as_of_session": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Greeks Rate As Of Session"
+          },
           "market_odds": {
             "$ref": "#/components/schemas/MarketOddsView"
+          },
+          "predictive_odds": {
+            "$ref": "#/components/schemas/PredictiveOddsView"
+          },
+          "hypothetical_risk": {
+            "$ref": "#/components/schemas/HypotheticalRiskView"
           }
         },
         "type": "object",
@@ -1359,6 +1430,11 @@
             "type": "string",
             "format": "date-time",
             "title": "Fetched At"
+          },
+          "chain_fetched_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Chain Fetched At"
           },
           "current_cents": {
             "anyOf": [
@@ -1483,7 +1559,14 @@
             "title": "History From Cache"
           },
           "risk_free_rate_pct_tenths": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Risk Free Rate Pct Tenths"
           },
           "lows": {
@@ -1503,6 +1586,7 @@
           "options_available",
           "moneyness",
           "fetched_at",
+          "chain_fetched_at",
           "current_cents",
           "current_source",
           "stock_bid_cents",
@@ -1545,6 +1629,126 @@
         },
         "type": "object",
         "title": "HealthResponse"
+      },
+      "HypotheticalRiskView": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "unavailable"
+            ],
+            "title": "Status",
+            "default": "unavailable"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "assumed_spot_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assumed Spot Cents"
+          },
+          "assumed_bid_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assumed Bid Cents"
+          },
+          "quote_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "nasdaq",
+                  "yahoo"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote Source"
+          },
+          "quote_session": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote Session"
+          },
+          "expected_pnl_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Pnl Cents"
+          },
+          "expected_return_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Return Pct Tenths"
+          },
+          "loss_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loss Pct Tenths"
+          },
+          "p05_pnl_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P05 Pnl Cents"
+          }
+        },
+        "type": "object",
+        "title": "HypotheticalRiskView",
+        "description": "One-contract hold-to-expiry payoff from a dated, coherent entry quote."
       },
       "Job": {
         "properties": {
@@ -1863,6 +2067,135 @@
         ],
         "title": "PeriodLows"
       },
+      "PredictiveOddsView": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "available",
+              "unavailable"
+            ],
+            "title": "Status",
+            "default": "pending"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "itm_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Itm Pct Tenths"
+          },
+          "otm_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Otm Pct Tenths"
+          },
+          "atm_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Atm Pct Tenths"
+          },
+          "as_of_session": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of Session"
+          },
+          "expiry_session": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiry Session"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version"
+          },
+          "support": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Support"
+          },
+          "data_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Hash"
+          }
+        },
+        "type": "object",
+        "title": "PredictiveOddsView",
+        "description": "Physical expiry-close forecast, distinct from risk-neutral option odds."
+      },
       "TickerListing": {
         "properties": {
           "symbol": {
@@ -2056,6 +2389,22 @@
           },
           "market_odds": {
             "$ref": "#/components/schemas/MarketOddsView"
+          },
+          "last_available_market_odds": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MarketOddsView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "predictive_odds": {
+            "$ref": "#/components/schemas/PredictiveOddsView"
+          },
+          "hypothetical_risk": {
+            "$ref": "#/components/schemas/HypotheticalRiskView"
           },
           "outcome": {
             "$ref": "#/components/schemas/OutcomeView"

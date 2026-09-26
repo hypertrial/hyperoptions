@@ -118,6 +118,37 @@ class MarketOddsView(BaseModel):
     model_version: str | None = None
 
 
+class PredictiveOddsView(BaseModel):
+    """Physical expiry-close forecast, distinct from risk-neutral option odds."""
+
+    status: Literal["pending", "available", "unavailable"] = "pending"
+    method: str | None = None
+    reason: str | None = None
+    itm_pct_tenths: int | None = None
+    otm_pct_tenths: int | None = None
+    atm_pct_tenths: int | None = None
+    as_of_session: date | None = None
+    expiry_session: date | None = None
+    model_version: str | None = None
+    support: int | None = None
+    data_hash: str | None = None
+
+
+class HypotheticalRiskView(BaseModel):
+    """One-contract hold-to-expiry payoff from a dated, coherent entry quote."""
+
+    status: Literal["available", "unavailable"] = "unavailable"
+    reason: str | None = None
+    assumed_spot_cents: int | None = None
+    assumed_bid_cents: int | None = None
+    quote_source: MarketSource | None = None
+    quote_session: date | None = None
+    expected_pnl_cents: int | None = None
+    expected_return_pct_tenths: int | None = None
+    loss_pct_tenths: int | None = None
+    p05_pnl_cents: int | None = None
+
+
 class CoveredCallContract(BaseModel):
     expiration: str
     dte: int
@@ -154,7 +185,11 @@ class CoveredCallContract(BaseModel):
     vega_e4: int | None = None
     rho_e4: int | None = None
     greeks_source: GreeksSource | None = None
+    greeks_rate_pct_tenths: int | None = None
+    greeks_rate_as_of_session: date | None = None
     market_odds: MarketOddsView = Field(default_factory=MarketOddsView)
+    predictive_odds: PredictiveOddsView = Field(default_factory=PredictiveOddsView)
+    hypothetical_risk: HypotheticalRiskView = Field(default_factory=HypotheticalRiskView)
 
 
 class CoveredCallExpiration(BaseModel):
@@ -169,6 +204,7 @@ class _ChainPageBase(BaseModel):
     options_available: bool
     moneyness: Moneyness
     fetched_at: datetime
+    chain_fetched_at: datetime
     current_cents: int | None
     current_source: CurrentSource | None
     stock_bid_cents: int | None
@@ -183,7 +219,7 @@ class _ChainPageBase(BaseModel):
     chain_from_cache: bool
     info_from_cache: bool
     history_from_cache: bool
-    risk_free_rate_pct_tenths: int
+    risk_free_rate_pct_tenths: int | None
     lows: PeriodLows
 
 
@@ -225,7 +261,11 @@ class CashSecuredPutContract(BaseModel):
     vega_e4: int | None = None
     rho_e4: int | None = None
     greeks_source: GreeksSource | None = None
+    greeks_rate_pct_tenths: int | None = None
+    greeks_rate_as_of_session: date | None = None
     market_odds: MarketOddsView = Field(default_factory=MarketOddsView)
+    predictive_odds: PredictiveOddsView = Field(default_factory=PredictiveOddsView)
+    hypothetical_risk: HypotheticalRiskView = Field(default_factory=HypotheticalRiskView)
 
 
 class CashSecuredPutExpiration(BaseModel):

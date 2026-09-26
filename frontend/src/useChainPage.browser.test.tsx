@@ -101,3 +101,47 @@ it("checks pending odds quickly and stops daytime refresh after the close", asyn
   await act(async () => { await vi.advanceTimersByTimeAsync(5 * 60_000) })
   expect(fetchMock).toHaveBeenCalledTimes(2)
 })
+
+it("checks a pending predictive forecast after hours and stops when it resolves", async () => {
+  vi.setSystemTime(new Date("2026-09-17T21:00:00Z"))
+  const pending = samplePage()
+  Object.assign(pending.expirations[0].contracts[0], { predictive_odds: { status: "pending" } })
+  fetchMock.mockResolvedValueOnce(pending).mockResolvedValue(samplePage())
+  renderHook(() => useChainPage("IREN", "call", "itm"))
+  await act(async () => { await Promise.resolve() })
+
+  await act(async () => { await vi.advanceTimersByTimeAsync(14_999) })
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+  expect(fetchMock).toHaveBeenCalledTimes(2)
+  await act(async () => { await vi.advanceTimersByTimeAsync(5 * 60_000) })
+  expect(fetchMock).toHaveBeenCalledTimes(2)
+})
+
+it.each(["market_data_missing", "market_data_invalid"])("retries temporary %s forecast failure after hours only when visible", async (reason) => {
+  vi.setSystemTime(new Date("2026-09-17T21:00:00Z"))
+  const unavailable = samplePage()
+  Object.assign(unavailable.expirations[0].contracts[0], { predictive_odds: { status: "unavailable", reason } })
+  fetchMock.mockResolvedValueOnce(unavailable).mockResolvedValue(samplePage())
+  renderHook(() => useChainPage("IREN", "call", "itm"))
+  await act(async () => { await Promise.resolve() })
+
+  Object.defineProperty(document, "hidden", { configurable: true, value: true })
+  await act(async () => { await vi.advanceTimersByTimeAsync(5 * 60_000) })
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  Object.defineProperty(document, "hidden", { configurable: true, value: false })
+  await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await Promise.resolve() })
+  expect(fetchMock).toHaveBeenCalledTimes(2)
+})
+
+it("does not poll terminal predictive unsupported reasons after hours", async () => {
+  vi.setSystemTime(new Date("2026-09-17T21:00:00Z"))
+  const unsupported = samplePage()
+  Object.assign(unsupported.expirations[0].contracts[0], { predictive_odds: { status: "unavailable", reason: "horizon_unsupported" } })
+  fetchMock.mockResolvedValue(unsupported)
+  renderHook(() => useChainPage("IREN", "call", "itm"))
+  await act(async () => { await Promise.resolve() })
+
+  await act(async () => { await vi.advanceTimersByTimeAsync(20 * 60_000) })
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+})

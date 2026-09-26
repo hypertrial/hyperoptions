@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from functools import lru_cache
 from zoneinfo import ZoneInfo
 
@@ -53,3 +54,39 @@ def latest_completed_session(as_of: datetime) -> date:
 
 def expiry_session_completed(expiration: date, as_of: datetime) -> bool:
     return latest_completed_session(as_of) >= session_on_or_before(expiration)
+
+
+@lru_cache(maxsize=8192)
+def remaining_session_variance_fraction(
+    completed: date, expiry: date, quote_time: datetime
+) -> Decimal | None:
+    """Fraction of future regular-session minutes remaining after a quote.
+
+    A forecast horizon is measured in exchange sessions, so weekends and
+    overnight hours consume no forecast variance. Early closes contribute
+    only their scheduled trading minutes.
+    """
+    if quote_time.tzinfo is None:
+        quote_time = quote_time.replace(tzinfo=UTC)
+    last = session_on_or_before(expiry)
+    if last <= completed:
+        return None
+    calendar = _calendar()
+    first_session = calendar.date_to_session(completed.isoformat(), direction="none")
+    last_session = calendar.date_to_session(last.isoformat(), direction="none")
+    sessions = calendar.sessions_in_range(first_session, last_session)[1:]
+    start = calendar.session_close(first_session).to_pydatetime()
+    end = calendar.session_close(last_session).to_pydatetime()
+    if quote_time < start or quote_time >= end:
+        return None
+    total = 0.0
+    remaining = 0.0
+    for session in sessions:
+        opened = calendar.session_open(session).to_pydatetime()
+        closed = calendar.session_close(session).to_pydatetime()
+        total += (closed - opened).total_seconds()
+        if quote_time < closed:
+            remaining += (closed - max(quote_time, opened)).total_seconds()
+    if total <= 0 or remaining <= 0:
+        return None
+    return Decimal(str(remaining / total))

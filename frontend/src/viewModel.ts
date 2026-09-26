@@ -41,6 +41,13 @@ function scaleRow(row: SizedContract, contracts: number, side: Side): SizedContr
   for (const field of STRATEGIES[side].scaledFields) {
     scaled[field] = scaleByContracts(scaled[field] as number | null | undefined, contracts)
   }
+  if (row.hypothetical_risk?.status === "available") {
+    scaled.hypothetical_risk = {
+      ...row.hypothetical_risk,
+      expected_pnl_cents: scaleByContracts(row.hypothetical_risk.expected_pnl_cents, contracts),
+      p05_pnl_cents: scaleByContracts(row.hypothetical_risk.p05_pnl_cents, contracts),
+    }
+  }
   return scaled as SizedContract
 }
 

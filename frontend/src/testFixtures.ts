@@ -38,7 +38,7 @@ export function sampleContract(overrides: Partial<CoveredCallContract> = {}): Co
     theta_e4: -176,
     vega_e4: 3752,
     rho_e4: 5323,
-    greeks_source: "bid",
+    greeks_source: "mid",
     ...overrides,
   }
 }
@@ -113,6 +113,7 @@ export function samplePage(overrides: Partial<CoveredCallPage> = {}): CoveredCal
     options_available: true,
     moneyness: "itm",
     fetched_at: "2026-09-11T14:00:00Z",
+    chain_fetched_at: "2026-09-11T14:00:00Z",
     current_cents: 4990,
     current_source: "stock_bid",
     stock_bid_cents: 4990,
@@ -174,7 +175,7 @@ export function samplePutContract(overrides: Partial<CashSecuredPutContract> = {
     theta_e4: -176,
     vega_e4: 3752,
     rho_e4: -5323,
-    greeks_source: "bid",
+    greeks_source: "mid",
     ...overrides,
   }
 }
@@ -186,6 +187,7 @@ export function samplePutPage(overrides: Partial<CashSecuredPutPage> = {}): Cash
     options_available: true,
     moneyness: "otm",
     fetched_at: "2026-09-11T14:00:00Z",
+    chain_fetched_at: "2026-09-11T14:00:00Z",
     current_cents: 4990,
     current_source: "stock_bid",
     stock_bid_cents: 4990,

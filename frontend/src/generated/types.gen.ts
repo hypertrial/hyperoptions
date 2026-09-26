@@ -140,7 +140,17 @@ export type CashSecuredPutContract = {
      * Greeks Source
      */
     greeks_source?: 'bid' | 'mid' | null;
+    /**
+     * Greeks Rate Pct Tenths
+     */
+    greeks_rate_pct_tenths?: number | null;
+    /**
+     * Greeks Rate As Of Session
+     */
+    greeks_rate_as_of_session?: string | null;
     market_odds?: MarketOddsView;
+    predictive_odds?: PredictiveOddsView;
+    hypothetical_risk?: HypotheticalRiskView;
 };
 
 /**
@@ -185,6 +195,10 @@ export type CashSecuredPutPage = {
      * Fetched At
      */
     fetched_at: string;
+    /**
+     * Chain Fetched At
+     */
+    chain_fetched_at: string;
     /**
      * Current Cents
      */
@@ -244,7 +258,7 @@ export type CashSecuredPutPage = {
     /**
      * Risk Free Rate Pct Tenths
      */
-    risk_free_rate_pct_tenths: number;
+    risk_free_rate_pct_tenths: number | null;
     lows: PeriodLows;
     /**
      * Expirations
@@ -396,7 +410,17 @@ export type CoveredCallContract = {
      * Greeks Source
      */
     greeks_source?: 'bid' | 'mid' | null;
+    /**
+     * Greeks Rate Pct Tenths
+     */
+    greeks_rate_pct_tenths?: number | null;
+    /**
+     * Greeks Rate As Of Session
+     */
+    greeks_rate_as_of_session?: string | null;
     market_odds?: MarketOddsView;
+    predictive_odds?: PredictiveOddsView;
+    hypothetical_risk?: HypotheticalRiskView;
 };
 
 /**
@@ -441,6 +465,10 @@ export type CoveredCallPage = {
      * Fetched At
      */
     fetched_at: string;
+    /**
+     * Chain Fetched At
+     */
+    chain_fetched_at: string;
     /**
      * Current Cents
      */
@@ -500,7 +528,7 @@ export type CoveredCallPage = {
     /**
      * Risk Free Rate Pct Tenths
      */
-    risk_free_rate_pct_tenths: number;
+    risk_free_rate_pct_tenths: number | null;
     lows: PeriodLows;
     /**
      * Expirations
@@ -526,6 +554,54 @@ export type HealthResponse = {
      * Ok
      */
     ok?: boolean;
+};
+
+/**
+ * HypotheticalRiskView
+ *
+ * One-contract hold-to-expiry payoff from a dated, coherent entry quote.
+ */
+export type HypotheticalRiskView = {
+    /**
+     * Status
+     */
+    status?: 'available' | 'unavailable';
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * Assumed Spot Cents
+     */
+    assumed_spot_cents?: number | null;
+    /**
+     * Assumed Bid Cents
+     */
+    assumed_bid_cents?: number | null;
+    /**
+     * Quote Source
+     */
+    quote_source?: 'nasdaq' | 'yahoo' | null;
+    /**
+     * Quote Session
+     */
+    quote_session?: string | null;
+    /**
+     * Expected Pnl Cents
+     */
+    expected_pnl_cents?: number | null;
+    /**
+     * Expected Return Pct Tenths
+     */
+    expected_return_pct_tenths?: number | null;
+    /**
+     * Loss Pct Tenths
+     */
+    loss_pct_tenths?: number | null;
+    /**
+     * P05 Pnl Cents
+     */
+    p05_pnl_cents?: number | null;
 };
 
 /**
@@ -665,6 +741,58 @@ export type PeriodLows = {
 };
 
 /**
+ * PredictiveOddsView
+ *
+ * Physical expiry-close forecast, distinct from risk-neutral option odds.
+ */
+export type PredictiveOddsView = {
+    /**
+     * Status
+     */
+    status?: 'pending' | 'available' | 'unavailable';
+    /**
+     * Method
+     */
+    method?: string | null;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * Itm Pct Tenths
+     */
+    itm_pct_tenths?: number | null;
+    /**
+     * Otm Pct Tenths
+     */
+    otm_pct_tenths?: number | null;
+    /**
+     * Atm Pct Tenths
+     */
+    atm_pct_tenths?: number | null;
+    /**
+     * As Of Session
+     */
+    as_of_session?: string | null;
+    /**
+     * Expiry Session
+     */
+    expiry_session?: string | null;
+    /**
+     * Model Version
+     */
+    model_version?: string | null;
+    /**
+     * Support
+     */
+    support?: number | null;
+    /**
+     * Data Hash
+     */
+    data_hash?: string | null;
+};
+
+/**
  * TickerListing
  */
 export type TickerListing = {
@@ -791,6 +919,9 @@ export type WatchItem = {
      */
     created_at: string;
     market_odds?: MarketOddsView;
+    last_available_market_odds?: MarketOddsView | null;
+    predictive_odds?: PredictiveOddsView;
+    hypothetical_risk?: HypotheticalRiskView;
     outcome: OutcomeView;
 };
 

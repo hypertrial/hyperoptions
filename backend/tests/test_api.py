@@ -48,6 +48,7 @@ app = create_app(
     client_factory=_offline_client,
     clock=clock,
     prefetch_universe=False,
+    predictive_refresh=False,
 )
 
 
@@ -269,7 +270,8 @@ def test_itm_calls_contract_filters_and_caches(api: TestClient) -> None:
     body = first.json()
     assert body["ticker"] == "IREN"
     assert body["moneyness"] == "itm"
-    assert body["risk_free_rate_pct_tenths"] == 40
+    # The live Greek rate is per expiry and requires a dated Treasury quote.
+    assert body["risk_free_rate_pct_tenths"] is None
     assert body["current_cents"] == 4990
     assert body["current_source"] == "stock_bid"
     assert body["chain_from_cache"] is False
@@ -322,6 +324,8 @@ def test_openapi_financial_fields_are_integers() -> None:
         "CoveredCallPage",
         "CashSecuredPutPage",
         "PeriodLows",
+        "PredictiveOddsView",
+        "HypotheticalRiskView",
     )
     for name in chain_schemas:
         walk(schema["components"]["schemas"][name], name)

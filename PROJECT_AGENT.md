@@ -12,7 +12,7 @@ Financial fields on `GET /api/covered-calls/{ticker}` and `GET /api/cash-secured
 
 Ticker membership is the Nasdaq-listed universe (`^[A-Z]{1,5}$`), not a hardcoded allowlist. Fail closed with 503 when the universe is unavailable. `npm run generate:api` regenerates OpenAPI types and Zod validators under `frontend/src/generated/`. `npm run check:api` must stay clean.
 
-Greeks are a European, no-dividend Black-Scholes approximation. IV uses the sell bid first, then mid. The risk-free rate is `OPTIONS_RISK_FREE_RATE` (default 0.04) and is never a query parameter.
+Greeks are a European, no-dividend Black-Scholes approximation of American equity options. IV uses a coherent bid/ask midpoint inside no-arbitrage bounds. Live Greeks use the dated Treasury curve rate and the time from the coherent quote to the expiry trading session close; each contract exposes its rate and session date. The `OPTIONS_RISK_FREE_RATE` default remains only for direct offline chain calculations and is never a query parameter.
 
 ## Verification
 

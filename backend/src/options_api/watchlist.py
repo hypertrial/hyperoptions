@@ -15,12 +15,19 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from options_api.contract_identity import make_watch_key, parse_watch_key, strike_exact
+from options_api.live_quant import quant_for_contract
 from options_api.market_calendar import (
     expiry_session_completed,
     latest_completed_session,
     session_on_or_before,
 )
-from options_api.models import MarketOddsView, OptionQuote, normalize_ticker
+from options_api.models import (
+    HypotheticalRiskView,
+    MarketOddsView,
+    OptionQuote,
+    PredictiveOddsView,
+    normalize_ticker,
+)
 from options_api.nasdaq import NasdaqError
 from options_api.outcomes import (
     TERMS_NOTE,
@@ -65,6 +72,9 @@ class WatchItem(BaseModel):
     terms_note: str
     created_at: datetime
     market_odds: MarketOddsView = Field(default_factory=MarketOddsView)
+    last_available_market_odds: MarketOddsView | None = None
+    predictive_odds: PredictiveOddsView = Field(default_factory=PredictiveOddsView)
+    hypothetical_risk: HypotheticalRiskView = Field(default_factory=HypotheticalRiskView)
     outcome: OutcomeView
 
 
@@ -458,22 +468,37 @@ async def get_watchlist(request: Request) -> WatchListResponse:
     now = _now(request)
     items = request.app.state.watchlist.items(as_of=now)
     odds = request.app.state.market_odds
-    odds.schedule(
-        item.ticker for item in items if not expiry_session_completed(item.expiration, now)
-    )
+    active = [item for item in items if not expiry_session_completed(item.expiration, now)]
+    odds.schedule(item.ticker for item in active)
+    predictive = request.app.state.predictive_odds
+    predictive.schedule(item.ticker for item in active)
     for item in items:
         if expiry_session_completed(item.expiration, now):
             item.market_odds = MarketOddsView(
                 status="unavailable", reason="Expiry session completed; see outcome"
             )
+            item.predictive_odds = PredictiveOddsView(
+                status="unavailable", reason="expiry_completed"
+            )
+            item.hypothetical_risk = HypotheticalRiskView(
+                reason="Expiry session completed"
+            )
             continue
-        item.market_odds = odds.lookup(
-            item.ticker,
-            item.side,
-            item.expiration.isoformat(),
-            Decimal(item.strike_exact),
-            item.root,
+        result = quant_for_contract(
+            odds,
+            predictive,
+            ticker=item.ticker,
+            root=item.root,
+            side=item.side,
+            expiry=item.expiration,
+            strike=Decimal(item.strike_exact),
+            contract_since=item.created_at.date(),
+            watched=True,
         )
+        item.market_odds = result.market
+        item.last_available_market_odds = result.last_available_market
+        item.predictive_odds = result.predictive
+        item.hypothetical_risk = result.risk
     return WatchListResponse(
         items=items,
         active_job=request.app.state.jobs.active("watch_refresh"),
@@ -519,11 +544,24 @@ async def add_watch(request: Request, body: WatchCreate) -> WatchCreateResponse:
     store: WatchStore = request.app.state.watchlist.store
     record, created = store.add(body.watch_key, ticker, root, side, expiry, strike, _now(request))
     request.app.state.market_odds.schedule([ticker])
+    request.app.state.predictive_odds.schedule([ticker])
     job = _queue(request) if created else None
     item = request.app.state.watchlist.item(record, as_of=_now(request))
-    item.market_odds = request.app.state.market_odds.lookup(
-        ticker, side, expiry_text, strike, root
+    result = quant_for_contract(
+        request.app.state.market_odds,
+        request.app.state.predictive_odds,
+        ticker=ticker,
+        root=root,
+        side=side,
+        expiry=expiry,
+        strike=strike,
+        contract_since=record.created_at.date(),
+        watched=True,
     )
+    item.market_odds = result.market
+    item.last_available_market_odds = result.last_available_market
+    item.predictive_odds = result.predictive
+    item.hypothetical_risk = result.risk
     return WatchCreateResponse(
         item=item,
         created=created,

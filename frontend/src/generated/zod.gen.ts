@@ -10,6 +10,24 @@ export const zHealthResponse = z.object({
 });
 
 /**
+ * HypotheticalRiskView
+ *
+ * One-contract hold-to-expiry payoff from a dated, coherent entry quote.
+ */
+export const zHypotheticalRiskView = z.object({
+    status: z.enum(['available', 'unavailable']).optional().default('unavailable'),
+    reason: z.string().nullish(),
+    assumed_spot_cents: z.int().nullish(),
+    assumed_bid_cents: z.int().nullish(),
+    quote_source: z.enum(['nasdaq', 'yahoo']).nullish(),
+    quote_session: z.iso.date().nullish(),
+    expected_pnl_cents: z.int().nullish(),
+    expected_return_pct_tenths: z.int().nullish(),
+    loss_pct_tenths: z.int().nullish(),
+    p05_pnl_cents: z.int().nullish()
+});
+
+/**
  * Job
  */
 export const zJob = z.object({
@@ -43,6 +61,62 @@ export const zMarketOddsView = z.object({
     fetched_at: z.iso.datetime().nullish(),
     session_date: z.iso.date().nullish(),
     model_version: z.string().nullish()
+});
+
+/**
+ * OutcomeView
+ */
+export const zOutcomeView = z.object({
+    status: z.enum([
+        'pending',
+        'provisional',
+        'unsupported'
+    ]),
+    classification: z.enum([
+        'itm',
+        'atm',
+        'otm'
+    ]).nullish(),
+    reason: z.string().nullish(),
+    source: z.string().nullish(),
+    session_date: z.iso.date().nullish(),
+    retrieved_at: z.iso.datetime().nullish(),
+    close_exact: z.string().nullish(),
+    terms_note: z.string().optional().default('Assuming standard 100-share terms.'),
+    revised: z.boolean().optional().default(false)
+});
+
+/**
+ * PeriodLows
+ */
+export const zPeriodLows = z.object({
+    d7_cents: z.int().nullable(),
+    d30_cents: z.int().nullable(),
+    d90_cents: z.int().nullable(),
+    d365_cents: z.int().nullable()
+});
+
+/**
+ * PredictiveOddsView
+ *
+ * Physical expiry-close forecast, distinct from risk-neutral option odds.
+ */
+export const zPredictiveOddsView = z.object({
+    status: z.enum([
+        'pending',
+        'available',
+        'unavailable'
+    ]).optional().default('pending'),
+    method: z.string().nullish(),
+    reason: z.string().nullish(),
+    itm_pct_tenths: z.int().nullish(),
+    otm_pct_tenths: z.int().nullish(),
+    atm_pct_tenths: z.int().nullish(),
+    as_of_session: z.iso.date().nullish(),
+    expiry_session: z.iso.date().nullish(),
+    model_version: z.string().nullish(),
+    support: z.int().nullish(),
+    data_hash: z.string().nullish()
 });
 
 /**
@@ -82,7 +156,11 @@ export const zCashSecuredPutContract = z.object({
     vega_e4: z.int().nullish(),
     rho_e4: z.int().nullish(),
     greeks_source: z.enum(['bid', 'mid']).nullish(),
-    market_odds: zMarketOddsView.optional()
+    greeks_rate_pct_tenths: z.int().nullish(),
+    greeks_rate_as_of_session: z.iso.date().nullish(),
+    market_odds: zMarketOddsView.optional(),
+    predictive_odds: zPredictiveOddsView.optional(),
+    hypothetical_risk: zHypotheticalRiskView.optional()
 });
 
 /**
@@ -92,6 +170,43 @@ export const zCashSecuredPutExpiration = z.object({
     expiration: z.string(),
     dte: z.int(),
     contracts: z.array(zCashSecuredPutContract)
+});
+
+/**
+ * CashSecuredPutPage
+ */
+export const zCashSecuredPutPage = z.object({
+    ticker: z.string(),
+    name: z.string().nullish(),
+    options_available: z.boolean(),
+    moneyness: z.enum([
+        'itm',
+        'otm',
+        'all'
+    ]),
+    fetched_at: z.iso.datetime(),
+    chain_fetched_at: z.iso.datetime(),
+    current_cents: z.int().nullable(),
+    current_source: z.enum([
+        'stock_bid',
+        'chain_last_trade',
+        'yahoo_underlying'
+    ]).nullable(),
+    stock_bid_cents: z.int().nullable(),
+    stock_ask_cents: z.int().nullable(),
+    market_session: z.string().nullable(),
+    is_real_time: z.boolean(),
+    quote_timestamp: z.string().nullable(),
+    last_trade: z.string().nullable(),
+    last_trade_timestamp: z.string().nullable(),
+    truncated: z.boolean(),
+    chain_source: z.enum(['nasdaq', 'yahoo']).optional().default('nasdaq'),
+    chain_from_cache: z.boolean(),
+    info_from_cache: z.boolean(),
+    history_from_cache: z.boolean(),
+    risk_free_rate_pct_tenths: z.int().nullable(),
+    lows: zPeriodLows,
+    expirations: z.array(zCashSecuredPutExpiration)
 });
 
 /**
@@ -133,7 +248,11 @@ export const zCoveredCallContract = z.object({
     vega_e4: z.int().nullish(),
     rho_e4: z.int().nullish(),
     greeks_source: z.enum(['bid', 'mid']).nullish(),
-    market_odds: zMarketOddsView.optional()
+    greeks_rate_pct_tenths: z.int().nullish(),
+    greeks_rate_as_of_session: z.iso.date().nullish(),
+    market_odds: zMarketOddsView.optional(),
+    predictive_odds: zPredictiveOddsView.optional(),
+    hypothetical_risk: zHypotheticalRiskView.optional()
 });
 
 /**
@@ -143,75 +262,6 @@ export const zCoveredCallExpiration = z.object({
     expiration: z.string(),
     dte: z.int(),
     contracts: z.array(zCoveredCallContract)
-});
-
-/**
- * OutcomeView
- */
-export const zOutcomeView = z.object({
-    status: z.enum([
-        'pending',
-        'provisional',
-        'unsupported'
-    ]),
-    classification: z.enum([
-        'itm',
-        'atm',
-        'otm'
-    ]).nullish(),
-    reason: z.string().nullish(),
-    source: z.string().nullish(),
-    session_date: z.iso.date().nullish(),
-    retrieved_at: z.iso.datetime().nullish(),
-    close_exact: z.string().nullish(),
-    terms_note: z.string().optional().default('Assuming standard 100-share terms.'),
-    revised: z.boolean().optional().default(false)
-});
-
-/**
- * PeriodLows
- */
-export const zPeriodLows = z.object({
-    d7_cents: z.int().nullable(),
-    d30_cents: z.int().nullable(),
-    d90_cents: z.int().nullable(),
-    d365_cents: z.int().nullable()
-});
-
-/**
- * CashSecuredPutPage
- */
-export const zCashSecuredPutPage = z.object({
-    ticker: z.string(),
-    name: z.string().nullish(),
-    options_available: z.boolean(),
-    moneyness: z.enum([
-        'itm',
-        'otm',
-        'all'
-    ]),
-    fetched_at: z.iso.datetime(),
-    current_cents: z.int().nullable(),
-    current_source: z.enum([
-        'stock_bid',
-        'chain_last_trade',
-        'yahoo_underlying'
-    ]).nullable(),
-    stock_bid_cents: z.int().nullable(),
-    stock_ask_cents: z.int().nullable(),
-    market_session: z.string().nullable(),
-    is_real_time: z.boolean(),
-    quote_timestamp: z.string().nullable(),
-    last_trade: z.string().nullable(),
-    last_trade_timestamp: z.string().nullable(),
-    truncated: z.boolean(),
-    chain_source: z.enum(['nasdaq', 'yahoo']).optional().default('nasdaq'),
-    chain_from_cache: z.boolean(),
-    info_from_cache: z.boolean(),
-    history_from_cache: z.boolean(),
-    risk_free_rate_pct_tenths: z.int(),
-    lows: zPeriodLows,
-    expirations: z.array(zCashSecuredPutExpiration)
 });
 
 /**
@@ -227,6 +277,7 @@ export const zCoveredCallPage = z.object({
         'all'
     ]),
     fetched_at: z.iso.datetime(),
+    chain_fetched_at: z.iso.datetime(),
     current_cents: z.int().nullable(),
     current_source: z.enum([
         'stock_bid',
@@ -245,7 +296,7 @@ export const zCoveredCallPage = z.object({
     chain_from_cache: z.boolean(),
     info_from_cache: z.boolean(),
     history_from_cache: z.boolean(),
-    risk_free_rate_pct_tenths: z.int(),
+    risk_free_rate_pct_tenths: z.int().nullable(),
     lows: zPeriodLows,
     expirations: z.array(zCoveredCallExpiration)
 });
@@ -307,6 +358,9 @@ export const zWatchItem = z.object({
     terms_note: z.string(),
     created_at: z.iso.datetime(),
     market_odds: zMarketOddsView.optional(),
+    last_available_market_odds: zMarketOddsView.nullish(),
+    predictive_odds: zPredictiveOddsView.optional(),
+    hypothetical_risk: zHypotheticalRiskView.optional(),
     outcome: zOutcomeView
 });
 

@@ -1,18 +1,19 @@
 """European Black-Scholes Greeks with no dividends.
 
 This is an approximation of American equity options. Implied volatility is
-solved from the sell bid first, then mid, and is omitted when the chosen
-price violates no-arbitrage bounds.
+solved from a coherent bid/ask midpoint inside no-arbitrage bounds.
 """
 
 from __future__ import annotations
 
 import math
 import os
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Literal
 
 from options_api.models import GreeksSource
+from options_api.market_calendar import session_close, session_on_or_before
 from options_api.money import (
     DAYS_PER_YEAR,
     HUNDRED,
@@ -30,6 +31,7 @@ PRICE_TOL = 1e-6
 MAX_BISECTIONS = 80
 BOUND_EPSILON = Decimal("0.01")
 DEFAULT_RISK_FREE_RATE = Decimal("0.04")
+SECONDS_PER_YEAR = Decimal("31536000")
 
 
 def risk_free_rate() -> Decimal:
@@ -37,6 +39,14 @@ def risk_free_rate() -> Decimal:
     if parsed is None or parsed < ZERO:
         return DEFAULT_RISK_FREE_RATE
     return parsed
+
+
+def years_until_expiry_close(expiration: date, as_of: datetime) -> Decimal:
+    """Calendar-year fraction from a dated quote to the listed expiry session close."""
+    if as_of.tzinfo is None:
+        as_of = as_of.replace(tzinfo=UTC)
+    close = session_close(session_on_or_before(expiration))
+    return Decimal(str((close - as_of).total_seconds())) / SECONDS_PER_YEAR
 
 
 def _norm_cdf(x: float) -> float:
@@ -110,12 +120,14 @@ def select_iv_price(
     bid: Decimal | None,
     ask: Decimal | None,
 ) -> tuple[Decimal | None, GreeksSource | None]:
+    if not all(value.is_finite() for value in (spot, strike, years, rate)) or years <= ZERO:
+        return None, None
     lower, upper = no_arb_bounds(is_call, spot, strike, years, rate)
-    usable_bid = usable_price(bid)
-    if usable_bid is not None and _inside_bounds(usable_bid, lower, upper):
-        return usable_bid, "bid"
+    # A zero bid is a valid quote for a far OTM contract, but a crossed,
+    # missing, or non-finite market cannot support an implied volatility.
+    usable_bid = bid if bid is not None and bid.is_finite() and bid >= ZERO else None
     usable_ask = usable_price(ask)
-    if usable_bid is not None and usable_ask is not None:
+    if usable_bid is not None and usable_ask is not None and usable_bid <= usable_ask:
         mid = (usable_bid + usable_ask) / 2
         if _inside_bounds(mid, lower, upper):
             return mid, "mid"
@@ -154,10 +166,17 @@ def compute_greeks(
     rate: Decimal,
     bid: Decimal | None,
     ask: Decimal | None,
+    *,
+    years_to_expiry: Decimal | None = None,
 ) -> ContractGreeks:
-    if dte <= 0 or spot <= ZERO or strike <= ZERO:
+    years = years_to_expiry if years_to_expiry is not None else Decimal(dte) / DAYS_PER_YEAR
+    if (
+        not all(value.is_finite() for value in (spot, strike, years, rate))
+        or years <= ZERO
+        or spot <= ZERO
+        or strike <= ZERO
+    ):
         return empty_greeks()
-    years = Decimal(dte) / DAYS_PER_YEAR
     is_call = side == "call"
     price, source = select_iv_price(is_call, spot, strike, years, rate, bid, ask)
     if price is None or source is None:

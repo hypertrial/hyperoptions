@@ -305,6 +305,7 @@ def _page_fields(
         "options_available": chain.options_available,
         "moneyness": moneyness,
         "fetched_at": fetched_at,
+        "chain_fetched_at": chain.fetched_at,
         "current_cents": optional_cents(current),
         "current_source": source,
         "stock_bid_cents": optional_cents(info.bid),

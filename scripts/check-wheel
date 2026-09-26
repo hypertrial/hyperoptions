@@ -22,7 +22,7 @@ with ZipFile(wheels[0]) as wheel:
         "options_api/watchlist.py",
         "stocksweeper/defaults.toml",
         "stocksweeper/storage/schema.sql",
-        "stocksweeper/forecast/service.py",
+        "stocksweeper/forecast/predictive.py",
     }
     missing = required.difference(wheel.namelist())
     if missing:

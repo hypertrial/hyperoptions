@@ -236,7 +236,8 @@ export default function ItmChain() {
               </>
             )}
           </p>
-          {page ? <p className="odds-context">ITM / OTM odds are risk-neutral estimates for the regular-session expiry close. {oddsStamp ?? "Quote time unavailable."}</p> : null}
+          {page ? <p className="odds-context">Market-implied odds are risk-neutral; historical predictive odds use completed stock closes. Both target the regular-session expiry close. {oddsStamp ? `Market quote: ${oddsStamp}.` : ""}</p> : null}
+          {page && columns.some((column) => column.greek) ? <p className="odds-context">Greeks use the dated quote midpoint, Treasury rate, and time to the expiry-session close. European Black-Scholes estimates omit dividends and only approximate American equity options.</p> : null}
         </header>
 
         <main id="main-content" className="chain-panel" aria-busy={loading}>

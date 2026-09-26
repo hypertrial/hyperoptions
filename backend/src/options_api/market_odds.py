@@ -326,7 +326,9 @@ def _price_converged(
     return values[-1]
 
 
-def _vertical_bounds(quotes: list[_Quote], target: _Quote) -> tuple[float, float] | None:
+def _vertical_bounds_with_reason(
+    quotes: list[_Quote], target: _Quote
+) -> tuple[tuple[float, float] | None, str | None]:
     # Every clean call vertical gives a model-free bound. Distant strikes can
     # suppress bid/ask noise, while nearby strikes limit payoff curvature;
     # intersecting all of them is at least as tight as adjacent-only bounds.
@@ -342,9 +344,17 @@ def _vertical_bounds(quotes: list[_Quote], target: _Quote) -> tuple[float, float
             has_right = True
             distance = float(quote.strike - target.strike)
             lower = max(lower, (target.bid - quote.ask) / distance * growth)
-    if not has_left or not has_right or lower > upper or upper - lower > 0.10:
-        return None
-    return lower, upper
+    if not has_left or not has_right:
+        return None, "quote_bracket_missing"
+    if lower > upper:
+        return None, "quote_bounds_inconsistent"
+    if upper - lower > 0.10:
+        return None, "quote_bounds_wide"
+    return (lower, upper), None
+
+
+def _vertical_bounds(quotes: list[_Quote], target: _Quote) -> tuple[float, float] | None:
+    return _vertical_bounds_with_reason(quotes, target)[0]
 
 
 def calculate_market_odds(
@@ -448,9 +458,9 @@ def calculate_market_odds(
     for expiry, quotes in by_expiry.items():
         for quote in quotes:
             key = (expiry, quote.strike)
-            bounds = _vertical_bounds(quotes, quote)
+            bounds, bounds_reason = _vertical_bounds_with_reason(quotes, quote)
             if bounds is None:
-                result[key] = OddsEstimate(None, "quote_bounds_wide")
+                result[key] = OddsEstimate(None, bounds_reason)
                 continue
             if time.monotonic() - pricing_started > _MAX_PRICING_SECONDS:
                 result[key] = OddsEstimate(None, "pricing_budget_exceeded")

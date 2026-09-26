@@ -25,10 +25,11 @@ def _pages(assemble) -> dict[str, object]:
         ).model_dump(mode="json")
         for moneyness in ("all", "itm", "otm")
     }
-    # Keep the original financial golden fixtures intact; watch fields have
-    # their own contract identity and moneyness tests.
+    # Keep chain financial figures here; odds/risk and watch identity have
+    # separate tests and are unavailable in this direct assembler fixture.
     for page in pages.values():
         assert page.pop("chain_source") == "nasdaq"
+        assert page.pop("chain_fetched_at") == page["fetched_at"]
         for group in page["expirations"]:
             for contract in group["contracts"]:
                 assert contract.pop("market_odds") == {
@@ -36,6 +37,10 @@ def _pages(assemble) -> dict[str, object]:
                     "reason": None, "source": None, "fetched_at": None,
                     "session_date": None, "model_version": None,
                 }
+                assert contract.pop("predictive_odds")["status"] == "pending"
+                assert contract.pop("hypothetical_risk")["status"] == "unavailable"
+                assert contract.pop("greeks_rate_pct_tenths") is None
+                assert contract.pop("greeks_rate_as_of_session") is None
                 for field in (
                     "at_the_money", "strike_exact", "watch_key", "watchability_reason"
                 ):

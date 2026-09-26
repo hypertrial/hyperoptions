@@ -21,6 +21,10 @@ MAX_PRICE_BARS = 20_000
 TAIL_OVERLAP_BARS = 30
 
 
+class CacheIntegrityError(ValueError):
+    """The saved price file and its manifest cannot be trusted together."""
+
+
 class ForecastProvider(Protocol):
     def fetch(self, ticker: str, start: date | None, end: date) -> pl.DataFrame: ...
 
@@ -115,11 +119,47 @@ class ForecastPriceStore:
 
     def read(self, ticker: str) -> pl.DataFrame | None:
         path = self.path(ticker)
-        return pl.read_parquet(path) if path.is_file() else None
+        manifest = path.with_suffix(".json")
+        if not path.exists() and not manifest.exists():
+            return None
+        if not path.is_file() or not manifest.is_file():
+            raise CacheIntegrityError(f"incomplete forecast price cache for {ticker}")
+        try:
+            metadata = json.loads(manifest.read_text())
+            frame = pl.read_parquet(path)
+            expected_schema = {
+                name: pl.Date if name == "ts" else pl.Float64 for name in PRICE_COLUMNS
+            }
+            if (
+                not isinstance(metadata, dict)
+                or metadata.get("ticker") != ticker
+                or metadata.get("source") != "Yahoo Finance daily Close"
+                or metadata.get("auto_adjust") is not False
+                or metadata.get("price_basis") != "split-normalized, dividend-unadjusted"
+                or frame.schema != expected_schema
+                or frame.is_empty()
+                or frame.height > MAX_PRICE_BARS
+                or frame["ts"].null_count()
+                or frame["ts"].n_unique() != frame.height
+                or frame["ts"].to_list() != sorted(frame["ts"].to_list())
+                or date.fromisoformat(metadata["through_session"]) != frame["ts"][-1]
+                or date.fromisoformat(metadata["requested_through_session"])
+                < frame["ts"][-1]
+                or metadata.get("hash") != price_hash(frame)
+            ):
+                raise ValueError("cache manifest does not match prices")
+        except (OSError, ValueError, TypeError, KeyError, pl.exceptions.PolarsError) as exc:
+            raise CacheIntegrityError(f"invalid forecast price cache for {ticker}") from exc
+        return frame
 
     def update(self, ticker: str, completed: date, *, full_refresh: bool = False) -> pl.DataFrame:
         path = self.path(ticker)
-        existing = self.read(ticker)
+        try:
+            existing = self.read(ticker)
+        except CacheIntegrityError:
+            if not full_refresh:
+                raise
+            existing = None
         manifest = path.with_suffix(".json")
         previous_metadata = {}
         if manifest.is_file():

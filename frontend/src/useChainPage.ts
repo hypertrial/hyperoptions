@@ -50,13 +50,17 @@ export function useChainPage(ticker: Ticker, side: Side, moneyness: Moneyness) {
   }, [load, ticker, side, moneyness])
 
   const pending = page?.expirations.some((group) => group.contracts.some(
-    (row) => row.market_odds?.status === "pending",
+    (row) => row.market_odds?.status === "pending" || row.predictive_odds?.status === "pending",
+  )) ?? false
+  const retryableForecast = page?.expirations.some((group) => group.contracts.some(
+    (row) => row.predictive_odds?.status === "unavailable"
+      && (row.predictive_odds.reason === "market_data_missing" || row.predictive_odds.reason === "market_data_invalid"),
   )) ?? false
 
   useEffect(() => {
     const interval = pending ? PENDING_MS : REFRESH_MS
     const refresh = () => {
-      if (document.hidden || loading || (!pending && !isRegularMarketHours())) return
+      if (document.hidden || loading || (!pending && !retryableForecast && !isRegularMarketHours())) return
       if (Date.now() - lastRequestedAt.current < interval) return
       void load(ticker, side, moneyness, true)
     }
@@ -66,7 +70,7 @@ export function useChainPage(ticker: Ticker, side: Side, moneyness: Moneyness) {
       window.clearInterval(timer)
       document.removeEventListener("visibilitychange", refresh)
     }
-  }, [load, loading, moneyness, pending, side, ticker])
+  }, [load, loading, moneyness, pending, retryableForecast, side, ticker])
 
   const beginTickerChange = () => {
     setPage(null)

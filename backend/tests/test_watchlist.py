@@ -27,9 +27,8 @@ from options_api.outcomes import (
 from options_api.parser import parse_option_chain
 from options_api.watchlist import WatchStore, WatchlistService
 from stocksweeper.config import Settings
-from stocksweeper.forecast.models import ForecastSnapshot
-from stocksweeper.forecast.repository import ForecastRepository
 from stocksweeper.pipeline.jobs import JobBusy, JobManager
+from stocksweeper.storage.db import connect
 
 from .conftest import load_fixture
 from .synthetic import synthetic_context
@@ -362,6 +361,7 @@ def test_watchlist_get_shows_running_job_ahead_of_queued_job(tmp_path: Path) -> 
         )),
         prefetch_universe=False,
         research_settings=Settings(data_dir=tmp_path),
+        predictive_refresh=False,
     )
     started = Event()
     release = Event()
@@ -513,12 +513,19 @@ def test_pending_expiry_outcome_retries_after_restart_when_requested(tmp_path: P
 def test_legacy_forecast_snapshot_stays_durable_but_is_not_served_as_current_odds(
     tmp_path: Path,
 ) -> None:
-    legacy = ForecastRepository(tmp_path)
-    legacy.initialize()
-    legacy.save_snapshot(ForecastSnapshot(
-        ticker="IREN", side="call", strike=D("50"), expiry=date(2026, 9, 18),
-        as_of=date(2026, 9, 16), status="available", itm_probability=0.62,
-    ))
+    # Simulate an existing file from the retired forecast repository. The live
+    # app may add its own tables, but must not rewrite historical evidence.
+    with connect(tmp_path / "results.duckdb") as connection:
+        connection.execute("""CREATE TABLE forecast_snapshots (
+            id VARCHAR PRIMARY KEY, content_hash VARCHAR UNIQUE, ticker VARCHAR,
+            side VARCHAR, strike DECIMAL(18, 3), expiry DATE, as_of DATE,
+            model_id VARCHAR, data_hash VARCHAR, created_at TIMESTAMPTZ,
+            payload_json VARCHAR
+        )""")
+        connection.execute("""INSERT INTO forecast_snapshots VALUES
+            ('legacy-1', 'original-hash', 'IREN', 'call', 50.000, '2026-09-18',
+             '2026-09-16', NULL, NULL, '2026-09-16 20:00:00+00',
+             '{"itm_probability":0.62}')""")
     watchlist = WatchlistService(tmp_path)
     record, _ = watchlist.store.add(
         "w1:IREN:IREN:call:2026-09-18:50.000", "IREN", "IREN", "call",
@@ -535,8 +542,11 @@ def test_legacy_forecast_snapshot_stays_durable_but_is_not_served_as_current_odd
     assert item.outcome.classification == "itm"
     assert item.market_odds.status == "pending"
     assert "forecast" not in item.model_dump()
-    preserved = legacy.latest_snapshot("IREN", "call", D("50"), date(2026, 9, 18))
-    assert preserved is not None and preserved.itm_probability == 0.62
+    with connect(tmp_path / "results.duckdb") as connection:
+        preserved = connection.execute(
+            "SELECT payload_json FROM forecast_snapshots WHERE id = 'legacy-1'"
+        ).fetchone()
+    assert preserved == ('{"itm_probability":0.62}',)
 
 
 def test_missing_outcome_explains_expiry_timing(tmp_path: Path) -> None:
@@ -601,6 +611,7 @@ def test_unverified_chain_contract_never_exposes_cached_numeric_odds(
         clock=lambda: now,
         prefetch_universe=False,
         research_settings=Settings(data_dir=tmp_path),
+        predictive_refresh=False,
     )
     with TestClient(app, base_url="http://127.0.0.1") as client:
         app.state.universe.seed([TickerListing(symbol="IREN", name="IREN")])
@@ -642,6 +653,7 @@ def test_watch_api_revalidates_current_chain_and_blocks_cross_site_writes(
         prefetch_universe=False,
         research_settings=Settings(data_dir=tmp_path),
         close_provider=Provider(),
+        predictive_refresh=False,
     )
     origin = {"Origin": "http://localhost:5173"}
     key = "w1:IREN:IREN:call:2026-09-18:48.000"

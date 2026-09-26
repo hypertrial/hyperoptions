@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from options_api.greeks import (
@@ -8,6 +9,7 @@ from options_api.greeks import (
     implied_vol,
     no_arb_bounds,
     select_iv_price,
+    years_until_expiry_close,
 )
 from options_api.money import to_e4, to_pct_tenths
 
@@ -24,7 +26,7 @@ def test_atm_call_golden_values() -> None:
         Decimal("10.4506"),
         Decimal("10.4506"),
     )
-    assert greeks.source == "bid"
+    assert greeks.source == "mid"
     assert greeks.iv_pct_tenths == to_pct_tenths(Decimal("20"))
     assert greeks.delta_e4 == to_e4(Decimal("0.6368"))
     assert greeks.gamma_e4 == to_e4(Decimal("0.01876"))
@@ -85,7 +87,7 @@ def test_bound_violations_and_zero_dte_are_null() -> None:
     assert above_strike == (None, None)
 
 
-def test_bid_inside_bounds_is_preferred_over_mid() -> None:
+def test_coherent_mid_is_used_instead_of_sell_bid() -> None:
     price, source = select_iv_price(
         True,
         Decimal("100"),
@@ -95,8 +97,8 @@ def test_bid_inside_bounds_is_preferred_over_mid() -> None:
         Decimal("10.45"),
         Decimal("10.55"),
     )
-    assert source == "bid"
-    assert price == Decimal("10.45")
+    assert source == "mid"
+    assert price == Decimal("10.50")
 
 
 def test_bid_at_or_below_lower_bound_falls_back_to_mid() -> None:
@@ -126,3 +128,33 @@ def test_bid_at_or_below_lower_bound_falls_back_to_mid() -> None:
         Decimal("11.00"),
     )
     assert at_epsilon[1] == "mid"
+
+
+def test_missing_crossed_or_non_finite_quotes_do_not_create_iv() -> None:
+    args = (True, Decimal("100"), Decimal("100"), Decimal("1"), Decimal("0.05"))
+    assert select_iv_price(*args, Decimal("10"), None) == (None, None)
+    assert select_iv_price(*args, Decimal("11"), Decimal("10")) == (None, None)
+    assert select_iv_price(*args, Decimal("NaN"), Decimal("11")) == (None, None)
+    assert select_iv_price(*args, Decimal("0"), Decimal("10")) == (Decimal("5"), "mid")
+    assert select_iv_price(
+        True, Decimal("100"), Decimal("100"), Decimal("NaN"),
+        Decimal("0.05"), Decimal("10"), Decimal("11"),
+    ) == (None, None)
+
+
+def test_exact_years_to_early_close_and_same_day_greeks() -> None:
+    # The post-Thanksgiving session closes at 13:00 ET, not 16:00 ET.
+    as_of = datetime(2026, 11, 27, 16, 0, tzinfo=UTC)
+    years = years_until_expiry_close(date(2026, 11, 27), as_of)
+    assert years == Decimal("7200") / Decimal("31536000")
+    greeks = compute_greeks(
+        "call", Decimal("100"), Decimal("100"), 0, Decimal("0.05"),
+        Decimal("0.05"), Decimal("0.07"), years_to_expiry=years,
+    )
+    assert greeks.source == "mid"
+    assert greeks.iv_pct_tenths is not None
+    expired = compute_greeks(
+        "call", Decimal("100"), Decimal("100"), 1, Decimal("0.05"),
+        Decimal("0.05"), Decimal("0.07"), years_to_expiry=Decimal("0"),
+    )
+    assert expired.source is None

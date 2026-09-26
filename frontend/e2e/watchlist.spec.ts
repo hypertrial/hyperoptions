@@ -137,15 +137,15 @@ test("shows dated market odds and close-based outcomes, then tracks the result c
   const active = page.getByRole("article").filter({
     has: page.getByRole("heading", { name: "Call · $48.000 · 2026-09-18" }),
   })
-  await expect(active.getByRole("region", { name: "Market-implied odds" })).toContainText("62.0% ITM")
-  await expect(active.getByRole("region", { name: "Market-implied odds" })).toContainText("38.0% OTM")
-  await expect(active.getByRole("region", { name: "Market-implied odds" })).toContainText("Nasdaq")
-  await expect(active.getByRole("region", { name: "Market-implied odds" })).toContainText("session 2026-09-11")
+  await expect(active.getByRole("region", { name: "Odds estimates" })).toContainText("62.0% ITM")
+  await expect(active.getByRole("region", { name: "Odds estimates" })).toContainText("38.0% OTM")
+  await expect(active.getByRole("region", { name: "Odds estimates" })).toContainText("Nasdaq")
+  await expect(active.getByRole("region", { name: "Odds estimates" })).toContainText("session 2026-09-11")
   await expect(active.getByRole("region", { name: "Expiry result" })).toContainText("Not expired yet")
   const expired = page.getByRole("article").filter({
     has: page.getByRole("heading", { name: "Call · $48.000 · 2026-09-11" }),
   })
-  await expect(expired.getByRole("region", { name: "Market-implied odds" })).toContainText("Expiry session completed")
+  await expect(expired.getByRole("region", { name: "Odds estimates" })).toContainText("Expiry session completed")
   await expect(expired.getByRole("region", { name: "Expiry result" })).toContainText("Provisional ITM")
   await expect(expired.getByRole("region", { name: "Expiry result" })).toContainText("Yahoo Finance daily Close")
   await expect(page.getByText(/not an OCC exercise or assignment decision/)).toBeVisible()
@@ -167,10 +167,42 @@ test("names unavailable odds before the reason and hides the model identifier", 
     } }] } })
   })
   await page.goto("/watchlist")
-  const odds = page.getByRole("region", { name: "Market-implied odds" })
+  const odds = page.getByRole("region", { name: "Odds estimates" })
   await expect(odds).toContainText("Odds unavailable")
   await expect(odds).toContainText("A coherent underlying bid and ask is unavailable")
   await expect(odds).not.toContainText("regimelib-0.1.0-market-odds-v1")
+})
+
+test("shows a separate forecast, prior market context, and dated hypothetical risk on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 })
+  await page.route("**/api/watchlist", async (route) => {
+    await route.fulfill({ json: { items: [{
+      ...item,
+      market_odds: { ...item.market_odds, status: "unavailable", itm_pct_tenths: null, otm_pct_tenths: null, reason: "Quote bounds too wide" },
+      last_available_market_odds: item.market_odds,
+      predictive_odds: {
+        status: "available", method: "lognormal_ewma", itm_pct_tenths: 520,
+        otm_pct_tenths: 480, atm_pct_tenths: 0, as_of_session: "2026-09-11",
+        expiry_session: "2026-09-18", support: 60,
+      },
+      hypothetical_risk: {
+        status: "available", assumed_spot_cents: 4990, assumed_bid_cents: 125,
+        quote_source: "nasdaq", quote_session: "2026-09-11",
+        expected_pnl_cents: 765, expected_return_pct_tenths: 16,
+        loss_pct_tenths: 342, p05_pnl_cents: -9300,
+      },
+    }] } })
+  })
+  await page.goto("/watchlist")
+  const odds = page.getByRole("region", { name: "Odds estimates" })
+  await expect(odds).toContainText("Historical predictive")
+  await expect(odds).toContainText("52.0% ITM")
+  await expect(odds.getByText(/Previous market-implied estimate/)).toBeVisible()
+  const risk = page.getByRole("region", { name: "Hypothetical expiry risk" })
+  await expect(risk).toContainText("$49.90 per share")
+  await expect(risk).toContainText("$7.65")
+  await expect(risk).toContainText("2026-09-11")
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
 
 test("retired research deep links open the watchlist without research requests", async ({ page }) => {

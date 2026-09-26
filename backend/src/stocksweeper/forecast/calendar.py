@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 import exchange_calendars as xcals
 
 from options_api.market_calendar import latest_completed_session, session_on_or_before
-
-PUBLISHING_LAG = timedelta(minutes=30)
-
 
 class SessionCalendar:
     def __init__(self) -> None:
@@ -25,7 +22,7 @@ class SessionCalendar:
     def last_completed(self, as_of: datetime) -> date:
         if as_of.tzinfo is None:
             raise ValueError("as_of must have a timezone")
-        return latest_completed_session(as_of - PUBLISHING_LAG)
+        return latest_completed_session(as_of)
 
     def expiry_session(self, expiry: date) -> date:
         return session_on_or_before(expiry)

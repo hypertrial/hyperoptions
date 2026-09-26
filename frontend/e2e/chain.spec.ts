@@ -123,6 +123,17 @@ test("maps non-optionable and missing symbols without contacting Nasdaq from the
 })
 
 test("keeps unavailable odds reasons accessible without filling every compact row", async ({ page }) => {
+  await page.route("**/api/covered-calls/IREN**", async (route) => {
+    const response = await route.fetch()
+    const chain = await response.json()
+    for (const group of chain.expirations) {
+      for (const contract of group.contracts) {
+        contract.market_odds = { status: "unavailable", reason: "A coherent underlying bid and ask is unavailable" }
+        contract.predictive_odds = { status: "unavailable", reason: "Insufficient completed history" }
+      }
+    }
+    await route.fulfill({ response, json: chain })
+  })
   await page.goto("/")
   const oddsCell = page.locator(".odds-cell").first()
   await expect(oddsCell).toContainText("Odds unavailable")

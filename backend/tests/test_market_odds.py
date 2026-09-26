@@ -12,6 +12,7 @@ from options_api.market_odds import (
     _Quote,
     _price_converged,
     _vertical_bounds,
+    _vertical_bounds_with_reason,
     _years_to_close,
     calculate_market_odds,
 )
@@ -151,6 +152,42 @@ def test_sparse_strike_spacing_withholds_when_quote_bounds_are_too_wide() -> Non
     result = calculate_market_odds(rows, Decimal("100"), lambda _: 0.04,
                                    {expiry.isoformat()}, NOW)
     assert all(estimate.call_itm_probability is None for estimate in result.values())
+
+
+def test_two_tenor_fit_reports_wide_bounds_without_relaxing_the_gate() -> None:
+    rows = []
+    for expiry in EXPIRIES[:2]:
+        years = _years_to_close(expiry, NOW)
+        for strike in (90, 95, 100, 105, 110):
+            mid = _black_call(100, strike, years, 0.04, 0.25)
+            rows.append(_row(
+                expiry, Decimal(strike),
+                Decimal(str(mid - 0.01)), Decimal(str(mid + 0.01)),
+            ))
+    result = calculate_market_odds(
+        rows, Decimal("100"), lambda _: 0.04,
+        {expiry.isoformat() for expiry in EXPIRIES[:2]}, NOW,
+    )
+    for expiry in EXPIRIES[:2]:
+        estimate = result[(expiry.isoformat(), Decimal("100"))]
+        assert estimate.call_itm_probability is None
+        assert estimate.reason == "quote_bounds_wide"
+
+
+def test_vertical_bound_reasons_distinguish_missing_inconsistent_and_wide() -> None:
+    narrow = [_call_quote(strike, half_spread=0.01) for strike in ("99", "100", "101")]
+    assert _vertical_bounds_with_reason(narrow[:2], narrow[1]) == (
+        None, "quote_bracket_missing"
+    )
+    wide = [_call_quote(strike, half_spread=0.01) for strike in ("90", "100", "110")]
+    assert _vertical_bounds_with_reason(wide, wide[1]) == (None, "quote_bounds_wide")
+    far = narrow[0]
+    impossible_ask = narrow[1].bid - 0.2
+    narrow[0] = _Quote(far.expiration, far.strike, far.years, far.rate,
+                       impossible_ask - 0.01, impossible_ask)
+    assert _vertical_bounds_with_reason(narrow, narrow[1]) == (
+        None, "quote_bounds_inconsistent"
+    )
 
 
 def test_corrupted_held_out_market_quote_rejects_the_shared_fit() -> None:

@@ -197,6 +197,46 @@ describe("chain interactions", () => {
     expect(screen.getByText(/Nasdaq · last estimate Sep 17, 2026/)).toBeTruthy()
   })
 
+  it("uses a labeled historical fallback and sorts hypothetical risk without a composite score", async () => {
+    window.history.replaceState(null, "", "/?t=IREN&side=call&m=itm&cols=strike_cents,expected_pnl_cents,loss_pct_tenths,p05_pnl_cents")
+    const oddsPage = page()
+    oddsPage.expirations[0].contracts.forEach((row, index) => Object.assign(row, {
+      market_odds: {
+        status: "unavailable", itm_pct_tenths: null, otm_pct_tenths: null,
+        reason: "Quote bounds too wide", source: "nasdaq", fetched_at: "2026-09-18T20:00:00Z",
+        session_date: "2026-09-18", model_version: "test",
+      },
+      predictive_odds: {
+        status: "available", method: "lognormal_ewma", reason: null,
+        itm_pct_tenths: 521, otm_pct_tenths: 479, atm_pct_tenths: 0,
+        as_of_session: "2026-09-18", expiry_session: "2026-09-18",
+        model_version: "lognormal-ewma60-v1", support: 60, data_hash: "test",
+      },
+      hypothetical_risk: {
+        status: "available", reason: null, assumed_spot_cents: 4990, assumed_bid_cents: 50,
+        quote_source: "nasdaq", quote_session: "2026-09-18",
+        expected_pnl_cents: index === 0 ? 2000 : -1000,
+        expected_return_pct_tenths: index === 0 ? 40 : -20,
+        loss_pct_tenths: index === 0 ? 300 : 700,
+        p05_pnl_cents: index === 0 ? -8000 : -12000,
+      },
+    }))
+    fetchMock.mockResolvedValue(oddsPage)
+    render(<ItmChain />)
+
+    const rows = await screen.findAllByRole("row")
+    expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("Historical predictive")
+    expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("52.1% ITM")
+    expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("Why market odds unavailable?")
+    expect(screen.getByRole("columnheader", { name: "Est P&L" })).toBeTruthy()
+    expect(screen.getByRole("columnheader", { name: "Loss odds" })).toBeTruthy()
+    expect(screen.queryByRole("columnheader", { name: /score/i })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Est P&L" }))
+    expect((await screen.findAllByRole("row"))[1].firstChild?.textContent).toBe("$40.50")
+    fireEvent.change(screen.getByLabelText("Contracts"), { target: { value: "2" } })
+    expect((await screen.findAllByRole("row"))[1].textContent).toContain("-$20.00")
+  })
+
   it("includes odds in the mobile contract summary before expanding details", async () => {
     setDesktopViewport(false)
     const oddsPage = page()

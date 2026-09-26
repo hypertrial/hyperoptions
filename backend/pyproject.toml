@@ -8,16 +8,13 @@ dependencies = [
     "exchange-calendars>=4.11,<5",
     "fastapi>=0.115",
     "httpx[http2]>=0.28",
-    "numba>=0.61",
     "numpy>=2",
     "pandas>=2.2",
-    "pandas-ta-classic>=0.8",
     "polars>=1.30",
     "pyarrow>=18",
     "pydantic>=2.13",
     "regimelib==0.1.0",
     "uvicorn[standard]>=0.32",
-    "vectorbt>=1.1",
     "yfinance>=1.7",
 ]
 

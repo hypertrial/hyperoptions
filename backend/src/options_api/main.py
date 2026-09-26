@@ -5,7 +5,7 @@ import contextlib
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Annotated
 from urllib.parse import urlsplit
@@ -19,22 +19,28 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from options_api.cache import TickerCache
 from options_api.chain import load_cash_secured_puts, load_covered_calls
+from options_api.greeks import empty_greeks
+from options_api.live_quant import quant_for_contract
 from options_api.market_watch import MarketWatchOdds
 from options_api.models import (
     CashSecuredPutPage,
     CoveredCallPage,
     HealthResponse,
+    HypotheticalRiskView,
     MarketOddsView,
     Moneyness,
+    PredictiveOddsView,
     TickerSearchResponse,
     normalize_ticker,
 )
 from options_api.nasdaq import NasdaqError, create_http_client
 from options_api.outcomes import CloseProvider
+from options_api.predictive_watch import PredictiveWatchOdds
 from options_api.service import OptionChainService
 from options_api.universe import TickerUniverse
 from options_api.watchlist import WatchlistService, router as watchlist_router
 from stocksweeper.config import Settings, load_settings
+from stocksweeper.forecast.predictive import PredictiveForecaster
 from stocksweeper.pipeline.jobs import JobManager
 from stocksweeper.storage.db import single_instance
 
@@ -218,29 +224,73 @@ async def _load_page(
     listing = universe.listing(normalized)
     service: OptionChainService = request.app.state.service
     try:
+        now = _page_now(request.app)
         page = await load(
             service,
             normalized,
-            _page_now(request.app),
+            now,
             moneyness=moneyness,
             name=listing.name if listing else None,
         )
         odds: MarketWatchOdds = request.app.state.market_odds
-        odds.schedule([normalized])
+        predictive: PredictiveWatchOdds = request.app.state.predictive_odds
+        market_snapshot_matches = False
+        if page.expirations:
+            odds.schedule([normalized])
+            market_snapshot_matches = odds.schedule_for_chain(
+                normalized, page.chain_fetched_at, page.chain_source
+            )
+            predictive.schedule([normalized])
+        side = "call" if isinstance(page, CoveredCallPage) else "put"
+        # A dated Treasury curve varies by expiry; the old page-wide default
+        # rate cannot describe the live per-contract Greek calculations.
+        page.risk_free_rate_pct_tenths = None
         for expiration in page.expirations:
             for contract in expiration.contracts:
                 if contract.watch_key is None:
                     contract.market_odds = MarketOddsView(
                         status="unavailable", reason="Contract terms cannot be verified"
                     )
-                    continue
-                contract.market_odds = odds.lookup(
-                    normalized,
-                    "call" if isinstance(page, CoveredCallPage) else "put",
-                    contract.expiration,
-                    Decimal(contract.strike_exact),
-                    normalized,
-                )
+                    contract.predictive_odds = PredictiveOddsView(
+                        status="unavailable", reason="contract_terms_ambiguous"
+                    )
+                    contract.hypothetical_risk = HypotheticalRiskView(
+                        reason="Contract terms cannot be verified"
+                    )
+                    greeks = empty_greeks()
+                    contract.greeks_rate_pct_tenths = None
+                    contract.greeks_rate_as_of_session = None
+                else:
+                    result = quant_for_contract(
+                        odds,
+                        predictive,
+                        ticker=normalized,
+                        root=normalized,
+                        side=side,
+                        expiry=date.fromisoformat(contract.expiration),
+                        strike=Decimal(contract.strike_exact),
+                        displayed_chain_fetched_at=page.chain_fetched_at,
+                        displayed_chain_source=page.chain_source,
+                    )
+                    contract.market_odds = (
+                        result.market
+                        if market_snapshot_matches
+                        else MarketOddsView(
+                            status="pending", reason="Refreshing odds for displayed quotes"
+                        )
+                    )
+                    contract.predictive_odds = result.predictive
+                    contract.hypothetical_risk = result.risk
+                    contract.greeks_rate_pct_tenths = result.greeks_rate_pct_tenths
+                    contract.greeks_rate_as_of_session = result.greeks_rate_as_of_session
+                    greeks = result.greeks
+                contract.iv_pct_tenths = greeks.iv_pct_tenths
+                contract.delta_e4 = greeks.delta_e4
+                contract.gamma_e4 = greeks.gamma_e4
+                contract.theta_e4 = greeks.theta_e4
+                contract.vega_e4 = greeks.vega_e4
+                contract.rho_e4 = greeks.rho_e4
+                contract.greeks_source = greeks.source
         return page
     except NasdaqError as exc:
         raise _http_nasdaq_error(exc) from exc
@@ -273,6 +323,8 @@ def create_app(
     prefetch_universe: bool = True,
     research_settings: Settings | None = None,
     close_provider: CloseProvider | None = None,
+    predictive_forecaster: PredictiveForecaster | None = None,
+    predictive_refresh: bool = True,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -291,8 +343,21 @@ def create_app(
             )
             app.state.universe = TickerUniverse(client)
             app.state.clock = clock or (lambda: datetime.now(UTC))
+            app.state.predictive_odds = PredictiveWatchOdds(
+                settings.resolved_data_dir(),
+                app.state.clock,
+                predictive_forecaster,
+                refresh_enabled=predictive_refresh,
+            )
             app.state.market_odds = MarketWatchOdds(
-                app.state.service, client, app.state.clock
+                app.state.service,
+                client,
+                app.state.clock,
+                data_dir=settings.resolved_data_dir(),
+                watched_contracts=lambda: (
+                    (record.watch_key, record.created_at)
+                    for record in app.state.watchlist.store.list()
+                ),
             )
             app.state.prefetch_universe = prefetch_universe
             prefetch: asyncio.Task[bool] | None = None
@@ -325,6 +390,7 @@ def create_app(
                 if prefetch is not None and not prefetch.done():
                     prefetch.cancel()
                 await app.state.market_odds.close()
+                await app.state.predictive_odds.close()
                 app.state.jobs.stop_accepting()
                 drained = await asyncio.to_thread(app.state.jobs.wait, 2.0)
                 if not drained:

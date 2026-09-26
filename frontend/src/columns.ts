@@ -27,7 +27,7 @@ export const CALL_DEFAULT_COLUMN_IDS = STRATEGIES.call.defaultColumnIds
 export const PUT_DEFAULT_COLUMN_IDS = STRATEGIES.put.defaultColumnIds
 
 const GREEK_INFO = {
-  iv: "Black-Scholes implied volatility from the sell bid first, then mid. European no-dividend approximation. Shown as a percent.",
+  iv: "Black-Scholes implied volatility from a coherent bid/ask midpoint. European no-dividend approximation of an American equity option. Shown as a percent.",
   delta: "Black-Scholes delta. Sensitivity of option price to a $1 move in the stock.",
   gamma: "Black-Scholes gamma. Sensitivity of delta to a $1 move in the stock.",
   theta: "Black-Scholes theta per share per calendar day.",
@@ -150,6 +150,16 @@ export const GREEK_COLUMNS: ColumnDef[] = [
     format: (row) => unsignedPercentTenths(row.iv_pct_tenths),
   },
   {
+    id: "greeks_rate_pct_tenths",
+    label: "Greek rate",
+    info: "Continuously compounded Treasury rate used for this contract's Greeks; its curve date is shown. European no-dividend approximation of an American equity option.",
+    heatmap: false,
+    group: "greeks",
+    greek: true,
+    accessor: (row) => row.greeks_rate_pct_tenths,
+    format: (row) => row.greeks_rate_pct_tenths == null ? "—" : `${unsignedPercentTenths(row.greeks_rate_pct_tenths)} · ${row.greeks_rate_as_of_session ?? "date unavailable"}`,
+  },
+  {
     id: "delta_e4",
     label: "Delta",
     info: GREEK_INFO.delta,
@@ -198,6 +208,51 @@ export const GREEK_COLUMNS: ColumnDef[] = [
     greek: true,
     accessor: (row) => row.rho_e4,
     format: (row) => signedE4(row.rho_e4),
+  },
+]
+
+type RiskMetric = "expected_pnl_cents" | "expected_return_pct_tenths" | "loss_pct_tenths" | "p05_pnl_cents"
+
+function riskValue(row: SizedContract, metric: RiskMetric): number | null {
+  return row.hypothetical_risk?.status === "available" ? row.hypothetical_risk[metric] ?? null : null
+}
+
+const HYPOTHETICAL_RISK_COLUMNS: ColumnDef[] = [
+  {
+    id: "expected_pnl_cents",
+    label: "Est P&L",
+    info: "Hypothetical expected hold-to-expiry P&L for the selected contract count, from the historical predictive distribution and dated entry quote. Excludes dividends, fees, and assignment.",
+    heatmap: false,
+    group: "returns",
+    accessor: (row) => riskValue(row, "expected_pnl_cents"),
+    format: (row) => moneyCents(riskValue(row, "expected_pnl_cents")),
+  },
+  {
+    id: "expected_return_pct_tenths",
+    label: "Est return",
+    info: "Hypothetical expected hold-to-expiry return from the historical predictive distribution and dated entry quote. Excludes dividends, fees, and assignment.",
+    heatmap: false,
+    group: "returns",
+    accessor: (row) => riskValue(row, "expected_return_pct_tenths"),
+    format: (row) => percentTenths(riskValue(row, "expected_return_pct_tenths")),
+  },
+  {
+    id: "loss_pct_tenths",
+    label: "Loss odds",
+    info: "Hypothetical chance of negative hold-to-expiry P&L under the historical predictive distribution and dated entry quote.",
+    heatmap: false,
+    group: "risk",
+    accessor: (row) => riskValue(row, "loss_pct_tenths"),
+    format: (row) => unsignedPercentTenths(riskValue(row, "loss_pct_tenths")),
+  },
+  {
+    id: "p05_pnl_cents",
+    label: "5th %ile P&L",
+    info: "Fifth-percentile hypothetical hold-to-expiry P&L for the selected contract count. A model estimate, not a loss limit.",
+    heatmap: false,
+    group: "risk",
+    accessor: (row) => riskValue(row, "p05_pnl_cents"),
+    format: (row) => moneyCents(riskValue(row, "p05_pnl_cents")),
   },
 ]
 
@@ -424,7 +479,7 @@ export const PUT_COLUMNS: ColumnDef<SizedPut>[] = [
 
 export function strategyColumns(side: Side): ColumnDef[] {
   const base = side === "put" ? PUT_COLUMNS : CALL_COLUMNS
-  return [...base, ...GREEK_COLUMNS] as ColumnDef[]
+  return [...base, ...HYPOTHETICAL_RISK_COLUMNS, ...GREEK_COLUMNS] as ColumnDef[]
 }
 
 export function defaultColumnIds(side: Side): string[] {

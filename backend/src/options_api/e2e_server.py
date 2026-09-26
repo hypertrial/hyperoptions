@@ -100,7 +100,11 @@ def create_mock_client() -> httpx.AsyncClient:
     )
 
 
-app = create_app(client_factory=create_mock_client, clock=lambda: NOW)
+app = create_app(
+    client_factory=create_mock_client,
+    clock=lambda: NOW,
+    predictive_refresh=False,
+)
 
 
 def main() -> None:
