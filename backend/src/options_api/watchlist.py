@@ -551,7 +551,8 @@ def _queue(request: Request, *, force: bool = False, retry_pending: bool = False
     from stocksweeper.forecast import PeerCandidate
 
     candidates = [
-        PeerCandidate(ticker=listing.symbol, sector=listing.sector) for listing in universe.listings
+        PeerCandidate(ticker=listing.symbol, sector=listing.sector)
+        for listing in universe.forecast_peer_listings()
     ]
     return request.app.state.watchlist.queue_refresh(
         request.app.state.jobs,

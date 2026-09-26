@@ -292,7 +292,7 @@ def create_app(
                         if app.state.universe.available:
                             candidates = [
                                 PeerCandidate(ticker=listing.symbol, sector=listing.sector)
-                                for listing in app.state.universe.listings
+                                for listing in app.state.universe.forecast_peer_listings()
                             ]
                             app.state.watchlist.queue_refresh(
                                 app.state.jobs,

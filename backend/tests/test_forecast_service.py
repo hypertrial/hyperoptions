@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+import logging
 from math import exp
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +12,7 @@ from types import SimpleNamespace
 import pandas as pd
 import polars as pl
 import pytest
+from yfinance.exceptions import YFPricesMissingError, YFTzMissingError
 
 from stocksweeper.forecast.calibration import CalibrationResult
 from stocksweeper.forecast.calendar import SessionCalendar
@@ -24,7 +26,7 @@ from stocksweeper.forecast.market import (
 from stocksweeper.forecast.models import PeerCandidate
 from stocksweeper.forecast.samples import observations
 from stocksweeper.forecast.selection import Selection, catalog, select_strategy, strategy_states
-from stocksweeper.forecast.service import ForecastService, _audit_tickers
+from stocksweeper.forecast.service import ForecastService, _audit_tickers, _retry_due
 from stocksweeper.data.synthetic import synthetic_ohlcv
 from stocksweeper.strategy.generator import generate_strategies
 
@@ -436,7 +438,7 @@ def test_failed_cohort_attempt_survives_restart(tmp_path, monkeypatch):
     assert provider.calls == 1
 
 
-def test_transient_cohort_outage_can_retry_after_restart(tmp_path, monkeypatch):
+def test_transient_cohort_outage_can_retry_after_restart(tmp_path, monkeypatch, caplog):
     class TransientPeer(NoNetwork):
         def fetch(self, ticker, start, end):
             self.calls += 1
@@ -462,6 +464,7 @@ def test_transient_cohort_outage_can_retry_after_restart(tmp_path, monkeypatch):
     candidates = [PeerCandidate(ticker="AAPL", sector="Technology")]
     assert first._cohort(date(2026, 9, 24), candidates) is None
     assert first._cohort_reason == "peer_data_missing"
+    assert any(record.exc_info for record in caplog.records)
     restarted = ForecastService(tmp_path, provider)
     restarted.initialize()
     monkeypatch.setattr(restarted, "_selection", lambda *args, **kwargs: (selection, None))
@@ -471,6 +474,58 @@ def test_transient_cohort_outage_can_retry_after_restart(tmp_path, monkeypatch):
     assert cohort is not None
     assert len(cohort["members"]) == 1
     assert provider.calls == 2
+
+
+def test_missing_peer_history_is_quiet_and_retried_daily(
+    tmp_path, monkeypatch, caplog
+):
+    class MissingPeer:
+        calls = 0
+
+        def fetch(self, ticker, start, end):
+            self.calls += 1
+            raise YFPricesMissingError(ticker, "no history before audit cutoff")
+
+    provider = MissingPeer()
+    service = ForecastService(tmp_path, provider)
+    service.initialize()
+    monkeypatch.setattr("stocksweeper.forecast.service.MIN_COHORT", 1)
+    candidates = [PeerCandidate(ticker="AFRIW", sector="Technology")]
+    with caplog.at_level(logging.DEBUG, logger="stocksweeper.forecast.service"):
+        assert service._cohort(date(2026, 9, 24), candidates) is None
+    assert service._cohort_reason == "peer_data_missing"
+    assert not any(record.exc_info for record in caplog.records)
+    assert not any(record.levelno >= logging.WARNING for record in caplog.records)
+    assert service._cohort(date(2026, 9, 24), candidates) is None
+    assert provider.calls == 1
+    attempt = {
+        "reason": "peer_data_missing",
+        "provider_errors": 1,
+        "price_missing_errors": 1,
+        "attempted_at": (datetime.now(UTC) - timedelta(hours=12)).isoformat(),
+    }
+    assert not _retry_due(attempt, force=False)
+    attempt["attempted_at"] = (datetime.now(UTC) - timedelta(hours=25)).isoformat()
+    assert _retry_due(attempt, force=False)
+    attempt["price_missing_errors"] = 0
+    attempt["attempted_at"] = (datetime.now(UTC) - timedelta(minutes=31)).isoformat()
+    assert _retry_due(attempt, force=False)
+
+
+def test_missing_peer_metadata_is_quiet_but_retryable(tmp_path, monkeypatch, caplog):
+    class MissingMetadata:
+        def fetch(self, ticker, start, end):
+            raise YFTzMissingError(ticker)
+
+    service = ForecastService(tmp_path, MissingMetadata())
+    service.initialize()
+    monkeypatch.setattr("stocksweeper.forecast.service.MIN_COHORT", 1)
+    with caplog.at_level(logging.DEBUG, logger="stocksweeper.forecast.service"):
+        assert service._cohort(
+            date(2026, 9, 24), [PeerCandidate(ticker="AFRIW", sector="Technology")]
+        ) is None
+    assert service._cohort_reason == "peer_data_missing"
+    assert not any(record.exc_info for record in caplog.records)
 
 
 def test_peer_without_nasdaq_sector_never_triggers_metadata_lookup(tmp_path):

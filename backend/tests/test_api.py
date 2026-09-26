@@ -64,6 +64,23 @@ def _seed_universe(client: httpx.AsyncClient | None = None) -> TickerUniverse:
     return universe
 
 
+def test_forecast_peer_pool_excludes_non_equity_listings_without_hiding_them() -> None:
+    universe = TickerUniverse(_offline_client())
+    universe.seed(
+        [
+            TickerListing(symbol="AAPL", name="Apple Inc. Common Stock", sector="Technology"),
+            TickerListing(symbol="AFRIW", name="Forafric Global PLC Warrants", sector="Finance"),
+            TickerListing(symbol="TESTU", name="Example Acquisition Units", sector="Finance"),
+            TickerListing(symbol="TESTR", name="Example Acquisition Rights", sector="Finance"),
+            TickerListing(symbol="PREF", name="Example Preferred Shares", sector="Finance"),
+            TickerListing(symbol="NSEC", name="No Sector Inc."),
+        ]
+    )
+    assert [item.symbol for item in universe.forecast_peer_listings()] == ["AAPL"]
+    assert universe.contains("AFRIW")
+    assert [item.symbol for item in universe.search("AFRI", 10)] == ["AFRIW"]
+
+
 def _install_service(handler) -> None:
     mock_client = httpx.AsyncClient(
         transport=httpx.MockTransport(handler),

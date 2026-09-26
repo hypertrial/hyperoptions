@@ -626,7 +626,7 @@ def test_watch_api_revalidates_current_chain_and_blocks_cross_site_writes(
     fake_forecast = FakeForecast()
     item_watch_time = datetime(2026, 9, 11, 14, tzinfo=UTC)
     with TestClient(app, base_url="http://127.0.0.1") as client:
-        app.state.universe.seed([TickerListing(symbol="IREN", name="IREN")])
+        app.state.universe.seed([TickerListing(symbol="IREN", name="IREN", sector="Finance")])
         app.state.watchlist.forecast = fake_forecast
         assert client.get(
             "/api/health", headers={"Sec-Fetch-Site": "cross-site"}

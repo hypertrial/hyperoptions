@@ -14,6 +14,7 @@ from math import isfinite
 from pathlib import Path
 
 import polars as pl
+from yfinance.exceptions import YFPricesMissingError, YFTickerMissingError
 
 from stocksweeper.forecast.calibration import fit_audit, tail_probability
 from stocksweeper.forecast.calendar import SessionCalendar
@@ -71,7 +72,13 @@ def _retry_due(payload: dict, *, force: bool) -> bool:
         previous = datetime.fromisoformat(attempted)
     except ValueError:
         return True
-    return previous.tzinfo is None or datetime.now(UTC) >= previous + TRANSIENT_RETRY_DELAY
+    delay = (
+        timedelta(days=1)
+        if payload.get("price_missing_errors", 0) > 0
+        and payload.get("price_missing_errors") == payload.get("provider_errors")
+        else TRANSIENT_RETRY_DELAY
+    )
+    return previous.tzinfo is None or datetime.now(UTC) >= previous + delay
 
 
 def _digest(value: object) -> str:
@@ -428,6 +435,7 @@ class ForecastService:
                     round_robin.append((sector, sectors[sector].popleft()))
         members: list[dict] = []
         provider_errors = sector_errors
+        price_missing_errors = 0
         for index, (sector, item) in enumerate(round_robin):
             if len(members) == PEER_LIMIT:
                 break
@@ -442,6 +450,15 @@ class ForecastService:
                     self.prices.update(item.ticker, AUDIT_END), AUDIT_END, self.calendar
                 )
                 selection, _ = self._selection(item.ticker, bars, AUDIT_END, peer=True)
+            except YFPricesMissingError as exc:
+                logger.debug("forecast peer %s has no Yahoo history: %s", item.ticker, exc)
+                provider_errors += 1
+                price_missing_errors += 1
+                continue
+            except YFTickerMissingError as exc:
+                logger.debug("forecast peer %s has missing Yahoo metadata: %s", item.ticker, exc)
+                provider_errors += 1
+                continue
             except Exception:
                 logger.exception("forecast peer qualification failed for %s", item.ticker)
                 provider_errors += 1
@@ -466,6 +483,7 @@ class ForecastService:
                     "qualified_count": len(members),
                     "candidate_count": len(ordered),
                     "provider_errors": provider_errors,
+                    "price_missing_errors": price_missing_errors,
                     "attempted_through": AUDIT_END.isoformat(),
                     "attempted_at": datetime.now(UTC).isoformat(),
                 },

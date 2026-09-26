@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 import time
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
@@ -13,6 +14,7 @@ from options_api.nasdaq import NasdaqError, fetch_screener_payload
 from options_api.parser import parse_screener_listings
 
 UNIVERSE_TTL_SECONDS = 86_400.0
+NON_EQUITY_NAME = re.compile(r"\b(?:warrants?|rights?|units?|preferred|notes?|bonds?)\b", re.I)
 
 
 class TickerUniverse:
@@ -43,6 +45,13 @@ class TickerUniverse:
     @property
     def listings(self) -> tuple[TickerListing, ...]:
         return self._listings
+
+    def forecast_peer_listings(self) -> list[TickerListing]:
+        return [
+            item
+            for item in self._listings
+            if item.sector and item.sector.strip() and not NON_EQUITY_NAME.search(item.name)
+        ]
 
     def seed(self, listings: Sequence[TickerListing], as_of: datetime | None = None) -> None:
         kept = [item for item in listings if normalize_ticker(item.symbol) == item.symbol]
