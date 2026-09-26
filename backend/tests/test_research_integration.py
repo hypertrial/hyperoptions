@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from options_api.main import create_app
 from options_api.models import CoveredCallPage, TickerListing
 from stocksweeper.config import Settings
+from stocksweeper.data.store import TickerStatus
 from stocksweeper.storage.db import connect
 
 
@@ -46,6 +47,59 @@ def test_one_app_exposes_chain_and_namespaced_research(api) -> None:
     assert "/api/jobs/{job_id}" in paths
     assert "/api/research/health" not in paths
     assert "/api/config" not in paths
+
+
+def test_overview_uses_selected_run_tickers(api, monkeypatch) -> None:
+    _, client = api
+
+    class RunRepository:
+        def get_run(self, run_id: str):
+            return {"id": run_id} if run_id == "custom" else None
+
+        def run_tickers(self, run_id: str):
+            return [{"ticker": "AAPL"}]
+
+        def overview(self, run_id: str, tickers: list[str]):
+            if "AAPL" not in tickers:
+                return []
+            return [{"ticker": "AAPL", "strategy_id": "rule-1", "strategy_name": "AAPL rule"}]
+
+    def status(_self, tickers, _interval, _start_dates):
+        return [
+            TickerStatus(ticker=ticker, bars=0, first=None, last=None, has_indicators=False)
+            for ticker in tickers
+        ]
+
+    monkeypatch.setattr("stocksweeper.api.routes_results._repo", lambda _request: RunRepository())
+    monkeypatch.setattr("stocksweeper.data.store.MarketStore.status", status)
+
+    response = client.get("/api/research/overview?run_id=custom")
+    assert response.status_code == 200
+    assert [(card["ticker"], card["strategy_id"]) for card in response.json()] == [
+        ("AAPL", "rule-1")
+    ]
+    assert client.get("/api/research/overview?run_id=missing").status_code == 404
+
+
+def test_overview_without_a_run_keeps_configured_tickers(api, monkeypatch) -> None:
+    _, client = api
+
+    class EmptyRepository:
+        def latest_run_id(self):
+            return None
+
+    def status(_self, tickers, _interval, _start_dates):
+        return [
+            TickerStatus(ticker=ticker, bars=0, first=None, last=None, has_indicators=False)
+            for ticker in tickers
+        ]
+
+    monkeypatch.setattr("stocksweeper.api.routes_results._repo", lambda _request: EmptyRepository())
+    monkeypatch.setattr("stocksweeper.data.store.MarketStore.status", status)
+
+    response = client.get("/api/research/overview")
+    assert response.status_code == 200
+    assert [card["ticker"] for card in response.json()] == ["IREN", "CIFR", "WULF", "NBIS"]
 
 
 @pytest.mark.parametrize("path", ["/api/research/data/update", "/api/research/backtest/run"])

@@ -59,7 +59,7 @@ export function Leaderboard() {
   const coverage = useQuery({
     queryKey: ["run-tickers", runId],
     queryFn: () => getJson<RunTicker[]>(`/api/research/runs/${runId}/tickers`),
-    enabled: Boolean(runId) && state.view === "cross",
+    enabled: Boolean(runId),
   })
   const gates = config.data ? gatesFromConfig(config.data.gates) : undefined
   const columns = useMemo(
@@ -70,8 +70,10 @@ export function Leaderboard() {
     [state, runId, gates, setParams],
   )
   const page = pageBounds(state.offset, board.data?.total ?? 0)
-  const tickers = config.data?.tickers
-  const crossColumns = useMemo(() => crossTickerColumns(tickers ?? [], runId), [tickers, runId])
+  const tickers = coverage.data === undefined && runId
+    ? []
+    : coverage.data?.length ? coverage.data.map((item) => item.ticker) : config.data?.tickers ?? []
+  const crossColumns = crossTickerColumns(tickers, runId)
 
   function update(next: LeaderboardState) {
     setParams(serializeLeaderboardState(next, runId))
@@ -99,7 +101,7 @@ export function Leaderboard() {
           <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
             <select aria-label="Ticker" className="min-h-9 rounded-md border border-border bg-card px-2 py-1" value={state.ticker} onChange={(event) => update(withFilter(state, { ticker: event.target.value }))}>
               <option value="">All tickers</option>
-              {(tickers ?? []).map((ticker) => (
+              {tickers.map((ticker) => (
                 <option key={ticker}>{ticker}</option>
               ))}
             </select>

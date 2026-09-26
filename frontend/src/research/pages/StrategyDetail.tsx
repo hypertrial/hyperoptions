@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 import { Link, useLocation, useParams, useSearchParams } from "react-router-dom"
 import { getJson } from "../api/client"
-import type { ConfigView, StrategyDetail as Detail } from "../api/types"
+import type { ConfigView, RunTicker, StrategyDetail as Detail } from "../api/types"
 import { performanceFigure, segmentSwatch } from "../charts/performance"
 import { PlotlyChart } from "../charts/PlotlyChart"
 import { RuleLines, Score, WindowStats } from "../components/WindowStats"
@@ -29,6 +29,11 @@ export function StrategyDetail() {
   const config = useQuery({
     queryKey: ["config"],
     queryFn: () => getJson<ConfigView>("/api/research/config"),
+  })
+  const coverage = useQuery({
+    queryKey: ["run-tickers", runId],
+    queryFn: () => getJson<RunTicker[]>(`/api/research/runs/${runId}/tickers`),
+    enabled: Boolean(runId),
   })
   const query = useQuery({
     queryKey: ["strategy", strategyId, ticker, runId],
@@ -66,6 +71,9 @@ export function StrategyDetail() {
   const wins = detail.trades.filter((trade) => trade.return > 0).length
   const gates = config.data ? gatesFromConfig(config.data.gates) : undefined
   const back = safeReturnPath((location.state as { from?: unknown } | null)?.from, ticker, runId)
+  const tickers = coverage.data === undefined && runId
+    ? [ticker]
+    : coverage.data?.length ? coverage.data.map((item) => item.ticker) : config.data?.tickers ?? [ticker]
 
   return (
     <div className="space-y-6">
@@ -85,7 +93,7 @@ export function StrategyDetail() {
               setParams(next)
             }}
           >
-            {(config.data?.tickers ?? [ticker]).map((item) => (
+            {tickers.map((item) => (
               <option key={item}>{item}</option>
             ))}
           </select>

@@ -67,23 +67,28 @@ def overview(request: Request, run_id: str | None = None) -> list[OverviewCard]:
     from stocksweeper.data.store import MarketStore
 
     settings = _settings(request)
+    tickers = list(settings.market.tickers)
+    try:
+        chosen = _run_id(request, run_id)
+    except HTTPException:
+        if run_id is not None:
+            raise
+        chosen = None
+    if chosen is not None:
+        run_tickers = _repo(request).run_tickers(chosen)
+        if run_tickers:
+            tickers = [str(item["ticker"]) for item in run_tickers]
     store = MarketStore(settings.resolved_data_dir())
     ticker_status = store.status(
-        list(settings.market.tickers),
+        tickers,
         settings.market.interval,
         settings.market.start_dates,
     )
     status = {item.ticker: item for item in ticker_status}
     cards = []
-    try:
-        chosen = _run_id(request, run_id)
-        overview_rows = _repo(request).overview(chosen, list(settings.market.tickers))
-        scored = {row["ticker"]: row for row in overview_rows}
-    except HTTPException:
-        if run_id is not None:
-            raise
-        scored = {}
-    for ticker in settings.market.tickers:
+    overview_rows = _repo(request).overview(chosen, tickers) if chosen is not None else []
+    scored = {row["ticker"]: row for row in overview_rows}
+    for ticker in tickers:
         item = status[ticker]
         row = scored.get(ticker, {})
         cards.append(
