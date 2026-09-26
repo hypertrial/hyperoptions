@@ -9,30 +9,45 @@ const item = {
   strike_exact: "48.000",
   terms_note: "Assuming standard 100-share terms.",
   created_at: "2026-09-11T14:00:00Z",
-  forecast: {
+  market_odds: {
     status: "available",
-    itm_probability: 0.62,
+    itm_pct_tenths: 620,
+    otm_pct_tenths: 380,
     reason: null,
-    as_of: "2026-09-17",
-    model_id: "model-1",
-    strategy_id: "rule-1",
-    strategy_name: "Trend rule",
-    signal_state: "long",
-    fit_peers: 75,
-    audit_peers: 20,
-    audit_blocks: 35,
-    crps_skill_lower_90: 0.02,
-    brier_delta: -0.01,
-    source: "Yahoo Finance daily Close (auto_adjust=False)",
-    survivorship_note: "Current-listings cohort has survivorship bias.",
+    source: "nasdaq",
+    fetched_at: "2026-09-11T14:00:00Z",
+    session_date: "2026-09-11",
+    model_version: "regimelib-0.1.0-market-odds-v1",
+  },
+  outcome: {
+    status: "pending",
+    classification: null,
+    reason: "Expiry trading session has not completed",
+    session_date: "2026-09-18",
+  },
+}
+
+const expiredItem = {
+  ...item,
+  id: "watch-expired",
+  expiration: "2026-09-11",
+  market_odds: {
+    status: "unavailable",
+    itm_pct_tenths: null,
+    otm_pct_tenths: null,
+    reason: "Expiry session completed; see outcome",
+    source: null,
+    fetched_at: null,
+    session_date: null,
+    model_version: null,
   },
   outcome: {
     status: "provisional",
     classification: "itm",
     reason: null,
     source: "Yahoo Finance daily Close",
-    session_date: "2026-09-18",
-    retrieved_at: "2026-09-19T14:00:00Z",
+    session_date: "2026-09-11",
+    retrieved_at: "2026-09-12T14:00:00Z",
     close_exact: "50.000",
     terms_note: "Assuming standard 100-share terms.",
   },
@@ -46,6 +61,9 @@ async function watchableChain(page: Page) {
       for (const contract of group.contracts) {
         contract.watch_key = `opaque:${group.expiration}:${contract.strike_cents}`
         contract.watchability_reason = null
+        if (group.expiration === "2026-09-18" && contract.strike_cents === 4800) {
+          contract.market_odds = item.market_odds
+        }
       }
     }
     await route.fulfill({ response, json: chain })
@@ -66,6 +84,9 @@ test("watches a desktop chain contract and restores its URL after visiting the w
 
   await page.goto("/?t=IREN&side=call&m=itm&cols=strike_cents")
   await expect(page.getByRole("columnheader", { name: "Watch" })).toBeVisible()
+  await expect(page.getByRole("columnheader", { name: "ITM / OTM odds" })).toBeVisible()
+  await expect(page.getByText("62.0%", { exact: true }).first()).toBeVisible()
+  await expect(page.getByText("38.0%", { exact: true }).first()).toBeVisible()
   const watch = page.getByRole("button", { name: /Watch IREN 2026-09-18 .* strike/ }).first()
   await watch.click()
   await expect(page.getByRole("button", { name: /Watching IREN 2026-09-18 .* strike/ }).first()).toBeDisabled()
@@ -96,32 +117,43 @@ test("watches a contract from a mobile disclosure and reports deduplication", as
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })
 
-test("opens a watchlist deep link with separate forecast and result and tracks refresh progress", async ({ page }) => {
+test("shows dated market odds and close-based outcomes, then tracks the result check", async ({ page }) => {
   let completeJob = false
   await page.route("**/api/watchlist", async (route) => {
-    await route.fulfill({ json: { items: [item] } })
+    await route.fulfill({ json: { items: [item, expiredItem] } })
   })
   await page.route("**/api/watchlist/refresh", async (route) => {
-    await route.fulfill({ json: { job: { id: "job-1", kind: "watch", state: "queued", progress: 0, message: "queued" } } })
+    await route.fulfill({ json: { job: { id: "job-1", kind: "watch_refresh", state: "queued", progress: 0, message: "queued" } } })
   })
   await page.route("**/api/jobs/job-1", async (route) => {
     await route.fulfill({ json: {
-      id: "job-1", kind: "watch", state: completeJob ? "succeeded" : "running",
-      progress: completeJob ? 1 : 0.4, message: completeJob ? "done" : "Preparing forecasts",
+      id: "job-1", kind: "watch_refresh", state: completeJob ? "succeeded" : "running",
+      progress: completeJob ? 1 : 0.4, message: completeJob ? "done" : "Checking expiry close",
     } })
   })
 
   await page.goto("/watchlist")
   await expect(page.getByRole("heading", { name: "Watchlist" })).toBeVisible()
-  await expect(page.getByRole("region", { name: "Pre-expiry forecast" })).toContainText("62.0% ITM probability")
-  await expect(page.getByRole("region", { name: "Expiry result" })).toContainText("Provisional ITM")
-  await expect(page.getByRole("region", { name: "Expiry result" })).toContainText("Yahoo Finance daily Close")
+  const active = page.getByRole("article").filter({
+    has: page.getByRole("heading", { name: "Call · $48.000 · 2026-09-18" }),
+  })
+  await expect(active.getByRole("region", { name: "Market-implied odds" })).toContainText("62.0% ITM")
+  await expect(active.getByRole("region", { name: "Market-implied odds" })).toContainText("38.0% OTM")
+  await expect(active.getByRole("region", { name: "Market-implied odds" })).toContainText("Nasdaq")
+  await expect(active.getByRole("region", { name: "Market-implied odds" })).toContainText("session 2026-09-11")
+  await expect(active.getByRole("region", { name: "Expiry result" })).toContainText("Not expired yet")
+  const expired = page.getByRole("article").filter({
+    has: page.getByRole("heading", { name: "Call · $48.000 · 2026-09-11" }),
+  })
+  await expect(expired.getByRole("region", { name: "Market-implied odds" })).toContainText("Expiry session completed")
+  await expect(expired.getByRole("region", { name: "Expiry result" })).toContainText("Provisional ITM")
+  await expect(expired.getByRole("region", { name: "Expiry result" })).toContainText("Yahoo Finance daily Close")
   await expect(page.getByText(/not an OCC exercise or assignment decision/)).toBeVisible()
 
-  await page.getByRole("button", { name: "Refresh watchlist" }).click()
+  await page.getByRole("button", { name: "Check expiry results" }).click()
   await expect(page.getByRole("progressbar", { name: "Watchlist refresh progress" })).toHaveAttribute("aria-valuenow", "40")
   completeJob = true
-  await expect(page.getByText("Watchlist updated.")).toBeVisible()
+  await expect(page.getByText("Expiry results checked.")).toBeVisible()
 })
 
 test("retired research deep links open the watchlist without research requests", async ({ page }) => {

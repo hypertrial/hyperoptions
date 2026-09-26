@@ -28,8 +28,14 @@ def _pages(assemble) -> dict[str, object]:
     # Keep the original financial golden fixtures intact; watch fields have
     # their own contract identity and moneyness tests.
     for page in pages.values():
+        assert page.pop("chain_source") == "nasdaq"
         for group in page["expirations"]:
             for contract in group["contracts"]:
+                assert contract.pop("market_odds") == {
+                    "status": "pending", "itm_pct_tenths": None, "otm_pct_tenths": None,
+                    "reason": None, "source": None, "fetched_at": None,
+                    "session_date": None, "model_version": None,
+                }
                 for field in (
                     "at_the_money", "strike_exact", "watch_key", "watchability_reason"
                 ):

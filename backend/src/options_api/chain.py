@@ -315,6 +315,7 @@ def _page_fields(
         "last_trade": chain.last_trade,
         "last_trade_timestamp": chain.last_trade_timestamp,
         "truncated": chain.truncated,
+        "chain_source": chain.source,
         "chain_from_cache": chain.from_cache,
         "info_from_cache": info.from_cache,
         "history_from_cache": history.from_cache,
@@ -395,7 +396,11 @@ def _assemble(
 ) -> CoveredCallPage | CashSecuredPutPage:
     info = info or _empty_info(chain.ticker, fetched_at)
     history = history or _empty_history(chain.ticker, fetched_at)
-    current, source = current_reference(info.bid, chain.spot)
+    if chain.source == "yahoo":
+        current, source = chain.spot, "yahoo_underlying" if chain.spot is not None else None
+        info = _empty_info(chain.ticker, chain.fetched_at)
+    else:
+        current, source = current_reference(info.bid, chain.spot)
     rate = rate if rate is not None else risk_free_rate()
     raw_lows = _lows(history, today)
     grouped: dict[str, list[CoveredCallContract | CashSecuredPutContract]] = {}

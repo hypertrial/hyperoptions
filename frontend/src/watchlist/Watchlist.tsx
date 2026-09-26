@@ -84,7 +84,7 @@ export default function Watchlist({ chainUrl = "/" }: { chainUrl?: string }) {
         }
         sessionStorage.removeItem(WATCH_JOB_KEY)
         setJobId(null)
-        setNotice(current.state === "failed" ? current.error || "Watchlist refresh failed." : "Watchlist updated.")
+        setNotice(current.state === "failed" ? current.error || "Expiry result check failed." : "Expiry results checked.")
         await load()
       } catch (cause) {
         if (!active) return
@@ -107,7 +107,7 @@ export default function Watchlist({ chainUrl = "/" }: { chainUrl?: string }) {
         setJob(result.job)
         setJobId(result.job.id)
       } else {
-        setNotice("No watchlist updates are due.")
+        setNotice("No expiry results are due.")
         await load()
       }
     } catch (cause) {
@@ -138,22 +138,22 @@ export default function Watchlist({ chainUrl = "/" }: { chainUrl?: string }) {
           <p className="eyebrow">Selected option contracts</p>
           <h1>Watchlist</h1>
           <p>Watches are for tracking contracts, not trades or positions. No holdings or premiums are tracked.</p>
-          <p>Choose contracts from the <Link to={chainUrl}>option chain</Link>. Forecasts use completed sessions and appear only when validation passes.</p>
+          <p>Choose contracts from the <Link to={chainUrl}>option chain</Link>. Market-implied odds use public option quotes and update while the market is open. Each estimate is dated.</p>
         </div>
         <Button type="button" variant="outline" disabled={refreshing || jobBusy} onClick={() => { void refresh() }}>
-          {refreshing ? "Starting…" : jobBusy ? "Refresh running" : "Refresh watchlist"}
+          {refreshing ? "Starting…" : jobBusy ? "Check running" : "Check expiry results"}
         </Button>
       </header>
 
       {jobBusy && job ? (
         <section className="watch-job" aria-label="Watchlist job progress">
-          <p>Background work: {job.message ?? "queued"} ({Math.round((job.progress ?? 0) * 100)}%)</p>
+          <p>Expiry result check: {job.message ?? "queued"} ({Math.round((job.progress ?? 0) * 100)}%)</p>
           <div role="progressbar" aria-label="Watchlist refresh progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round((job.progress ?? 0) * 100)}>
             <span style={{ width: `${Math.round((job.progress ?? 0) * 100)}%` }} />
           </div>
         </section>
       ) : null}
-      {jobBusy && !job ? <p role="status">Checking background work…</p> : null}
+      {jobBusy && !job ? <p role="status">Checking expiry results…</p> : null}
       {notice ? <p className="watch-notice" role="status">{notice}</p> : null}
       {loading ? <p role="status">Loading watched contracts…</p> : null}
       {error ? <div className="watch-error" role="alert"><p>Could not load the watchlist. {error}</p><Button variant="outline" type="button" onClick={() => { setLoading(true); void load().catch((cause) => setError(message(cause))).finally(() => setLoading(false)) }}>Retry</Button></div> : null}

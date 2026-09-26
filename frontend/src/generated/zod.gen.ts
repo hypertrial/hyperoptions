@@ -3,6 +3,49 @@
 import * as z from 'zod';
 
 /**
+ * HealthResponse
+ */
+export const zHealthResponse = z.object({
+    ok: z.boolean().optional().default(true)
+});
+
+/**
+ * Job
+ */
+export const zJob = z.object({
+    id: z.string(),
+    kind: z.string(),
+    state: z.enum([
+        'queued',
+        'running',
+        'succeeded',
+        'failed'
+    ]),
+    progress: z.number().optional().default(0),
+    message: z.string().optional().default(''),
+    error: z.string().nullish(),
+    run_id: z.string().nullish()
+});
+
+/**
+ * MarketOddsView
+ */
+export const zMarketOddsView = z.object({
+    status: z.enum([
+        'pending',
+        'available',
+        'unavailable'
+    ]).optional().default('pending'),
+    itm_pct_tenths: z.int().nullish(),
+    otm_pct_tenths: z.int().nullish(),
+    reason: z.string().nullish(),
+    source: z.enum(['nasdaq', 'yahoo']).nullish(),
+    fetched_at: z.iso.datetime().nullish(),
+    session_date: z.iso.date().nullish(),
+    model_version: z.string().nullish()
+});
+
+/**
  * CashSecuredPutContract
  */
 export const zCashSecuredPutContract = z.object({
@@ -38,7 +81,8 @@ export const zCashSecuredPutContract = z.object({
     theta_e4: z.int().nullish(),
     vega_e4: z.int().nullish(),
     rho_e4: z.int().nullish(),
-    greeks_source: z.enum(['bid', 'mid']).nullish()
+    greeks_source: z.enum(['bid', 'mid']).nullish(),
+    market_odds: zMarketOddsView.optional()
 });
 
 /**
@@ -88,7 +132,8 @@ export const zCoveredCallContract = z.object({
     theta_e4: z.int().nullish(),
     vega_e4: z.int().nullish(),
     rho_e4: z.int().nullish(),
-    greeks_source: z.enum(['bid', 'mid']).nullish()
+    greeks_source: z.enum(['bid', 'mid']).nullish(),
+    market_odds: zMarketOddsView.optional()
 });
 
 /**
@@ -98,56 +143,6 @@ export const zCoveredCallExpiration = z.object({
     expiration: z.string(),
     dte: z.int(),
     contracts: z.array(zCoveredCallContract)
-});
-
-/**
- * ForecastView
- */
-export const zForecastView = z.object({
-    status: z.enum(['available', 'unavailable']).optional().default('unavailable'),
-    itm_probability: z.number().nullish(),
-    reason: z.string().nullish().default('Forecast not yet prepared'),
-    as_of: z.iso.date().nullish(),
-    model_id: z.string().nullish(),
-    strategy_id: z.string().nullish(),
-    strategy_name: z.string().nullish(),
-    signal_state: z.enum(['long', 'flat']).nullish(),
-    fit_peers: z.int().nullish(),
-    audit_peers: z.int().nullish(),
-    audit_blocks: z.int().nullish(),
-    cohort_size: z.int().nullish(),
-    fit_samples: z.int().nullish(),
-    audit_samples: z.int().nullish(),
-    crps_skill_lower_90: z.number().nullish(),
-    brier_delta: z.number().nullish(),
-    source: z.string().nullish(),
-    survivorship_note: z.string().nullish(),
-    historical: z.boolean().optional().default(false)
-});
-
-/**
- * HealthResponse
- */
-export const zHealthResponse = z.object({
-    ok: z.boolean().optional().default(true)
-});
-
-/**
- * Job
- */
-export const zJob = z.object({
-    id: z.string(),
-    kind: z.string(),
-    state: z.enum([
-        'queued',
-        'running',
-        'succeeded',
-        'failed'
-    ]),
-    progress: z.number().optional().default(0),
-    message: z.string().optional().default(''),
-    error: z.string().nullish(),
-    run_id: z.string().nullish()
 });
 
 /**
@@ -197,7 +192,11 @@ export const zCashSecuredPutPage = z.object({
     ]),
     fetched_at: z.iso.datetime(),
     current_cents: z.int().nullable(),
-    current_source: z.enum(['stock_bid', 'chain_last_trade']).nullable(),
+    current_source: z.enum([
+        'stock_bid',
+        'chain_last_trade',
+        'yahoo_underlying'
+    ]).nullable(),
     stock_bid_cents: z.int().nullable(),
     stock_ask_cents: z.int().nullable(),
     market_session: z.string().nullable(),
@@ -206,6 +205,7 @@ export const zCashSecuredPutPage = z.object({
     last_trade: z.string().nullable(),
     last_trade_timestamp: z.string().nullable(),
     truncated: z.boolean(),
+    chain_source: z.enum(['nasdaq', 'yahoo']).optional().default('nasdaq'),
     chain_from_cache: z.boolean(),
     info_from_cache: z.boolean(),
     history_from_cache: z.boolean(),
@@ -228,7 +228,11 @@ export const zCoveredCallPage = z.object({
     ]),
     fetched_at: z.iso.datetime(),
     current_cents: z.int().nullable(),
-    current_source: z.enum(['stock_bid', 'chain_last_trade']).nullable(),
+    current_source: z.enum([
+        'stock_bid',
+        'chain_last_trade',
+        'yahoo_underlying'
+    ]).nullable(),
     stock_bid_cents: z.int().nullable(),
     stock_ask_cents: z.int().nullable(),
     market_session: z.string().nullable(),
@@ -237,6 +241,7 @@ export const zCoveredCallPage = z.object({
     last_trade: z.string().nullable(),
     last_trade_timestamp: z.string().nullable(),
     truncated: z.boolean(),
+    chain_source: z.enum(['nasdaq', 'yahoo']).optional().default('nasdaq'),
     chain_from_cache: z.boolean(),
     info_from_cache: z.boolean(),
     history_from_cache: z.boolean(),
@@ -301,8 +306,7 @@ export const zWatchItem = z.object({
     strike_exact: z.string(),
     terms_note: z.string(),
     created_at: z.iso.datetime(),
-    forecast: zForecastView,
-    last_available_forecast: zForecastView.nullish(),
+    market_odds: zMarketOddsView.optional(),
     outcome: zOutcomeView
 });
 

@@ -1,83 +1,18 @@
 import { Button } from "@/components/ui/button"
 import { dateTime } from "../format"
-import type { WatchForecast, WatchItem, WatchOutcome } from "./types"
+import { oddsProvenance, type MarketOdds } from "../marketOdds"
+import OddsValues from "../OddsValues"
+import type { WatchItem, WatchOutcome } from "./types"
 
-const unavailableReasons: Record<string, string> = {
-  model_not_ready: "The pooled model is still being prepared.",
-  cohort_insufficient: "The peer cohort did not meet the sample requirements.",
-  validation_failed: "The model did not pass its holdout validation.",
-  crps_audit_failed: "The strategy-conditioned model did not beat the unconditional baseline in the holdout audit.",
-  brier_audit_failed: "Strike-grid accuracy was worse than the baseline in the holdout audit.",
-  ticker_history_short: "This ticker has too little completed price history.",
-  ticker_strategy_unqualified: "No strategy passed this ticker’s validation gate.",
-  market_data_missing: "Completed market data is missing.",
-  stale_model: "The validated model is too old.",
-  horizon_unsupported: "This expiration horizon has insufficient audited evidence.",
-  strike_outside_support: "This strike is outside the audited return range.",
-  audit_window_incomplete: "The 2023–2025 holdout period has not completed.",
-  ticker_in_calibration_cohort: "This ticker belongs to the frozen peer cohort, so an independent forecast is unavailable.",
-  cohort_engine_incompatible: "The forecast engine changed after the peer cohort was frozen.",
-  cohort_prefix_revised: "A frozen peer’s selection history was revised.",
-  peer_data_missing: "Peer price history is temporarily unavailable.",
-  peer_selection_failed: "A frozen peer’s strategy no longer passes selection.",
-  expiry_completed: "This contract’s expiry session has completed.",
-}
-
-function reasonText(reason: string | null | undefined, fallback: string): string {
-  if (!reason) return fallback
-  return unavailableReasons[reason] ?? (/^[a-z_]+$/.test(reason) ? reason.replaceAll("_", " ") : reason)
-}
-
-function ForecastEvidence({ forecast, historical = false }: { forecast: WatchForecast | null; historical?: boolean }) {
-  const available = forecast?.status === "available" && forecast.itm_probability != null && Number.isFinite(forecast.itm_probability)
-  const hasEvidence = forecast != null && (
-    forecast.strategy_id != null || forecast.strategy_name != null || forecast.model_id != null
-    || forecast.fit_peers != null || forecast.crps_skill_lower_90 != null || forecast.brier_delta != null
-  )
+function MarketOddsSection({ odds }: { odds: MarketOdds | null | undefined }) {
+  const provenance = oddsProvenance(odds)
   return (
-    <>
-      {available ? (
-        <>
-          <p className="watch-probability"><strong>{(forecast.itm_probability! * 100).toFixed(1)}%</strong> ITM probability</p>
-          <p className="watch-muted">As of completed market session {forecast.as_of ?? "unavailable"}. {historical ? "This stored pre-expiry estimate is historical, not a current probability or expiry result." : "This is a model estimate, not an expiry result."}</p>
-        </>
-      ) : (
-        <p className="watch-unavailable"><strong>Probability unavailable.</strong> {reasonText(forecast?.reason, "Forecast preparation pending.")}</p>
-      )}
-      {hasEvidence && forecast ? (
-        <>
-          {!available && forecast.as_of ? <p className="watch-muted">Audit evidence as of completed market session {forecast.as_of}.</p> : null}
-          <dl className="watch-facts">
-            {(forecast.strategy_name || forecast.strategy_id) ? <div><dt>Strategy</dt><dd>{forecast.strategy_name ?? forecast.strategy_id}</dd></div> : null}
-            {forecast.signal_state ? <div><dt>Signal</dt><dd>{forecast.signal_state}</dd></div> : null}
-            {forecast.cohort_size != null ? <div><dt>Frozen cohort</dt><dd>{forecast.cohort_size.toLocaleString("en-US")} peers</dd></div> : null}
-            {forecast.fit_peers != null ? <div><dt>Fitting peers</dt><dd>{forecast.fit_peers.toLocaleString("en-US")}</dd></div> : null}
-            {forecast.fit_samples != null && forecast.audit_samples != null ? <div><dt>Fitting / audit observations</dt><dd>{forecast.fit_samples.toLocaleString("en-US")} / {forecast.audit_samples.toLocaleString("en-US")}</dd></div> : null}
-            {forecast.audit_peers != null && forecast.audit_blocks != null ? <div><dt>Audit peers / blocks</dt><dd>{forecast.audit_peers} / {forecast.audit_blocks}</dd></div> : null}
-            {forecast.crps_skill_lower_90 != null ? <div><dt>Holdout model-skill uncertainty (CRPS lower 90% bound)</dt><dd>{forecast.crps_skill_lower_90.toFixed(4)} (needs &gt; 0)</dd></div> : null}
-            {forecast.brier_delta != null ? <div><dt>Holdout Brier change</dt><dd>{forecast.brier_delta >= 0 ? "+" : ""}{forecast.brier_delta.toFixed(6)} (needs ≤ 0)</dd></div> : null}
-          </dl>
-          {forecast.model_id ? <p className="watch-provenance">Model version {forecast.model_id}</p> : null}
-          {forecast.source ? <p className="watch-provenance">Forecast price source: {forecast.source}</p> : null}
-          {forecast.survivorship_note ? <p className="watch-limitation">{forecast.survivorship_note}</p> : null}
-        </>
-      ) : null}
-    </>
-  )
-}
-
-function Forecast({ forecast, lastAvailable, expired }: { forecast: WatchForecast | null; lastAvailable: WatchForecast | null; expired: boolean }) {
-  const historical = forecast?.historical === true || (expired && forecast?.status === "available")
-  return (
-    <section className="watch-card-section" aria-label="Pre-expiry forecast">
-      <h3>{historical ? "Historical pre-expiry forecast" : "Pre-expiry · experimental forecast"}</h3>
-      <ForecastEvidence forecast={forecast} historical={historical} />
-      {forecast?.status !== "available" && lastAvailable?.status === "available" ? (
-        <div className="watch-historical">
-          <h4>Historical pre-expiry forecast</h4>
-          <ForecastEvidence forecast={lastAvailable} historical />
-        </div>
-      ) : null}
+    <section className="watch-card-section" aria-label="Market-implied odds">
+      <h3>Market-implied odds</h3>
+      <p className="watch-muted">Risk-neutral estimate for the regular-session close on expiry.</p>
+      <p className="watch-odds"><OddsValues odds={odds} /></p>
+      {provenance ? <p className="watch-provenance">{provenance}</p> : null}
+      {odds?.model_version ? <p className="watch-provenance">Model {odds.model_version}</p> : null}
     </section>
   )
 }
@@ -91,7 +26,7 @@ function Outcome({ outcome, expiration }: { outcome: WatchOutcome; expiration: s
       {provisional ? (
         <>
           <p className="watch-outcome"><strong>Provisional {outcome.classification!.toUpperCase()}</strong> · indicative close-based result</p>
-          {outcome.reason ? <p className="watch-unavailable" role="alert">Close recheck warning: {reasonText(outcome.reason, outcome.reason)}</p> : null}
+          {outcome.reason ? <p className="watch-unavailable" role="alert">Close recheck warning: {outcome.reason}</p> : null}
           {outcome.revised ? <p className="watch-muted">The sourced close was revised since the previous result.</p> : null}
           <dl className="watch-facts">
             <div><dt>Completed session</dt><dd>{outcome.session_date ?? "—"}</dd></div>
@@ -106,7 +41,7 @@ function Outcome({ outcome, expiration }: { outcome: WatchOutcome; expiration: s
       ) : (
         <p className="watch-unavailable">
           <strong>{outcome.status === "unsupported" ? "Expiry result unsupported." : "Expiry result pending."}</strong>{" "}
-          {reasonText(outcome.reason, "Waiting for a completed expiry-session close.")}
+          {outcome.reason ?? "Waiting for a completed expiry-session close."}
         </p>
       )}
     </section>
@@ -119,11 +54,6 @@ export default function WatchCard({ item, deleting, deleteError, onDelete }: {
   deleteError: string | null
   onDelete: (id: string) => void
 }) {
-  const expirySessionChecked = item.outcome.session_date != null
-    && item.outcome.reason !== "Expiry trading session has not completed"
-  const expired = item.outcome.status !== "pending"
-    || expirySessionChecked
-    || new Date().toISOString().slice(0, 10) > item.expiration
   return (
     <article className="watch-card">
       <div className="watch-card-head">
@@ -138,7 +68,7 @@ export default function WatchCard({ item, deleting, deleteError, onDelete }: {
       </div>
       {deleteError ? <p role="alert" className="watch-error">{deleteError}</p> : null}
       <div className="watch-card-grid">
-        <Forecast forecast={item.forecast} lastAvailable={item.last_available_forecast ?? null} expired={expired} />
+        <MarketOddsSection odds={item.market_odds} />
         <Outcome outcome={item.outcome} expiration={item.expiration} />
       </div>
     </article>

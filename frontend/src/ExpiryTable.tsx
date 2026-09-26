@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, Check, ChevronRight, Copy } from "lucide-react"
-import type { CSSProperties, ReactNode } from "react"
+import { Fragment, type CSSProperties, type ReactNode } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -9,6 +9,8 @@ import { copyRowAccessibleName, copyRowStateKey } from "./copyRow"
 import type { Density } from "./density"
 import { integer, moneyStrike } from "./format"
 import { heatmapHue, heatmapStop, type MetricRange } from "./heatmap"
+import { oddsLabel } from "./marketOdds"
+import OddsValues from "./OddsValues"
 import type { Side } from "./types"
 import { useMediaQuery } from "./useMediaQuery"
 import type { SortState, VisibleGroup } from "./viewModel"
@@ -89,16 +91,19 @@ function DesktopResults({
       <table data-density={density}>
         <thead>
           <tr>
-            {columns.map((column) => {
+            {columns.map((column, index) => {
               const active = sort.id === column.id
               const ariaSort = active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"
               return (
-                <th key={column.id} scope="col" title={column.info} aria-sort={ariaSort}>
-                  <button type="button" onClick={() => onSort(column.id)}>
-                    {column.abbrev ? <abbr title={column.info}>{column.label}</abbr> : column.label}
-                    {active ? (sort.dir === "asc" ? <ArrowUp aria-hidden="true" /> : <ArrowDown aria-hidden="true" />) : null}
-                  </button>
-                </th>
+                <Fragment key={column.id}>
+                  <th scope="col" title={column.info} aria-sort={ariaSort}>
+                    <button type="button" onClick={() => onSort(column.id)}>
+                      {column.abbrev ? <abbr title={column.info}>{column.label}</abbr> : column.label}
+                      {active ? (sort.dir === "asc" ? <ArrowUp aria-hidden="true" /> : <ArrowDown aria-hidden="true" />) : null}
+                    </button>
+                  </th>
+                  {index === 0 ? <th scope="col" title="Risk-neutral odds that the regular-session expiry close is in or out of the money">ITM / OTM odds</th> : null}
+                </Fragment>
               )
             })}
             <th scope="col" title="Add this contract to the watchlist">Watch</th>
@@ -112,14 +117,16 @@ function DesktopResults({
             return (
               <tr key={row.watch_key ?? `${row.expiration}-${row.strike_exact ?? row.strike_cents}-${index}`}>
                 {columns.map((column, index) => (
-                  <HeatCell
-                    key={column.id}
-                    heading={index === 0}
-                    value={column.accessor(row)}
-                    range={ranges[column.id] ?? null}
-                  >
-                    {column.format(row)}
-                  </HeatCell>
+                  <Fragment key={column.id}>
+                    <HeatCell
+                      heading={index === 0}
+                      value={column.accessor(row)}
+                      range={ranges[column.id] ?? null}
+                    >
+                      {column.format(row)}
+                    </HeatCell>
+                    {index === 0 ? <td className="odds-cell"><OddsValues odds={row.market_odds} compact /></td> : null}
+                  </Fragment>
                 ))}
                 <td className="watch-cell">
                   <WatchButton
@@ -189,16 +196,20 @@ function MobileResults({
           const strike = moneyStrike(row.strike_exact, row.strike_cents)
           const rowName = `${ticker} ${row.expiration} strike ${strike}`
           const summary = priority.map((column) => `${column.label} ${column.format(row)}`).join(", ")
+          const odds = row.market_odds
           return (
             <Collapsible key={row.watch_key ?? `${row.expiration}-${row.strike_exact ?? row.strike_cents}-${index}`} className="mobile-option-row">
-              <CollapsibleTrigger className="mobile-row-summary" aria-label={`Show details for ${rowName}. ${summary}`}>
-                <span className="mobile-priority-grid">
-                  {priority.map((column) => (
-                    <span key={column.id} {...heatProps(column.accessor(row), ranges[column.id] ?? null)}>
-                      <small>{column.label}</small>
-                      <strong className="font-mono">{column.format(row)}</strong>
-                    </span>
-                  ))}
+              <CollapsibleTrigger className="mobile-row-summary" aria-label={`Show details for ${rowName}. ${summary}. Market odds: ${oddsLabel(odds)}`}>
+                <span className="mobile-row-main">
+                  <span className="mobile-priority-grid">
+                    {priority.map((column) => (
+                      <span key={column.id} {...heatProps(column.accessor(row), ranges[column.id] ?? null)}>
+                        <small>{column.label}</small>
+                        <strong className="font-mono">{column.format(row)}</strong>
+                      </span>
+                    ))}
+                  </span>
+                  <span className="mobile-row-odds"><OddsValues odds={odds} compact /></span>
                 </span>
                 <ChevronRight className="row-chevron" aria-hidden="true" />
               </CollapsibleTrigger>

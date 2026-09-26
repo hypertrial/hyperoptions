@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 
 import { fetchChain } from "./api"
+import { isRegularMarketHours } from "./marketHours"
 import type { ChainPage, Moneyness, Side, Ticker } from "./types"
+
+const REFRESH_MS = 5 * 60_000
+const PENDING_MS = 15_000
 
 export function useChainPage(ticker: Ticker, side: Side, moneyness: Moneyness) {
   const [page, setPage] = useState<ChainPage | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const requestId = useRef(0)
+  const lastRequestedAt = useRef(0)
 
   const load = useCallback(async (
     selected: Ticker,
@@ -16,6 +21,7 @@ export function useChainPage(ticker: Ticker, side: Side, moneyness: Moneyness) {
     preservePage = false,
   ) => {
     const id = ++requestId.current
+    lastRequestedAt.current = Date.now()
     try {
       const result = await fetchChain(selected, nextSide, nextMoneyness)
       if (id !== requestId.current) return
@@ -33,6 +39,25 @@ export function useChainPage(ticker: Ticker, side: Side, moneyness: Moneyness) {
   useEffect(() => {
     void load(ticker, side, moneyness)
   }, [load, ticker, side, moneyness])
+
+  const pending = page?.expirations.some((group) => group.contracts.some(
+    (row) => row.market_odds?.status === "pending",
+  )) ?? false
+
+  useEffect(() => {
+    const interval = pending ? PENDING_MS : REFRESH_MS
+    const refresh = () => {
+      if (document.hidden || loading || (!pending && !isRegularMarketHours())) return
+      if (Date.now() - lastRequestedAt.current < interval) return
+      void load(ticker, side, moneyness, true)
+    }
+    const timer = window.setInterval(refresh, interval)
+    document.addEventListener("visibilitychange", refresh)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener("visibilitychange", refresh)
+    }
+  }, [load, loading, moneyness, pending, side, ticker])
 
   const beginTickerChange = () => {
     setPage(null)

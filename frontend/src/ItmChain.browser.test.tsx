@@ -117,15 +117,16 @@ describe("chain interactions", () => {
     expect(within(first!).getAllByRole("row")[2].querySelector("th")?.hasAttribute("data-heat")).toBe(false)
     expect(within(first!).getAllByRole("row")[2].querySelector("td")?.hasAttribute("data-heat")).toBe(false)
     const pricedCells = within(first!).getAllByRole("row")[1].querySelectorAll("td")
-    expect(pricedCells[0].textContent).toBe("$0.50")
-    expect(pricedCells[0].hasAttribute("data-heat")).toBe(false)
-    expect(pricedCells[4].textContent).toBe("$40.00")
-    expect(pricedCells[4].getAttribute("data-heat")).toBe("0.50")
+    expect(pricedCells[0].textContent).toContain("Market odds are unavailable")
+    expect(pricedCells[1].textContent).toBe("$0.50")
+    expect(pricedCells[1].hasAttribute("data-heat")).toBe(false)
+    expect(pricedCells[5].textContent).toBe("$40.00")
+    expect(pricedCells[5].getAttribute("data-heat")).toBe("0.50")
     const missingRowCells = within(first!).getAllByRole("row")[2].querySelectorAll("td")
-    expect(missingRowCells[4].textContent).toBe("—")
-    expect(missingRowCells[4].hasAttribute("data-heat")).toBe(false)
+    expect(missingRowCells[5].textContent).toBe("—")
+    expect(missingRowCells[5].hasAttribute("data-heat")).toBe(false)
     const missingCells = [...missingRowCells].map((cell) => cell.textContent)
-    expect(missingCells.slice(0, 7)).toEqual(["—", "—", "—", "—", "—", "—", "—"])
+    expect(missingCells.slice(1, 8)).toEqual(["—", "—", "—", "—", "—", "—", "—"])
     expect(screen.queryByText("Suggested trade")).toBeNull()
     expect(screen.getByRole("button", { name: "Copy row IREN 2026-09-18 strike $50.00" })).toBeTruthy()
     expect(screen.getByText("Market open")).toBeTruthy()
@@ -138,6 +139,7 @@ describe("chain interactions", () => {
     const headers = within(first!).getAllByRole("columnheader")
     expect(headers.map((header) => header.textContent)).toEqual([
       "Strike",
+      "ITM / OTM odds",
       "Bid",
       "Sprd %",
       "OI",
@@ -149,10 +151,10 @@ describe("chain interactions", () => {
       "Copy",
     ])
     expect(headers.some((header) => header.textContent === "IV")).toBe(false)
-    expect(headers[3].querySelector("abbr")?.getAttribute("title")).toBe(headers[3].getAttribute("title"))
-    expect(headers[3].getAttribute("title")).toContain("open interest")
-    expect(headers[5].getAttribute("title")).toContain("assigned")
-    expect(headers[1].getAttribute("title")).toContain("Premium is 100")
+    expect(headers[4].querySelector("abbr")?.getAttribute("title")).toBe(headers[4].getAttribute("title"))
+    expect(headers[4].getAttribute("title")).toContain("open interest")
+    expect(headers[6].getAttribute("title")).toContain("assigned")
+    expect(headers[2].getAttribute("title")).toContain("Premium is 100")
     expect(screen.getByRole("main").getAttribute("aria-busy")).toBe("false")
     expect(screen.getByRole("button", { name: "Filters" }).getAttribute("aria-expanded")).toBe("false")
     expect(screen.getByLabelText("Min Called P&L ($)")).toBeTruthy()
@@ -166,6 +168,51 @@ describe("chain interactions", () => {
     expect(screen.getByRole("radio", { name: "ITM" })).toBeTruthy()
     expect(screen.getByRole("radio", { name: "OTM" })).toBeTruthy()
     expect(screen.getByRole("radio", { name: "All" })).toBeTruthy()
+  })
+
+  it("shows market-implied odds, source time, and a quote-quality reason in chain rows", async () => {
+    const oddsPage = page()
+    Object.assign(oddsPage.expirations[0].contracts[0], {
+      market_odds: {
+        status: "available", itm_pct_tenths: 638, otm_pct_tenths: 362,
+        reason: null, source: "nasdaq", fetched_at: "2026-09-17T14:00:00Z",
+        session_date: "2026-09-17", model_version: "regimelib-0.1.0",
+      },
+    })
+    Object.assign(oddsPage.expirations[0].contracts[1], {
+      market_odds: {
+        status: "unavailable", itm_pct_tenths: null, otm_pct_tenths: null,
+        reason: "Too few reliable option quotes.", source: "nasdaq",
+        fetched_at: "2026-09-17T14:00:00Z", session_date: "2026-09-17",
+        model_version: "regimelib-0.1.0",
+      },
+    })
+    fetchMock.mockResolvedValue(oddsPage)
+    render(<ItmChain />)
+
+    const rows = await screen.findAllByRole("row")
+    expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("63.8% ITM")
+    expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("36.2% OTM")
+    expect(rows[2].querySelector(".odds-cell")?.textContent).toContain("Too few reliable option quotes")
+    expect(screen.getByText(/Nasdaq · last estimate Sep 17, 2026/)).toBeTruthy()
+  })
+
+  it("includes odds in the mobile contract summary before expanding details", async () => {
+    setDesktopViewport(false)
+    const oddsPage = page()
+    Object.assign(oddsPage.expirations[0].contracts[0], {
+      market_odds: {
+        status: "available", itm_pct_tenths: 638, otm_pct_tenths: 362,
+        reason: null, source: "nasdaq", fetched_at: "2026-09-17T14:00:00Z",
+        session_date: "2026-09-17", model_version: "regimelib-0.1.0",
+      },
+    })
+    fetchMock.mockResolvedValue(oddsPage)
+    render(<ItmChain />)
+
+    const summary = await screen.findByRole("button", { name: /Show details for IREN 2026-09-18 strike \$50\.00.*63\.8% ITM/ })
+    expect(summary.textContent).toContain("63.8% ITM")
+    expect(summary.textContent).toContain("36.2% OTM")
   })
 
   it("adds a selected desktop contract by its server key and distinguishes an existing watch", async () => {
@@ -396,6 +443,20 @@ describe("chain interactions", () => {
     expect(screen.queryByText(/Sep 11, 2026 10:00 AM ET/)).toBeNull()
   })
 
+  it("labels a complete Yahoo replacement with its own underlying price time", async () => {
+    fetchMock.mockResolvedValue(page({
+      chain_source: "yahoo",
+      current_source: "yahoo_underlying",
+      current_cents: 4393,
+      last_trade_timestamp: "2026-09-11T20:00:00+00:00",
+      quote_timestamp: null,
+    }))
+    render(<ItmChain />)
+    await waitFor(() => expect(screen.getByText(/Yahoo regular-market price/)).toBeTruthy())
+    expect(screen.getByText(/2026-09-11T20:00:00\+00:00/)).toBeTruthy()
+    expect(screen.queryByText(/No usable price/)).toBeNull()
+  })
+
   it.each([
     ["stock_bid", "SEP 10, 2026 3:37 PM ET", { quote_timestamp: null }],
     ["chain_last_trade", "Sep 11, 2026 10:00 AM ET", { last_trade_timestamp: null }],
@@ -412,7 +473,7 @@ describe("chain interactions", () => {
       .mockResolvedValueOnce(page({ truncated: true }))
       .mockRejectedValueOnce(new Error("Nasdaq unavailable"))
     render(<ItmChain />)
-    await waitFor(() => expect(screen.getByText(/truncated chain/)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/coverage is incomplete/)).toBeTruthy())
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh data" }))
     await waitFor(() => expect(screen.getByText(/Nasdaq unavailable/)).toBeTruthy())
@@ -805,12 +866,12 @@ describe("chain interactions", () => {
     render(<ItmChain />)
 
     await waitFor(() => expect(screen.getByRole("columnheader", { name: "IV" })).toBeTruthy())
-    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["Strike", "IV", "Watch", "Copy"])
+    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["Strike", "ITM / OTM odds", "IV", "Watch", "Copy"])
     fireEvent.click(screen.getByRole("radio", { name: "Cash-secured puts" }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "put", "otm"))
     expect(screen.queryByRole("columnheader", { name: "IV" })).toBeNull()
     expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
-      "Strike", "Bid", "Sprd %", "OI", "Premium", "Breakeven", "APR (net)", "Cushion (BE)", "Watch", "Copy",
+      "Strike", "ITM / OTM odds", "Bid", "Sprd %", "OI", "Premium", "Breakeven", "APR (net)", "Cushion (BE)", "Watch", "Copy",
     ])
     expect(window.location.search).not.toContain("cols=")
   })
@@ -835,7 +896,7 @@ describe("chain interactions", () => {
 
     await screen.findByRole("columnheader", { name: "IV" })
     expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
-      "Strike", "IV", "Watch", "Copy",
+      "Strike", "ITM / OTM odds", "IV", "Watch", "Copy",
     ])
     expect(screen.getByRole("button", { name: "Columns2" })).toBeTruthy()
     expect(window.location.search).toContain("cols=strike_cents%2Civ_pct_tenths")
@@ -912,7 +973,7 @@ describe("chain interactions", () => {
     await waitFor(() => expect(screen.getByRole("heading", { name: /2026-09-18/ })).toBeTruthy())
     expect(screen.queryByRole("columnheader", { name: "IV" })).toBeNull()
     fireEvent.click(screen.getByText("Columns"))
-    const ivToggle = screen.getAllByLabelText(/IV/)[0]
+    const ivToggle = (await screen.findAllByLabelText(/IV/))[0]
     fireEvent.click(ivToggle)
     expect(screen.getAllByRole("columnheader", { name: "IV" }).length).toBeGreaterThan(0)
     expect(screen.getAllByText("45.0%").length).toBeGreaterThan(0)

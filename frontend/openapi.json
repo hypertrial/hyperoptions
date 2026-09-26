@@ -667,6 +667,9 @@
               }
             ],
             "title": "Greeks Source"
+          },
+          "market_odds": {
+            "$ref": "#/components/schemas/MarketOddsView"
           }
         },
         "type": "object",
@@ -774,7 +777,8 @@
                 "type": "string",
                 "enum": [
                   "stock_bid",
-                  "chain_last_trade"
+                  "chain_last_trade",
+                  "yahoo_underlying"
                 ]
               },
               {
@@ -856,6 +860,15 @@
           "truncated": {
             "type": "boolean",
             "title": "Truncated"
+          },
+          "chain_source": {
+            "type": "string",
+            "enum": [
+              "nasdaq",
+              "yahoo"
+            ],
+            "title": "Chain Source",
+            "default": "nasdaq"
           },
           "chain_from_cache": {
             "type": "boolean",
@@ -1252,6 +1265,9 @@
               }
             ],
             "title": "Greeks Source"
+          },
+          "market_odds": {
+            "$ref": "#/components/schemas/MarketOddsView"
           }
         },
         "type": "object",
@@ -1361,7 +1377,8 @@
                 "type": "string",
                 "enum": [
                   "stock_bid",
-                  "chain_last_trade"
+                  "chain_last_trade",
+                  "yahoo_underlying"
                 ]
               },
               {
@@ -1444,6 +1461,15 @@
             "type": "boolean",
             "title": "Truncated"
           },
+          "chain_source": {
+            "type": "string",
+            "enum": [
+              "nasdaq",
+              "yahoo"
+            ],
+            "title": "Chain Source",
+            "default": "nasdaq"
+          },
           "chain_from_cache": {
             "type": "boolean",
             "title": "Chain From Cache"
@@ -1495,219 +1521,6 @@
           "expirations"
         ],
         "title": "CoveredCallPage"
-      },
-      "ForecastView": {
-        "properties": {
-          "status": {
-            "type": "string",
-            "enum": [
-              "available",
-              "unavailable"
-            ],
-            "title": "Status",
-            "default": "unavailable"
-          },
-          "itm_probability": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Itm Probability"
-          },
-          "reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reason",
-            "default": "Forecast not yet prepared"
-          },
-          "as_of": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "As Of"
-          },
-          "model_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model Id"
-          },
-          "strategy_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Strategy Id"
-          },
-          "strategy_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Strategy Name"
-          },
-          "signal_state": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "long",
-                  "flat"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Signal State"
-          },
-          "fit_peers": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Fit Peers"
-          },
-          "audit_peers": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Audit Peers"
-          },
-          "audit_blocks": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Audit Blocks"
-          },
-          "cohort_size": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cohort Size"
-          },
-          "fit_samples": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Fit Samples"
-          },
-          "audit_samples": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Audit Samples"
-          },
-          "crps_skill_lower_90": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Crps Skill Lower 90"
-          },
-          "brier_delta": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Brier Delta"
-          },
-          "source": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source"
-          },
-          "survivorship_note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Survivorship Note"
-          },
-          "historical": {
-            "type": "boolean",
-            "title": "Historical",
-            "default": false
-          }
-        },
-        "type": "object",
-        "title": "ForecastView"
       },
       "HTTPValidationError": {
         "properties": {
@@ -1793,6 +1606,105 @@
           "state"
         ],
         "title": "Job"
+      },
+      "MarketOddsView": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "available",
+              "unavailable"
+            ],
+            "title": "Status",
+            "default": "pending"
+          },
+          "itm_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Itm Pct Tenths"
+          },
+          "otm_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Otm Pct Tenths"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "nasdaq",
+                  "yahoo"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "session_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Date"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version"
+          }
+        },
+        "type": "object",
+        "title": "MarketOddsView"
       },
       "OutcomeView": {
         "properties": {
@@ -2142,18 +2054,8 @@
             "format": "date-time",
             "title": "Created At"
           },
-          "forecast": {
-            "$ref": "#/components/schemas/ForecastView"
-          },
-          "last_available_forecast": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ForecastView"
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "market_odds": {
+            "$ref": "#/components/schemas/MarketOddsView"
           },
           "outcome": {
             "$ref": "#/components/schemas/OutcomeView"
@@ -2169,7 +2071,6 @@
           "strike_exact",
           "terms_note",
           "created_at",
-          "forecast",
           "outcome"
         ],
         "title": "WatchItem"

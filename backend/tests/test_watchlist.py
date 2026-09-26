@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from options_api.chain import assemble_cash_secured_puts, assemble_covered_calls
 from options_api.contract_identity import make_watch_key, parse_watch_key, row_identity
 from options_api.market_calendar import latest_completed_session, session_on_or_before
-from options_api.models import OptionChainResponse, OptionQuote, StockInfoResponse
+from options_api.models import MarketOddsView, OptionChainResponse, OptionQuote, StockInfoResponse
 from options_api.models import TickerListing
 from options_api.main import create_app
 from options_api.outcomes import (
@@ -28,9 +28,11 @@ from options_api.parser import parse_option_chain
 from options_api.watchlist import WatchStore, WatchlistService
 from stocksweeper.config import Settings
 from stocksweeper.forecast.models import ForecastSnapshot
+from stocksweeper.forecast.repository import ForecastRepository
 from stocksweeper.pipeline.jobs import JobBusy, JobManager
 
 from .conftest import load_fixture
+from .synthetic import synthetic_context
 
 D = Decimal
 
@@ -331,21 +333,26 @@ def test_watch_store_dedupes_and_keeps_revisions_across_restart(tmp_path: Path) 
 
 
 def test_daily_refresh_waits_for_published_session_after_market_close(tmp_path: Path) -> None:
-    watchlist = WatchlistService(tmp_path)
-    key = "w1:IREN:IREN:call:2026-09-18:50.000"
+    class Provider:
+        def fetch(self, ticker: str, start: date, end: date) -> CloseHistory:
+            return CloseHistory({date(2026, 9, 11): D("51")}, frozenset(), frozenset(), True)
+
+    watchlist = WatchlistService(tmp_path, Provider())
+    key = "w1:IREN:IREN:call:2026-09-11:50.000"
     record, _ = watchlist.store.add(
-        key, "IREN", "IREN", "call", date(2026, 9, 18), D("50"),
+        key, "IREN", "IREN", "call", date(2026, 9, 11), D("50"),
         datetime(2026, 9, 10, tzinfo=UTC),
     )
     watchlist.store.mark_attempted(record.id, date(2026, 9, 10))
     jobs = JobManager(tmp_path)
     five_after = datetime(2026, 9, 11, 20, 5, tzinfo=UTC)
-    assert watchlist.queue_refresh(jobs, as_of=five_after, candidates=[]) is None
+    assert watchlist.queue_refresh(jobs, as_of=five_after) is None
     thirty_one_after = datetime(2026, 9, 11, 20, 31, tzinfo=UTC)
-    job = watchlist.queue_refresh(jobs, as_of=thirty_one_after, candidates=[])
+    job = watchlist.queue_refresh(jobs, as_of=thirty_one_after)
     assert job is not None
     assert jobs.wait(2.0)
     assert watchlist.store.list()[0].last_attempted_session == date(2026, 9, 11)
+    assert watchlist.store.latest_outcomes()[record.id].classification == "itm"
 
 
 def test_watchlist_get_shows_running_job_ahead_of_queued_job(tmp_path: Path) -> None:
@@ -397,9 +404,9 @@ def test_queued_refresh_uses_execution_time_after_expiry_close(tmp_path: Path) -
     jobs = JobManager(tmp_path)
     released = Event()
     jobs.submit("watch_refresh", lambda progress: released.wait(2.0) and None)
-    current = [datetime(2026, 9, 18, 19, tzinfo=UTC)]
+    current = [datetime(2026, 9, 18, 20, 31, tzinfo=UTC)]
     queued = watchlist.queue_refresh(
-        jobs, as_of=current[0], candidates=[], clock=lambda: current[0]
+        jobs, as_of=current[0], clock=lambda: current[0]
     )
     assert queued is not None
     current[0] = datetime(2026, 9, 18, 22, tzinfo=UTC)
@@ -412,21 +419,25 @@ def test_queued_refresh_uses_execution_time_after_expiry_close(tmp_path: Path) -
 
 
 def test_watch_added_while_refresh_is_queued_gets_its_own_followup(tmp_path: Path) -> None:
-    watchlist = WatchlistService(tmp_path)
+    class Provider:
+        def fetch(self, ticker: str, start: date, end: date) -> CloseHistory:
+            return CloseHistory({date(2026, 9, 11): D("51")}, frozenset(), frozenset(), True)
+
+    watchlist = WatchlistService(tmp_path, Provider())
     jobs = JobManager(tmp_path)
     released = Event()
     jobs.submit("watch_refresh", lambda progress: released.wait(2.0) and None)
     now = datetime(2026, 9, 11, 20, 31, tzinfo=UTC)
     first, _ = watchlist.store.add(
-        "w1:IREN:IREN:call:2026-09-18:50.000", "IREN", "IREN", "call",
-        date(2026, 9, 18), D("50"), now,
+        "w1:IREN:IREN:call:2026-09-11:50.000", "IREN", "IREN", "call",
+        date(2026, 9, 11), D("50"), datetime(2026, 9, 10, tzinfo=UTC),
     )
-    first_job = watchlist.queue_refresh(jobs, as_of=now, candidates=[])
+    first_job = watchlist.queue_refresh(jobs, as_of=now)
     second, _ = watchlist.store.add(
-        "w1:AAPL:AAPL:put:2026-09-18:200.000", "AAPL", "AAPL", "put",
-        date(2026, 9, 18), D("200"), now,
+        "w1:AAPL:AAPL:put:2026-09-11:200.000", "AAPL", "AAPL", "put",
+        date(2026, 9, 11), D("200"), datetime(2026, 9, 10, tzinfo=UTC),
     )
-    second_job = watchlist.queue_refresh(jobs, as_of=now, candidates=[])
+    second_job = watchlist.queue_refresh(jobs, as_of=now)
     assert first_job is not None and second_job is not None
     assert first_job.id != second_job.id
     released.set()
@@ -435,17 +446,23 @@ def test_watch_added_while_refresh_is_queued_gets_its_own_followup(tmp_path: Pat
     assert attempts[first.id] == attempts[second.id] == date(2026, 9, 11)
 
 
-def test_each_watch_uses_current_time_during_a_slow_batch(tmp_path: Path) -> None:
+def test_outcome_refresh_keeps_processing_after_one_provider_failure(tmp_path: Path) -> None:
     class ExpiryProvider:
+        attempts = 0
+
         def fetch(self, ticker: str, start: date, end: date) -> CloseHistory:
             assert ticker == "IREN"
+            self.attempts += 1
+            if self.attempts == 1:
+                raise RuntimeError("temporary history failure")
             return CloseHistory(
                 {date(2026, 9, 18): D("51")}, frozenset(), frozenset(), True
             )
 
-    watchlist = WatchlistService(tmp_path, ExpiryProvider())
+    provider = ExpiryProvider()
+    watchlist = WatchlistService(tmp_path, provider)
     jobs = JobManager(tmp_path)
-    now = [datetime(2026, 9, 18, 19, tzinfo=UTC)]
+    now = datetime(2026, 9, 18, 20, 31, tzinfo=UTC)
     for strike in (D("49"), D("50")):
         watchlist.store.add(
             make_watch_key("IREN", "IREN", "call", "2026-09-18", strike),
@@ -453,72 +470,55 @@ def test_each_watch_uses_current_time_during_a_slow_batch(tmp_path: Path) -> Non
             datetime(2026, 9, 17, tzinfo=UTC),
         )
 
-    class SlowForecast:
-        def refresh_contract(self, *args, **kwargs) -> None:
-            now[0] = datetime(2026, 9, 18, 22, tzinfo=UTC)
-
-    watchlist.forecast = SlowForecast()
-    queued = watchlist.queue_refresh(
-        jobs, as_of=now[0], candidates=[], clock=lambda: now[0]
-    )
+    queued = watchlist.queue_refresh(jobs, as_of=now, clock=lambda: now)
     assert queued is not None
     assert jobs.wait(3.0)
     outcomes = watchlist.store.latest_outcomes()
-    assert len(outcomes) == 1
-    assert next(iter(outcomes.values())).status == "provisional"
+    assert len(outcomes) == 2
+    assert {outcome.status for outcome in outcomes.values()} == {"pending", "provisional"}
+    assert provider.attempts == 2
 
 
-def test_missing_forecast_data_retries_on_startup_and_after_backoff(tmp_path: Path) -> None:
-    watchlist = WatchlistService(tmp_path)
-    now = datetime(2026, 9, 11, 20, 31, tzinfo=UTC)
-    record, _ = watchlist.store.add(
-        "w1:IREN:IREN:call:2026-09-18:50.000", "IREN", "IREN", "call",
-        date(2026, 9, 18), D("50"), now,
-    )
-    watchlist.store.mark_attempted(record.id, date(2026, 9, 11), attempted_at=now)
-
-    class MissingForecast:
+def test_pending_expiry_outcome_retries_after_restart_when_requested(tmp_path: Path) -> None:
+    class MissingHistory:
         attempts = 0
 
-        def __init__(self) -> None:
-            self.created_at = now
-
-        def latest_snapshot(self, *args) -> ForecastSnapshot:
-            return ForecastSnapshot(
-                ticker="IREN", side="call", strike=D("50"),
-                expiry=date(2026, 9, 18), as_of=date(2026, 9, 11),
-                status="unavailable", reason="market_data_missing",
-                created_at=self.created_at,
-            )
-
-        def refresh_contract(self, *args, **kwargs) -> None:
+        def fetch(self, ticker: str, start: date, end: date) -> CloseHistory:
             self.attempts += 1
+            return CloseHistory({}, frozenset(), frozenset(), False)
 
-    forecast = MissingForecast()
-    watchlist.forecast = forecast
+    provider = MissingHistory()
+    watchlist = WatchlistService(tmp_path, provider)
+    now = datetime(2026, 9, 11, 20, 31, tzinfo=UTC)
+    record, _ = watchlist.store.add(
+        "w1:IREN:IREN:call:2026-09-11:50.000", "IREN", "IREN", "call",
+        date(2026, 9, 11), D("50"), datetime(2026, 9, 10, tzinfo=UTC),
+    )
     jobs = JobManager(tmp_path)
-    assert watchlist.queue_refresh(jobs, as_of=now, candidates=[]) is None
-    later = datetime(2026, 9, 11, 21, 2, tzinfo=UTC)
-    assert watchlist.queue_refresh(jobs, as_of=later, candidates=[], clock=lambda: later)
+    assert watchlist.queue_refresh(jobs, as_of=now, clock=lambda: now)
     assert jobs.wait(3.0)
-    assert forecast.attempts == 1
-    restarted = WatchlistService(tmp_path)
-    restarted.forecast = forecast
+    assert provider.attempts == 1
+    assert watchlist.store.latest_outcomes()[record.id].status == "pending"
+    restarted = WatchlistService(tmp_path, provider)
     shortly_after = datetime(2026, 9, 11, 21, 7, tzinfo=UTC)
-    assert restarted.queue_refresh(jobs, as_of=shortly_after, candidates=[]) is None
-    assert restarted.store.list()[0].last_attempted_at == later
+    assert restarted.queue_refresh(jobs, as_of=shortly_after) is None
     assert restarted.queue_refresh(
-        jobs, as_of=shortly_after, candidates=[], retry_pending=True,
-        clock=lambda: shortly_after,
+        jobs, as_of=shortly_after, retry_pending=True, clock=lambda: shortly_after,
     )
     assert jobs.wait(3.0)
-    assert forecast.attempts == 2
+    assert provider.attempts == 2
     assert restarted.store.list()[0].last_attempted_at == shortly_after
 
 
-def test_expiry_keeps_dated_available_forecast_beside_latest_unavailable(
+def test_legacy_forecast_snapshot_stays_durable_but_is_not_served_as_current_odds(
     tmp_path: Path,
 ) -> None:
+    legacy = ForecastRepository(tmp_path)
+    legacy.initialize()
+    legacy.save_snapshot(ForecastSnapshot(
+        ticker="IREN", side="call", strike=D("50"), expiry=date(2026, 9, 18),
+        as_of=date(2026, 9, 16), status="available", itm_probability=0.62,
+    ))
     watchlist = WatchlistService(tmp_path)
     record, _ = watchlist.store.add(
         "w1:IREN:IREN:call:2026-09-18:50.000", "IREN", "IREN", "call",
@@ -531,29 +531,12 @@ def test_expiry_keeps_dated_available_forecast_beside_latest_unavailable(
         date(2026, 9, 18),
     )
 
-    class FakeForecast:
-        def latest_snapshot(self, *args):
-            return ForecastSnapshot(
-                ticker="IREN", side="call", strike=D("50"), expiry=date(2026, 9, 18),
-                as_of=date(2026, 9, 17), status="unavailable", reason="validation_failed",
-            )
-
-        def last_available_snapshot(self, *args):
-            return ForecastSnapshot(
-                ticker="IREN", side="call", strike=D("50"), expiry=date(2026, 9, 18),
-                as_of=date(2026, 9, 16), status="available", reason=None,
-                itm_probability=0.62,
-            )
-
-    watchlist.forecast = FakeForecast()
     item = watchlist.items()[0]
     assert item.outcome.classification == "itm"
-    assert item.forecast.status == "unavailable"
-    assert item.forecast.reason == "validation_failed"
-    assert item.last_available_forecast is not None
-    assert item.last_available_forecast.itm_probability == 0.62
-    assert item.last_available_forecast.as_of == date(2026, 9, 16)
-    assert item.last_available_forecast.historical is True
+    assert item.market_odds.status == "pending"
+    assert "forecast" not in item.model_dump()
+    preserved = legacy.latest_snapshot("IREN", "call", D("50"), date(2026, 9, 18))
+    assert preserved is not None and preserved.itm_probability == 0.62
 
 
 def test_missing_outcome_explains_expiry_timing(tmp_path: Path) -> None:
@@ -574,12 +557,18 @@ def test_missing_outcome_explains_expiry_timing(tmp_path: Path) -> None:
     assert after.outcome.session_date == date(2026, 10, 16)
 
 
-def test_readded_watch_does_not_inherit_old_forecast_snapshot(tmp_path: Path) -> None:
+def test_readded_watch_does_not_inherit_old_outcome(tmp_path: Path) -> None:
     watchlist = WatchlistService(tmp_path)
     key = "w1:IREN:IREN:call:2026-09-18:50.000"
     old, _ = watchlist.store.add(
         key, "IREN", "IREN", "call", date(2026, 9, 18), D("50"),
         datetime(2026, 9, 10, tzinfo=UTC),
+    )
+    watchlist.store.record_outcome(
+        old,
+        OutcomeResult("provisional", "itm", None, "Yahoo", date(2026, 9, 18),
+                      datetime(2026, 9, 19, tzinfo=UTC), D("51")),
+        date(2026, 9, 18),
     )
     assert watchlist.store.delete(old.id)
     new, _ = watchlist.store.add(
@@ -587,19 +576,46 @@ def test_readded_watch_does_not_inherit_old_forecast_snapshot(tmp_path: Path) ->
         datetime(2026, 9, 11, 20, 31, tzinfo=UTC),
     )
 
-    class PreviousForecast:
-        def latest_snapshot(self, *args) -> ForecastSnapshot:
-            return ForecastSnapshot(
-                ticker="IREN", side="call", strike=D("50"),
-                expiry=date(2026, 9, 18), as_of=date(2026, 9, 10),
-                status="available", reason=None, itm_probability=0.8,
-                created_at=datetime(2026, 9, 11, 20, 30, tzinfo=UTC),
-            )
-
-    watchlist.forecast = PreviousForecast()
     item = watchlist.item(new)
-    assert item.forecast.status == "unavailable"
-    assert item.forecast.itm_probability is None
+    assert item.outcome.status == "pending"
+    assert item.outcome.classification is None
+    assert item.market_odds.status == "pending"
+
+
+def test_unverified_chain_contract_never_exposes_cached_numeric_odds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    chain, info, history, today, now = synthetic_context()
+    page = assemble_covered_calls(chain, info, history, today, now, "all")
+    contract = page.expirations[0].contracts[0]
+    assert contract.watch_key is None
+
+    async def load(*args, **kwargs):
+        return page
+
+    monkeypatch.setattr("options_api.main.load_covered_calls", load)
+    app = create_app(
+        client_factory=lambda: httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda request: httpx.Response(503))
+        ),
+        clock=lambda: now,
+        prefetch_universe=False,
+        research_settings=Settings(data_dir=tmp_path),
+    )
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        app.state.universe.seed([TickerListing(symbol="IREN", name="IREN")])
+        app.state.market_odds.schedule = lambda tickers: None
+        app.state.market_odds.lookup = lambda *args: MarketOddsView(
+            status="available", itm_pct_tenths=700, otm_pct_tenths=300,
+            source="nasdaq", fetched_at=now,
+        )
+        response = client.get("/api/covered-calls/IREN?moneyness=all")
+        assert response.status_code == 200
+        actual = response.json()["expirations"][0]["contracts"][0]["market_odds"]
+        assert actual["status"] == "unavailable"
+        assert actual["itm_pct_tenths"] is None
+        assert actual["otm_pct_tenths"] is None
+        assert actual["reason"] == "Contract terms cannot be verified"
 
 
 def test_watch_api_revalidates_current_chain_and_blocks_cross_site_writes(
@@ -615,37 +631,24 @@ def test_watch_api_revalidates_current_chain_and_blocks_cross_site_writes(
             return httpx.Response(200, json=payload)
         raise AssertionError(str(request.url))
 
+    class Provider:
+        def fetch(self, ticker: str, start: date, end: date) -> CloseHistory:
+            return CloseHistory({date(2026, 9, 18): D("47")}, frozenset(), frozenset(), True)
+
+    current = [datetime(2026, 9, 11, 14, tzinfo=UTC)]
     app = create_app(
         client_factory=lambda: httpx.AsyncClient(transport=httpx.MockTransport(respond)),
-        clock=lambda: datetime(2026, 9, 11, 14, tzinfo=UTC),
+        clock=lambda: current[0],
         prefetch_universe=False,
         research_settings=Settings(data_dir=tmp_path),
+        close_provider=Provider(),
     )
     origin = {"Origin": "http://localhost:5173"}
     key = "w1:IREN:IREN:call:2026-09-18:48.000"
 
-    class FakeForecast:
-        def __init__(self) -> None:
-            self.calls: list[tuple[str, str, Decimal, date, datetime, list]] = []
-
-        def latest_snapshot(self, *args):
-            return None
-
-        def refresh_contract(
-            self, ticker: str, side: str, strike: Decimal, expiry: date, *,
-            as_of: datetime, candidates: list, progress, watched_at: datetime,
-            force_rebuild: bool,
-        ) -> None:
-            progress(0.5, "selecting peers")
-            self.calls.append((ticker, side, strike, expiry, as_of, candidates))
-            assert watched_at == item_watch_time
-            assert isinstance(force_rebuild, bool)
-
-    fake_forecast = FakeForecast()
-    item_watch_time = datetime(2026, 9, 11, 14, tzinfo=UTC)
     with TestClient(app, base_url="http://127.0.0.1") as client:
         app.state.universe.seed([TickerListing(symbol="IREN", name="IREN", sector="Finance")])
-        app.state.watchlist.forecast = fake_forecast
+        app.state.market_odds.schedule = lambda tickers: None
         assert client.get(
             "/api/health", headers={"Sec-Fetch-Site": "cross-site"}
         ).status_code == 403
@@ -679,26 +682,23 @@ def test_watch_api_revalidates_current_chain_and_blocks_cross_site_writes(
         assert item["root"] == "IREN"
         assert item["strike_exact"] == "48.000"
         assert item["terms_note"] == "Assuming standard 100-share terms."
-        assert item["forecast"]["status"] == "unavailable"
-        job = first.json()["job"]
-        assert job is not None
-        assert app.state.jobs.wait(2.0)
-        assert client.get(f"/api/jobs/{job['id']}").json()["state"] == "succeeded"
-        assert len(fake_forecast.calls) == 1
-        assert fake_forecast.calls[0][:4] == (
-            "IREN", "call", D("48.000"), date(2026, 9, 18)
-        )
-        assert fake_forecast.calls[0][4].tzinfo is not None
-        assert fake_forecast.calls[0][5][0].ticker == "IREN"
+        assert item["market_odds"]["status"] == "pending"
+        assert "forecast" not in item
+        assert first.json()["job"] is None
         second = client.post("/api/watchlist", json={"watch_key": key}, headers=origin)
         assert second.status_code == 200
         assert second.json()["created"] is False
         assert second.json()["item"]["id"] == item["id"]
         assert len(client.get("/api/watchlist").json()["items"]) == 1
+        current[0] = datetime(2026, 9, 18, 20, 31, tzinfo=UTC)
         refreshed = client.post("/api/watchlist/refresh", json={}, headers=origin)
         assert refreshed.status_code == 200
         assert refreshed.json()["job"] is not None
         assert app.state.jobs.wait(2.0)
+        completed = client.get("/api/watchlist").json()["items"][0]
+        assert completed["outcome"]["classification"] == "otm"
+        assert completed["market_odds"]["status"] == "unavailable"
+        assert "Expiry session completed" in completed["market_odds"]["reason"]
         with monkeypatch.context() as patch:
             patch.setattr(
                 app.state.jobs, "submit",
@@ -707,19 +707,19 @@ def test_watch_api_revalidates_current_chain_and_blocks_cross_site_writes(
             busy = client.post("/api/watchlist/refresh", json={}, headers=origin)
             assert busy.status_code == 429
             assert busy.json()["detail"] == "Background job queue is busy"
-        assert client.delete(f"/api/watchlist/{item['id']}").status_code == 403
-        assert client.delete(f"/api/watchlist/{item['id']}", headers=origin).status_code == 204
-        assert client.get("/api/watchlist").json()["items"] == []
-
         class MissingUniverse:
             available = False
 
             async def ensure(self):
-                return False
+                raise AssertionError("Outcome checks do not need ticker discovery")
 
         old_universe = app.state.universe
         app.state.universe = MissingUniverse()
-        assert client.post(
-            "/api/watchlist/refresh", json={}, headers=origin
-        ).status_code == 503
+        retried = client.post("/api/watchlist/refresh", json={}, headers=origin)
+        assert retried.status_code == 200
+        assert retried.json()["job"] is not None
+        assert app.state.jobs.wait(2.0)
         app.state.universe = old_universe
+        assert client.delete(f"/api/watchlist/{item['id']}").status_code == 403
+        assert client.delete(f"/api/watchlist/{item['id']}", headers=origin).status_code == 204
+        assert client.get("/api/watchlist").json()["items"] == []

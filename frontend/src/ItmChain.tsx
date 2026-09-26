@@ -12,13 +12,14 @@ import { copyRowStateKey, formatRowClipboard } from "./copyRow"
 import { useDensity } from "./density"
 import ExpiryTables from "./ExpiryTable"
 import FilterControls from "./FilterControls"
+import { oddsAvailable, oddsProvenance, type MarketOdds } from "./marketOdds"
 import { useChainPage } from "./useChainPage"
 import { useChainFilters } from "./useChainFilters"
 import { useExpansion } from "./useExpansion"
 import { useRevealLimit } from "./useRevealLimit"
 import { defaultMoneyness, useUrlState } from "./useUrlState"
 import { DEFAULT_SORT, deriveChainView, INITIAL_REVEAL, type SortState } from "./viewModel"
-import type { Moneyness, Side } from "./types"
+import type { ChainPage, Moneyness, Side } from "./types"
 import { addWatch, WATCH_JOB_KEY } from "./watchlist/api"
 import type { WatchActionState } from "./watchlist/WatchButton"
 
@@ -44,6 +45,18 @@ function emptyCopy(ticker: string, side: Side, moneyness: Moneyness, optionsAvai
 function fallbackSort(columns: ReturnType<typeof visibleColumns>): SortState {
   const id = columns[0]?.id ?? DEFAULT_SORT.id
   return { id, dir: id === "strike_cents" ? "desc" : "asc" }
+}
+
+function firstDatedOdds(page: ChainPage | null): MarketOdds | null {
+  let fallback: MarketOdds | null = null
+  for (const group of page?.expirations ?? []) {
+    for (const row of group.contracts) {
+      const odds = row.market_odds
+      if (odds?.fetched_at && oddsAvailable(odds)) return odds
+      if (!fallback && odds?.fetched_at) fallback = odds
+    }
+  }
+  return fallback
 }
 
 export default function ItmChain() {
@@ -75,10 +88,12 @@ export default function ItmChain() {
     ? "Stock bid"
     : page?.current_source === "chain_last_trade"
       ? "Chain last trade"
+      : page?.current_source === "yahoo_underlying"
+        ? "Yahoo regular-market price"
       : "No usable price"
   const quoteStamp = page?.current_source === "stock_bid"
     ? page.quote_timestamp?.trim()
-    : page?.current_source === "chain_last_trade"
+    : page?.current_source === "chain_last_trade" || page?.current_source === "yahoo_underlying"
       ? page.last_trade_timestamp?.trim()
       : undefined
   const parsedContracts = parseContractCount(contractsText)
@@ -96,6 +111,7 @@ export default function ItmChain() {
   const view = deriveChainView(page, contracts, filters, reveal.limit, side, columns, effectiveSort, expandedExpirations)
   const strategyLabel = side === "put" ? "Cash-secured puts" : "Covered calls"
   const expandedVisibleCount = view.visibleGroups.filter((item) => expandedExpirations.has(item.group.expiration)).length
+  const oddsStamp = oddsProvenance(firstDatedOdds(page))
 
   const selectTicker = (item: string) => {
     if (item === ticker) return
@@ -220,6 +236,7 @@ export default function ItmChain() {
               </>
             )}
           </p>
+          {page ? <p className="odds-context">ITM / OTM odds are risk-neutral estimates for the regular-session expiry close. {oddsStamp ?? "Quote time unavailable."}</p> : null}
         </header>
 
         <main id="main-content" className="chain-panel" aria-busy={loading}>
@@ -245,7 +262,7 @@ export default function ItmChain() {
 
           {page?.truncated ? (
             <Alert role="status" className="banner">
-              <AlertDescription>Nasdaq returned a truncated chain. Far expirations may be missing.</AlertDescription>
+              <AlertDescription>Option chain coverage is incomplete. Some expirations may be missing.</AlertDescription>
             </Alert>
           ) : null}
           {error && page ? (

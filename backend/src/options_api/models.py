@@ -5,14 +5,15 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 Ticker = str
 TICKER_PATTERN = re.compile(r"^[A-Z]{1,5}$")
-CurrentSource = Literal["stock_bid", "chain_last_trade"]
+CurrentSource = Literal["stock_bid", "chain_last_trade", "yahoo_underlying"]
 Moneyness = Literal["itm", "otm", "all"]
 Side = Literal["call", "put"]
 GreeksSource = Literal["bid", "mid"]
+MarketSource = Literal["nasdaq", "yahoo"]
 
 
 def normalize_ticker(raw: str) -> str | None:
@@ -49,6 +50,7 @@ class OptionChainResponse(BaseModel):
     last_trade: str | None
     last_trade_timestamp: str | None = None
     spot: Decimal | None = None
+    source: Literal["nasdaq", "yahoo"] = "nasdaq"
     truncated: bool = False
     options_available: bool = True
     rows: list[OptionQuote]
@@ -105,6 +107,17 @@ class TickerSearchResponse(BaseModel):
     results: list[TickerListing]
 
 
+class MarketOddsView(BaseModel):
+    status: Literal["pending", "available", "unavailable"] = "pending"
+    itm_pct_tenths: int | None = None
+    otm_pct_tenths: int | None = None
+    reason: str | None = None
+    source: MarketSource | None = None
+    fetched_at: datetime | None = None
+    session_date: date | None = None
+    model_version: str | None = None
+
+
 class CoveredCallContract(BaseModel):
     expiration: str
     dte: int
@@ -141,6 +154,7 @@ class CoveredCallContract(BaseModel):
     vega_e4: int | None = None
     rho_e4: int | None = None
     greeks_source: GreeksSource | None = None
+    market_odds: MarketOddsView = Field(default_factory=MarketOddsView)
 
 
 class CoveredCallExpiration(BaseModel):
@@ -165,6 +179,7 @@ class _ChainPageBase(BaseModel):
     last_trade: str | None
     last_trade_timestamp: str | None
     truncated: bool
+    chain_source: MarketSource = "nasdaq"
     chain_from_cache: bool
     info_from_cache: bool
     history_from_cache: bool
@@ -210,6 +225,7 @@ class CashSecuredPutContract(BaseModel):
     vega_e4: int | None = None
     rho_e4: int | None = None
     greeks_source: GreeksSource | None = None
+    market_odds: MarketOddsView = Field(default_factory=MarketOddsView)
 
 
 class CashSecuredPutExpiration(BaseModel):

@@ -6,6 +6,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Annotated
 from urllib.parse import urlsplit
 
@@ -18,10 +19,12 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from options_api.cache import TickerCache
 from options_api.chain import load_cash_secured_puts, load_covered_calls
+from options_api.market_watch import MarketWatchOdds
 from options_api.models import (
     CashSecuredPutPage,
     CoveredCallPage,
     HealthResponse,
+    MarketOddsView,
     Moneyness,
     TickerSearchResponse,
     normalize_ticker,
@@ -215,13 +218,30 @@ async def _load_page(
     listing = universe.listing(normalized)
     service: OptionChainService = request.app.state.service
     try:
-        return await load(
+        page = await load(
             service,
             normalized,
             _page_now(request.app),
             moneyness=moneyness,
             name=listing.name if listing else None,
         )
+        odds: MarketWatchOdds = request.app.state.market_odds
+        odds.schedule([normalized])
+        for expiration in page.expirations:
+            for contract in expiration.contracts:
+                if contract.watch_key is None:
+                    contract.market_odds = MarketOddsView(
+                        status="unavailable", reason="Contract terms cannot be verified"
+                    )
+                    continue
+                contract.market_odds = odds.lookup(
+                    normalized,
+                    "call" if isinstance(page, CoveredCallPage) else "put",
+                    contract.expiration,
+                    Decimal(contract.strike_exact),
+                    normalized,
+                )
+        return page
     except NasdaqError as exc:
         raise _http_nasdaq_error(exc) from exc
     except ValueError as exc:
@@ -261,11 +281,6 @@ def create_app(
             app.state.settings = settings
             app.state.jobs = JobManager(settings.resolved_data_dir())
             app.state.watchlist = WatchlistService(settings.resolved_data_dir(), close_provider)
-            from stocksweeper.forecast import ForecastService, PeerCandidate
-
-            app.state.forecast = ForecastService(settings.resolved_data_dir())
-            app.state.forecast.initialize()
-            app.state.watchlist.forecast = app.state.forecast
             client = client_factory()
             app.state.http_client = client
             app.state.service = OptionChainService(
@@ -276,35 +291,30 @@ def create_app(
             )
             app.state.universe = TickerUniverse(client)
             app.state.clock = clock or (lambda: datetime.now(UTC))
+            app.state.market_odds = MarketWatchOdds(
+                app.state.service, client, app.state.clock
+            )
             app.state.prefetch_universe = prefetch_universe
             prefetch: asyncio.Task[bool] | None = None
             if prefetch_universe:
                 prefetch = asyncio.create_task(app.state.universe.ensure())
 
-            async def refresh_watches() -> None:
+            async def refresh_outcomes() -> None:
                 first = True
                 while True:
                     try:
-                        await app.state.universe.ensure()
-                        if app.state.universe.available:
-                            candidates = [
-                                PeerCandidate(ticker=listing.symbol, sector=listing.sector)
-                                for listing in app.state.universe.forecast_peer_listings()
-                            ]
-                            app.state.watchlist.queue_refresh(
-                                app.state.jobs,
-                                as_of=_page_now(app),
-                                candidates=candidates,
-                                retry_pending=first,
-                                clock=app.state.clock,
-                            )
-                            first = False
+                        app.state.watchlist.queue_refresh(
+                            app.state.jobs,
+                            as_of=_page_now(app),
+                            retry_pending=first,
+                            clock=app.state.clock,
+                        )
+                        first = False
                     except Exception:
-                        # A provider outage must not stop subsequent daily checks.
-                        LOG.exception("watch refresh scheduler failed")
+                        LOG.exception("outcome refresh scheduler failed")
                     await asyncio.sleep(300)
 
-            watch_poll = asyncio.create_task(refresh_watches()) if prefetch_universe else None
+            watch_poll = asyncio.create_task(refresh_outcomes()) if prefetch_universe else None
             try:
                 yield
             finally:
@@ -314,6 +324,7 @@ def create_app(
                         await watch_poll
                 if prefetch is not None and not prefetch.done():
                     prefetch.cancel()
+                await app.state.market_odds.close()
                 app.state.jobs.stop_accepting()
                 drained = await asyncio.to_thread(app.state.jobs.wait, 2.0)
                 if not drained:

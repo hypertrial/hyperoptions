@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import httpx
 
 from options_api.cache import TickerCache
+from options_api.market_sources import fetch_yahoo_chain
 from options_api.memo import ContractMemo
 from options_api.models import (
     HistoricalResponse,
@@ -57,6 +58,12 @@ class OptionChainService:
                 raise NasdaqError.malformed() from exc
             if not rows and options_available:
                 raise NasdaqError.malformed()
+            if truncated:
+                replacement = await fetch_yahoo_chain(
+                    ticker, frozenset(row.expiration for row in rows)
+                )
+                if replacement is not None:
+                    return replacement
             return OptionChainResponse(
                 ticker=ticker,
                 fetched_at=datetime.now(UTC),
@@ -64,6 +71,7 @@ class OptionChainService:
                 last_trade=last_trade,
                 last_trade_timestamp=extract_last_trade_timestamp(last_trade),
                 spot=extract_last_trade_price(last_trade),
+                source="nasdaq",
                 truncated=truncated,
                 options_available=options_available,
                 rows=rows,

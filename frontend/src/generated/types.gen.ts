@@ -140,6 +140,7 @@ export type CashSecuredPutContract = {
      * Greeks Source
      */
     greeks_source?: 'bid' | 'mid' | null;
+    market_odds?: MarketOddsView;
 };
 
 /**
@@ -191,7 +192,7 @@ export type CashSecuredPutPage = {
     /**
      * Current Source
      */
-    current_source: 'stock_bid' | 'chain_last_trade' | null;
+    current_source: 'stock_bid' | 'chain_last_trade' | 'yahoo_underlying' | null;
     /**
      * Stock Bid Cents
      */
@@ -224,6 +225,10 @@ export type CashSecuredPutPage = {
      * Truncated
      */
     truncated: boolean;
+    /**
+     * Chain Source
+     */
+    chain_source?: 'nasdaq' | 'yahoo';
     /**
      * Chain From Cache
      */
@@ -391,6 +396,7 @@ export type CoveredCallContract = {
      * Greeks Source
      */
     greeks_source?: 'bid' | 'mid' | null;
+    market_odds?: MarketOddsView;
 };
 
 /**
@@ -442,7 +448,7 @@ export type CoveredCallPage = {
     /**
      * Current Source
      */
-    current_source: 'stock_bid' | 'chain_last_trade' | null;
+    current_source: 'stock_bid' | 'chain_last_trade' | 'yahoo_underlying' | null;
     /**
      * Stock Bid Cents
      */
@@ -476,6 +482,10 @@ export type CoveredCallPage = {
      */
     truncated: boolean;
     /**
+     * Chain Source
+     */
+    chain_source?: 'nasdaq' | 'yahoo';
+    /**
      * Chain From Cache
      */
     chain_from_cache: boolean;
@@ -496,88 +506,6 @@ export type CoveredCallPage = {
      * Expirations
      */
     expirations: Array<CoveredCallExpiration>;
-};
-
-/**
- * ForecastView
- */
-export type ForecastView = {
-    /**
-     * Status
-     */
-    status?: 'available' | 'unavailable';
-    /**
-     * Itm Probability
-     */
-    itm_probability?: number | null;
-    /**
-     * Reason
-     */
-    reason?: string | null;
-    /**
-     * As Of
-     */
-    as_of?: string | null;
-    /**
-     * Model Id
-     */
-    model_id?: string | null;
-    /**
-     * Strategy Id
-     */
-    strategy_id?: string | null;
-    /**
-     * Strategy Name
-     */
-    strategy_name?: string | null;
-    /**
-     * Signal State
-     */
-    signal_state?: 'long' | 'flat' | null;
-    /**
-     * Fit Peers
-     */
-    fit_peers?: number | null;
-    /**
-     * Audit Peers
-     */
-    audit_peers?: number | null;
-    /**
-     * Audit Blocks
-     */
-    audit_blocks?: number | null;
-    /**
-     * Cohort Size
-     */
-    cohort_size?: number | null;
-    /**
-     * Fit Samples
-     */
-    fit_samples?: number | null;
-    /**
-     * Audit Samples
-     */
-    audit_samples?: number | null;
-    /**
-     * Crps Skill Lower 90
-     */
-    crps_skill_lower_90?: number | null;
-    /**
-     * Brier Delta
-     */
-    brier_delta?: number | null;
-    /**
-     * Source
-     */
-    source?: string | null;
-    /**
-     * Survivorship Note
-     */
-    survivorship_note?: string | null;
-    /**
-     * Historical
-     */
-    historical?: boolean;
 };
 
 /**
@@ -632,6 +560,44 @@ export type Job = {
      * Run Id
      */
     run_id?: string | null;
+};
+
+/**
+ * MarketOddsView
+ */
+export type MarketOddsView = {
+    /**
+     * Status
+     */
+    status?: 'pending' | 'available' | 'unavailable';
+    /**
+     * Itm Pct Tenths
+     */
+    itm_pct_tenths?: number | null;
+    /**
+     * Otm Pct Tenths
+     */
+    otm_pct_tenths?: number | null;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * Source
+     */
+    source?: 'nasdaq' | 'yahoo' | null;
+    /**
+     * Fetched At
+     */
+    fetched_at?: string | null;
+    /**
+     * Session Date
+     */
+    session_date?: string | null;
+    /**
+     * Model Version
+     */
+    model_version?: string | null;
 };
 
 /**
@@ -824,8 +790,7 @@ export type WatchItem = {
      * Created At
      */
     created_at: string;
-    forecast: ForecastView;
-    last_available_forecast?: ForecastView | null;
+    market_odds?: MarketOddsView;
     outcome: OutcomeView;
 };
 

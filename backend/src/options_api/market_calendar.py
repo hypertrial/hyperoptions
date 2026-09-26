@@ -27,6 +27,20 @@ def session_close(day: date) -> datetime:
     return _calendar().session_close(session).to_pydatetime()
 
 
+def regular_session_open(as_of: datetime) -> bool:
+    if as_of.tzinfo is None:
+        as_of = as_of.replace(tzinfo=UTC)
+    return bool(_calendar().is_open_on_minute(as_of))
+
+
+def quote_session(as_of: datetime) -> date:
+    if as_of.tzinfo is None:
+        as_of = as_of.replace(tzinfo=UTC)
+    if regular_session_open(as_of):
+        return as_of.astimezone(_NY).date()
+    return latest_completed_session(as_of)
+
+
 def latest_completed_session(as_of: datetime) -> date:
     if as_of.tzinfo is None:
         as_of = as_of.replace(tzinfo=UTC)

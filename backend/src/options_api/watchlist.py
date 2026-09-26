@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import math
 import uuid
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -21,7 +20,7 @@ from options_api.market_calendar import (
     latest_completed_session,
     session_on_or_before,
 )
-from options_api.models import OptionQuote, normalize_ticker
+from options_api.models import MarketOddsView, OptionQuote, normalize_ticker
 from options_api.nasdaq import NasdaqError
 from options_api.outcomes import (
     TERMS_NOTE,
@@ -31,43 +30,17 @@ from options_api.outcomes import (
     resolve_outcome,
 )
 from stocksweeper.pipeline.jobs import Job, JobBusy, JobManager
-from stocksweeper.forecast.calendar import PUBLISHING_LAG
 from stocksweeper.storage.db import connect, rows
 
 LOG = logging.getLogger(__name__)
 MAX_WATCHES = 256
-TRANSIENT_FORECAST_RETRY = timedelta(minutes=30)
-TRANSIENT_FORECAST_REASONS = frozenset(
-    {"market_data_missing", "peer_data_missing", "model_not_ready"}
-)
+OUTCOME_PUBLICATION_LAG = timedelta(minutes=30)
 
 
 class WatchCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     watch_key: str = Field(min_length=1, max_length=80)
-
-
-class ForecastView(BaseModel):
-    status: Literal["available", "unavailable"] = "unavailable"
-    itm_probability: float | None = None
-    reason: str | None = "Forecast not yet prepared"
-    as_of: date | None = None
-    model_id: str | None = None
-    strategy_id: str | None = None
-    strategy_name: str | None = None
-    signal_state: Literal["long", "flat"] | None = None
-    fit_peers: int | None = None
-    audit_peers: int | None = None
-    audit_blocks: int | None = None
-    cohort_size: int | None = None
-    fit_samples: int | None = None
-    audit_samples: int | None = None
-    crps_skill_lower_90: float | None = None
-    brier_delta: float | None = None
-    source: str | None = None
-    survivorship_note: str | None = None
-    historical: bool = False
 
 
 class OutcomeView(BaseModel):
@@ -91,8 +64,7 @@ class WatchItem(BaseModel):
     strike_exact: str
     terms_note: str
     created_at: datetime
-    forecast: ForecastView
-    last_available_forecast: ForecastView | None = None
+    market_odds: MarketOddsView = Field(default_factory=MarketOddsView)
     outcome: OutcomeView
 
 
@@ -333,7 +305,6 @@ class WatchlistService:
     def __init__(self, data_dir: Path, provider: CloseProvider | None = None) -> None:
         self.store = WatchStore(data_dir)
         self.provider = provider or YahooCloseProvider()
-        self.forecast: Any = None
 
     def item(
         self,
@@ -342,15 +313,6 @@ class WatchlistService:
         *,
         as_of: datetime | None = None,
     ) -> WatchItem:
-        def belongs_to_watch(snapshot: Any) -> bool:
-            created = snapshot.created_at
-            watched = record.created_at
-            if created.tzinfo is None:
-                created = created.replace(tzinfo=UTC)
-            if watched.tzinfo is None:
-                watched = watched.replace(tzinfo=UTC)
-            return created >= watched
-
         if outcomes is None:
             outcomes = self.store.latest_outcomes()
         outcome = outcomes.get(record.id)
@@ -367,32 +329,6 @@ class WatchlistService:
                 ),
                 session_date=session_on_or_before(record.expiration),
             )
-        forecast = ForecastView()
-        last_available_forecast = None
-        if record.last_error is not None:
-            forecast.reason = record.last_error
-        if self.forecast is not None:
-            snapshot = self.forecast.latest_snapshot(
-                record.ticker, record.side, record.strike, record.expiration
-            )
-            if snapshot is not None and belongs_to_watch(snapshot):
-                forecast = ForecastView.model_validate(snapshot.model_dump(mode="json"))
-            if outcome.status in {"provisional", "unsupported"}:
-                expiry_session = session_on_or_before(record.expiration)
-                if forecast.status == "available" and forecast.as_of is not None:
-                    forecast.historical = forecast.as_of < expiry_session
-                elif hasattr(self.forecast, "last_available_snapshot"):
-                    historical = self.forecast.last_available_snapshot(
-                        record.ticker, record.side, record.strike, record.expiration
-                    )
-                    if (
-                        historical is not None
-                        and belongs_to_watch(historical)
-                        and historical.as_of < expiry_session
-                    ):
-                        last_available_forecast = ForecastView.model_validate(
-                            {**historical.model_dump(mode="json"), "historical": True}
-                        )
         return WatchItem(
             id=record.id,
             ticker=record.ticker,
@@ -402,8 +338,6 @@ class WatchlistService:
             strike_exact=strike_exact(record.strike),
             terms_note=record.terms_note,
             created_at=record.created_at,
-            forecast=forecast,
-            last_available_forecast=last_available_forecast,
             outcome=outcome,
         )
 
@@ -416,17 +350,16 @@ class WatchlistService:
         jobs: JobManager,
         *,
         as_of: datetime,
-        candidates: list[Any],
         force: bool = False,
         retry_pending: bool = False,
         clock: Callable[[], datetime] | None = None,
     ) -> Job | None:
-        # Use the same publication lag as forecast inputs. A 16:00 ET tick
-        # must not mark today's watch done while the model still sees yesterday.
         def due_items(session: date, now: datetime) -> list[WatchRecord]:
             outcomes = self.store.latest_outcomes()
             due: list[WatchRecord] = []
             for item in self.store.list():
+                if not expiry_session_completed(item.expiration, now - OUTCOME_PUBLICATION_LAG):
+                    continue
                 if (
                     force
                     or item.last_attempted_session is None
@@ -435,28 +368,11 @@ class WatchlistService:
                     due.append(item)
                     continue
                 outcome = outcomes.get(item.id)
-                if retry_pending and outcome is not None and outcome.status == "pending":
-                    due.append(item)
-                    continue
-                if self.forecast is None or outcome is not None:
-                    continue
-                snapshot = self.forecast.latest_snapshot(
-                    item.ticker, item.side, item.strike, item.expiration
-                )
-                if (
-                    snapshot is None
-                    or snapshot.status != "unavailable"
-                    or snapshot.reason not in TRANSIENT_FORECAST_REASONS
-                ):
-                    continue
-                attempted = item.last_attempted_at or snapshot.created_at
-                if attempted.tzinfo is None:
-                    attempted = attempted.replace(tzinfo=UTC)
-                if retry_pending or now >= attempted + TRANSIENT_FORECAST_RETRY:
+                if retry_pending and (outcome is None or outcome.status == "pending"):
                     due.append(item)
             return due
 
-        submitted_session = latest_completed_session(as_of - PUBLISHING_LAG)
+        submitted_session = latest_completed_session(as_of - OUTCOME_PUBLICATION_LAG)
         submitted = due_items(submitted_session, as_of)
         if not submitted:
             return None
@@ -466,78 +382,39 @@ class WatchlistService:
         coalesce_key = None if force else f"watch_refresh:{submitted_session}:{batch_hash}"
 
         def work(progress) -> None:
-            # Earlier watch preparation can hold the worker past a close or corporate
-            # action. Resolve prices and evidence at execution, not submission.
+            # Resolve the close at execution; a queued job can cross a session boundary.
             execution_as_of = clock() if clock is not None else as_of
             if execution_as_of.tzinfo is None:
                 execution_as_of = execution_as_of.replace(tzinfo=UTC)
-            session = latest_completed_session(execution_as_of - PUBLISHING_LAG)
+            session = latest_completed_session(execution_as_of - OUTCOME_PUBLICATION_LAG)
             due = due_items(session, execution_as_of)
-            rebuild_pending = force
             for index, item in enumerate(due):
-                progress(index / len(due), f"Preparing {item.ticker} watch {index + 1}/{len(due)}")
+                progress(index / len(due), f"Checking {item.ticker} expiry {index + 1}/{len(due)}")
                 item_session = session
                 try:
                     item_as_of = clock() if clock is not None else execution_as_of
                     if item_as_of.tzinfo is None:
                         item_as_of = item_as_of.replace(tzinfo=UTC)
-                    item_session = latest_completed_session(item_as_of - PUBLISHING_LAG)
-                    if expiry_session_completed(item.expiration, item_as_of):
-                        result = resolve_outcome(
-                            ticker=item.ticker,
-                            root=item.root,
-                            side=item.side,
-                            strike=item.strike,
-                            expiration=item.expiration,
-                            watched_at=item.created_at,
-                            as_of=item_as_of,
-                            provider=self.provider,
-                            clock=clock,
-                        )
-                        self.store.record_outcome(item, result, item_session)
-                    elif self.forecast is not None:
-                        def forecast_progress(
-                            fraction: float,
-                            message: str,
-                            *,
-                            watch_index: int = index,
-                            ticker: str = item.ticker,
-                        ) -> None:
-                            bounded = (
-                                max(0.0, min(1.0, fraction))
-                                if math.isfinite(fraction)
-                                else 0.0
-                            )
-                            progress(
-                                (watch_index + bounded) / len(due),
-                                f"{ticker}: {message}",
-                            )
-
-                        self.forecast.refresh_contract(
-                            item.ticker,
-                            item.side,
-                            item.strike,
-                            item.expiration,
-                            as_of=item_as_of,
-                            candidates=candidates,
-                            progress=forecast_progress,
-                            watched_at=item.created_at,
-                            force_rebuild=rebuild_pending,
-                        )
-                        rebuild_pending = False
-                        self.store.mark_attempted(
-                            item.id, item_session,
-                            attempted_at=clock() if clock is not None else item_as_of,
-                        )
-                    else:
-                        self.store.mark_attempted(item.id, item_session, attempted_at=item_as_of)
+                    item_session = latest_completed_session(item_as_of - OUTCOME_PUBLICATION_LAG)
+                    result = resolve_outcome(
+                        ticker=item.ticker,
+                        root=item.root,
+                        side=item.side,
+                        strike=item.strike,
+                        expiration=item.expiration,
+                        watched_at=item.created_at,
+                        as_of=item_as_of,
+                        provider=self.provider,
+                        clock=clock,
+                    )
+                    self.store.record_outcome(item, result, item_session)
                 except Exception:
-                    LOG.exception("watch refresh failed for %s", item.id)
+                    LOG.exception("outcome refresh failed for %s", item.id)
                     self.store.mark_attempted(
-                        item.id, item_session, "Forecast preparation failed",
+                        item.id, item_session, "Outcome refresh failed",
                         attempted_at=clock() if clock is not None else item_as_of,
                     )
-                progress((index + 1) / len(due), f"Refreshed {index + 1}/{len(due)} watches")
+                progress((index + 1) / len(due), f"Checked {index + 1}/{len(due)} expiries")
             return None
 
         try:
@@ -567,17 +444,9 @@ def _now(request: Request) -> datetime:
 
 
 def _queue(request: Request, *, force: bool = False, retry_pending: bool = False) -> Job | None:
-    universe = request.app.state.universe
-    from stocksweeper.forecast import PeerCandidate
-
-    candidates = [
-        PeerCandidate(ticker=listing.symbol, sector=listing.sector)
-        for listing in universe.forecast_peer_listings()
-    ]
     return request.app.state.watchlist.queue_refresh(
         request.app.state.jobs,
         as_of=_now(request),
-        candidates=candidates,
         force=force,
         retry_pending=retry_pending,
         clock=request.app.state.clock,
@@ -586,8 +455,27 @@ def _queue(request: Request, *, force: bool = False, retry_pending: bool = False
 
 @router.get("/api/watchlist", response_model=WatchListResponse)
 async def get_watchlist(request: Request) -> WatchListResponse:
+    now = _now(request)
+    items = request.app.state.watchlist.items(as_of=now)
+    odds = request.app.state.market_odds
+    odds.schedule(
+        item.ticker for item in items if not expiry_session_completed(item.expiration, now)
+    )
+    for item in items:
+        if expiry_session_completed(item.expiration, now):
+            item.market_odds = MarketOddsView(
+                status="unavailable", reason="Expiry session completed; see outcome"
+            )
+            continue
+        item.market_odds = odds.lookup(
+            item.ticker,
+            item.side,
+            item.expiration.isoformat(),
+            Decimal(item.strike_exact),
+            item.root,
+        )
     return WatchListResponse(
-        items=request.app.state.watchlist.items(as_of=_now(request)),
+        items=items,
         active_job=request.app.state.jobs.active("watch_refresh"),
     )
 
@@ -630,9 +518,14 @@ async def add_watch(request: Request, body: WatchCreate) -> WatchCreateResponse:
         raise HTTPException(status_code=409, detail="Watch key differs from current chain")
     store: WatchStore = request.app.state.watchlist.store
     record, created = store.add(body.watch_key, ticker, root, side, expiry, strike, _now(request))
+    request.app.state.market_odds.schedule([ticker])
     job = _queue(request) if created else None
+    item = request.app.state.watchlist.item(record, as_of=_now(request))
+    item.market_odds = request.app.state.market_odds.lookup(
+        ticker, side, expiry_text, strike, root
+    )
     return WatchCreateResponse(
-        item=request.app.state.watchlist.item(record, as_of=_now(request)),
+        item=item,
         created=created,
         job=job,
     )
@@ -648,8 +541,4 @@ async def delete_watch(request: Request, watch_id: str) -> None:
 
 @router.post("/api/watchlist/refresh", response_model=WatchRefreshResponse)
 async def refresh_watchlist(request: Request) -> WatchRefreshResponse:
-    universe = request.app.state.universe
-    await universe.ensure()
-    if not universe.available:
-        raise HTTPException(status_code=503, detail="Ticker universe unavailable")
     return WatchRefreshResponse(job=_queue(request, force=True))
