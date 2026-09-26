@@ -41,6 +41,19 @@ test("proxies /api through Vite to FastAPI", async ({ request }) => {
   expect((await tickers.json()).results[0].symbol).toBe("IREN")
 })
 
+test("labels the browser-local fetch time beside the ET quote time", async ({ browser }) => {
+  const context = await browser.newContext({ baseURL: "http://127.0.0.1:5173", timezoneId: "Europe/Zurich" })
+  const page = await context.newPage()
+  try {
+    await page.goto("/")
+    const quote = page.getByRole("region", { name: "IREN market summary" })
+    await expect(quote).toContainText("Sep 11, 2026 10:00 AM ET")
+    await expect(quote).toContainText("Sep 11, 2026, 4:00 PM GMT+2")
+  } finally {
+    await context.close()
+  }
+})
+
 test("surfaces a controlled provider error and keeps Nasdaq out of the browser", async ({ page }) => {
   const nasdaqHits = watchNasdaq(page)
   await page.goto("/")

@@ -246,8 +246,13 @@
   .watch-job [role="progressbar"] { height: 6px; overflow: hidden; border-radius: 999px; background: var(--muted); }
   .watch-job [role="progressbar"] span { display: block; height: 100%; background: var(--primary); }
   .watch-error { border-color: var(--destructive); color: var(--destructive); }
+  .watch-error p { margin: 0 0 10px; }
   .watch-empty h2 { margin: 0 0 5px; font-size: 1.2rem; }
   .watch-empty p { margin: 0 0 10px; }
+  .empty-state.route-not-found { max-width: 44rem; margin: clamp(24px, 4vw, 48px) auto; }
+  .route-not-found h1 { margin-bottom: 12px; }
+  .route-not-found p + p { margin-top: 12px; }
+  .route-not-found a { color: var(--foreground); text-decoration: underline; text-decoration-color: var(--primary); text-underline-offset: 3px; }
 
   .skip-link {
     position: fixed;

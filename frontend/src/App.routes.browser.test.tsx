@@ -59,3 +59,13 @@ it.each([
   expect(fetchMock).toHaveBeenCalledWith("/api/watchlist", expect.anything())
   expect(fetchMock.mock.calls.every(([url]) => !String(url).startsWith("/api/research/"))).toBe(true)
 })
+
+it("offers navigation when a route does not exist", () => {
+  window.history.replaceState(null, "", "/missing-page")
+  render(<App />)
+
+  const main = screen.getByRole("main")
+  expect(main.textContent).toContain("Page not found")
+  expect(main.querySelector('a[href="/"]')?.textContent).toContain("option chain")
+  expect(main.querySelector('a[href="/watchlist"]')?.textContent).toContain("watchlist")
+})

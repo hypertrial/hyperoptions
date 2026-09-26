@@ -217,3 +217,32 @@ test("retired research deep links open the watchlist without research requests",
   await expect(page.getByRole("heading", { name: "Watchlist" })).toBeVisible()
   expect(researchRequests).toEqual([])
 })
+
+test("unknown paths show a usable recovery page", async ({ page }) => {
+  await page.goto("/missing-page")
+  const main = page.getByRole("main")
+  await expect(main.getByRole("heading", { name: "Page not found" })).toBeVisible()
+  await main.getByRole("link", { name: "go to the watchlist" }).click()
+  await expect(page.getByRole("heading", { name: "Watchlist" })).toBeVisible()
+})
+
+test("keeps watched contracts visible after a later poll fails and clears the warning on retry", async ({ page }) => {
+  let reads = 0
+  await page.route("**/api/watchlist", async (route) => {
+    if (route.request().method() !== "GET") return route.continue()
+    reads += 1
+    if (reads === 2) return route.fulfill({ status: 503, json: { detail: "Provider temporarily unavailable" } })
+    return route.fulfill({ json: { items: [item] } })
+  })
+
+  await page.goto("/watchlist")
+  await expect(page.getByRole("article")).toBeVisible()
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")))
+  const warning = page.getByRole("alert")
+  await expect(warning).toContainText("Showing the last loaded watchlist")
+  await expect(warning).toContainText("Provider temporarily unavailable")
+  await expect(page.getByRole("article")).toBeVisible()
+  await warning.getByRole("button", { name: "Retry" }).click()
+  await expect(warning).toHaveCount(0)
+  expect(reads).toBe(3)
+})
