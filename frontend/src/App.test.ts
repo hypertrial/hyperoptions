@@ -7,7 +7,8 @@ import { describe, expect, it } from "vitest"
 import App from "./App"
 import { contractSizeLabel, contractCountIsSafe, parseContractCount, scaleByContracts, shareCount, stockCapitalCents } from "./contracts"
 import { copyRowAccessibleName, copyRowStateKey, formatRowClipboard } from "./copyRow"
-import { meetsMaximum, parseThreshold, passesFilters } from "./filters"
+import { meetsScaledMaximum } from "./decimal"
+import { parseThreshold, passesFilters } from "./filters"
 import { dateTime, integer, moneyCents, percentTenths, plural, signedE4, unsignedPercentTenths } from "./format"
 import { heatmapHue, heatmapStop, metricRange } from "./heatmap"
 import { CALL_COLUMNS, CALL_DEFAULT_COLUMN_IDS, PUT_DEFAULT_COLUMN_IDS, defaultColumnIds, formatContractValues, mobilePriorityColumns, visibleColumns, type ColumnDef } from "./columns"
@@ -278,10 +279,10 @@ describe("row filters", () => {
   it("applies an inclusive DTE range and ANDs it with the other floors", () => {
     const weekly = { called_pnl_cents: 4000, simple_apr_pct_tenths: 421, drop_to_breakeven_pct_tenths: 2, dte: 7 }
     const monthly = { called_pnl_cents: 29_000, simple_apr_pct_tenths: 898, drop_to_breakeven_pct_tenths: 102, dte: 28 }
-    expect(meetsMaximum(7, null)).toBe(true)
-    expect(meetsMaximum(7, parseThreshold("14"))).toBe(true)
-    expect(meetsMaximum(28, parseThreshold("14"))).toBe(false)
-    expect(meetsMaximum(null, parseThreshold("14"))).toBe(false)
+    expect(meetsScaledMaximum(7, null, 0)).toBe(true)
+    expect(meetsScaledMaximum(7, parseThreshold("14"), 0)).toBe(true)
+    expect(meetsScaledMaximum(28, parseThreshold("14"), 0)).toBe(false)
+    expect(meetsScaledMaximum(null, parseThreshold("14"), 0)).toBe(false)
     expect(passesFilters(weekly, openFilters, "call")).toBe(true)
     expect(passesFilters(weekly, { ...openFilters, minDte: parseThreshold("7") }, "call")).toBe(true)
     expect(passesFilters(weekly, { ...openFilters, minDte: parseThreshold("7.0") }, "call")).toBe(true)

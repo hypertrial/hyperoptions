@@ -6,22 +6,6 @@ export function parseThreshold(raw: string): ExactDecimal | null {
   return parseExactToken(raw, /[$%,\s]/g)
 }
 
-export function meetsMinimum(
-  value: number | null | undefined,
-  threshold: ExactDecimal | null,
-  scale = 0,
-): boolean {
-  return meetsScaledMinimum(value, threshold, scale)
-}
-
-export function meetsMaximum(
-  value: number | null | undefined,
-  threshold: ExactDecimal | null,
-  scale = 0,
-): boolean {
-  return meetsScaledMaximum(value, threshold, scale)
-}
-
 export type FilterId = "primary" | "apr" | "drop" | "minDte" | "maxDte"
 
 export type FilterTexts = Record<FilterId, string>
@@ -125,10 +109,10 @@ export function passesFilters(
   if (inverted) return false
   const metrics = STRATEGIES[side].filterMetrics
   return (
-    meetsMinimum(row[metrics.primary.key], filters.primary, metrics.primary.scale)
-    && meetsMinimum(row[metrics.apr.key], filters.apr, metrics.apr.scale)
-    && meetsMinimum(row[metrics.drop.key], filters.drop, metrics.drop.scale)
-    && meetsMinimum(row.dte, filters.minDte, 0)
-    && meetsMaximum(row.dte, filters.maxDte, 0)
+    meetsScaledMinimum(row[metrics.primary.key], filters.primary, metrics.primary.scale)
+    && meetsScaledMinimum(row[metrics.apr.key], filters.apr, metrics.apr.scale)
+    && meetsScaledMinimum(row[metrics.drop.key], filters.drop, metrics.drop.scale)
+    && meetsScaledMinimum(row.dte, filters.minDte, 0)
+    && meetsScaledMaximum(row.dte, filters.maxDte, 0)
   )
 }
