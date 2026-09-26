@@ -21,7 +21,12 @@ from options_api.market_calendar import (
 )
 from options_api.market_odds import OddsEstimate, calculate_market_odds
 from options_api.market_sources import DividendStatus, fetch_dividend_status, fetch_treasury_curve
-from options_api.models import MarketOddsView, OptionChainResponse, StockInfoResponse
+from options_api.models import (
+    HistoricalBar,
+    MarketOddsView,
+    OptionChainResponse,
+    StockInfoResponse,
+)
 from options_api.service import OptionChainService
 
 LOG = logging.getLogger(__name__)
@@ -114,6 +119,13 @@ def _spot(
         if quote_session(quote_time) != completed or quote_time > session_close(completed):
             return None, "Last regular-session quote cannot be verified"
     return price, None
+
+
+def _positive_close(bars: Iterable[HistoricalBar], session: date) -> Decimal | None:
+    for bar in bars:
+        if bar.date == session and bar.close > 0:
+            return bar.close
+    return None
 
 
 class MarketWatchOdds:
@@ -234,6 +246,23 @@ class MarketWatchOdds:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
+    async def _completed_session_close(self, ticker: str, now: datetime) -> Decimal | None:
+        session = latest_completed_session(now)
+        from_date = (session - timedelta(days=10)).isoformat()
+        try:
+            history = await self.service.get_history(ticker, from_date)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            LOG.exception("completed-session close unavailable for %s", ticker)
+            return None
+        close = _positive_close(history.bars, session)
+        if close is None:
+            # A daily bar can appear after the first post-close fetch. Do not
+            # keep that incomplete window for the history cache's full day.
+            self.service.release_history(ticker, from_date)
+        return close
+
     async def _dividend_status(self, ticker: str, now: datetime) -> DividendStatus:
         cached = self._dividends.get(ticker)
         ttl = _REFRESH if cached is not None and cached.kind == "unknown" else _DIVIDEND_REFRESH
@@ -287,6 +316,14 @@ class MarketWatchOdds:
                     ))
                     return
                 spot, spot_reason = _spot(chain, info, now)
+                if spot_reason is not None and not regular_session_open(now):
+                    # Nasdaq blanks bid and ask after the close, and its last-sale
+                    # stamp can name the wrong session. The daily bar is dated.
+                    close = await self._completed_session_close(ticker, now)
+                    if close is not None:
+                        spot, spot_reason = close, None
+                    else:
+                        spot_reason = "Last regular-session quote cannot be verified"
                 if spot_reason is not None:
                     self._remember(ticker, _Snapshot(
                         chain.fetched_at, session, chain.source, {}, {}, spot_reason

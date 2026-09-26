@@ -122,3 +122,6 @@ class OptionChainService:
         if not response.bars:
             self._history_cache.discard(key)
         return response.model_copy(update={"from_cache": True}) if from_cache else response
+
+    def release_history(self, ticker: Ticker, from_date: str) -> None:
+        self._history_cache.discard(f"{ticker}:{from_date}")

@@ -7,10 +7,18 @@ from decimal import Decimal
 import httpx
 import pytest
 
+from options_api.cache import TickerCache
 from options_api.market_odds import OddsEstimate
 from options_api.market_sources import DividendStatus, TreasuryCurve
 from options_api.market_watch import MarketWatchOdds
-from options_api.models import OptionChainResponse, OptionQuote, StockInfoResponse
+from options_api.service import OptionChainService
+from options_api.models import (
+    HistoricalBar,
+    HistoricalResponse,
+    OptionChainResponse,
+    OptionQuote,
+    StockInfoResponse,
+)
 
 
 NOW = datetime(2026, 9, 11, 14, tzinfo=UTC)
@@ -54,6 +62,7 @@ def _curve(as_of: date = date(2026, 9, 11)) -> TreasuryCurve:
 def _install_inputs(
     monkeypatch: pytest.MonkeyPatch, *, dividends: DividendStatus | None = None,
     curve: TreasuryCurve | None = None, probability: float = 0.4,
+    spots: list[Decimal] | None = None,
 ) -> list[int]:
     calls: list[int] = []
 
@@ -65,6 +74,8 @@ def _install_inputs(
 
     def calculate(rows, spot, rate_for_expiry, allowed_expirations, as_of):
         calls.append(len(rows))
+        if spots is not None:
+            spots.append(spot)
         return {(row.expiration, row.strike): OddsEstimate(probability) for row in rows}
 
     monkeypatch.setattr("options_api.market_watch.fetch_treasury_curve", treasury)
@@ -137,6 +148,120 @@ async def test_bad_market_inputs_show_reason_and_never_publish_number(
         assert view.itm_pct_tenths is None and view.otm_pct_tenths is None
         assert calculations == []
         await odds.close()
+
+
+SATURDAY = datetime(2026, 9, 26, 16, tzinfo=UTC)
+FRIDAY = date(2026, 9, 25)
+THURSDAY = date(2026, 9, 24)
+
+
+class BlankQuoteService(FakeService):
+    def __init__(
+        self, bars: list[HistoricalBar], fetched_at: datetime = SATURDAY,
+    ) -> None:
+        super().__init__()
+        self.bars = bars
+        self.fetched_at = fetched_at
+        self.history_calls = 0
+        self.history_from: list[str] = []
+        self.released: list[str] = []
+
+    async def get_chain(self, ticker: str) -> OptionChainResponse:
+        chain = await super().get_chain(ticker)
+        return chain.model_copy(update={"fetched_at": self.fetched_at})
+
+    async def get_info(self, ticker: str, now: datetime) -> StockInfoResponse:
+        return StockInfoResponse(
+            ticker=ticker, fetched_at=now, from_cache=False, bid=None, ask=None,
+            quote_timestamp="Sep 24, 2026", is_real_time=False, market_session="Closed",
+        )
+
+    async def get_history(self, ticker: str, from_date: str) -> HistoricalResponse:
+        self.history_calls += 1
+        self.history_from.append(from_date)
+        return HistoricalResponse(
+            ticker=ticker, fetched_at=SATURDAY, from_cache=False, bars=self.bars,
+        )
+
+    def release_history(self, ticker: str, from_date: str) -> None:
+        self.released.append(f"{ticker}:{from_date}")
+
+
+def _bar(session: date, close: str) -> HistoricalBar:
+    return HistoricalBar(date=session, close=Decimal(close))
+
+
+@pytest.mark.asyncio
+async def test_closed_session_uses_official_close_when_bid_and_ask_are_blank(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    spots: list[Decimal] = []
+    calculations = _install_inputs(
+        monkeypatch, curve=_curve(FRIDAY), spots=spots,
+    )
+    service = BlankQuoteService([_bar(THURSDAY, "46.15"), _bar(FRIDAY, "44.125")])
+    async with httpx.AsyncClient() as client:
+        odds = MarketWatchOdds(service, client, lambda: SATURDAY)
+        odds.schedule(["TEST"])
+        await asyncio.gather(*odds._tasks.values())
+        view = odds.lookup("TEST", "call", EXPIRY, Decimal("100"))
+        assert view.status == "available"
+        assert view.itm_pct_tenths == 400
+        assert view.session_date == FRIDAY
+        assert spots == [Decimal("44.125")]
+        assert calculations == [1]
+        assert service.history_calls == 1
+        assert service.history_from == [(FRIDAY - timedelta(days=10)).isoformat()]
+        assert service.released == []
+        await odds.close()
+
+
+@pytest.mark.asyncio
+async def test_closed_session_without_that_close_does_not_use_an_older_bar(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calculations = _install_inputs(monkeypatch, curve=_curve(FRIDAY))
+    service = BlankQuoteService([_bar(THURSDAY, "46.15")])
+    async with httpx.AsyncClient() as client:
+        odds = MarketWatchOdds(service, client, lambda: SATURDAY)
+        odds.schedule(["TEST"])
+        await asyncio.gather(*odds._tasks.values())
+        view = odds.lookup("TEST", "call", EXPIRY, Decimal("100"))
+        assert view.status == "unavailable"
+        assert view.itm_pct_tenths is None and view.otm_pct_tenths is None
+        assert view.reason == "Last regular-session quote cannot be verified"
+        assert calculations == []
+        assert service.history_calls == 1
+        assert service.released == [f"TEST:{(FRIDAY - timedelta(days=10)).isoformat()}"]
+        await odds.close()
+
+
+@pytest.mark.asyncio
+async def test_open_session_still_requires_a_coherent_bid_and_ask(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calculations = _install_inputs(monkeypatch)
+    service = BlankQuoteService([_bar(date(2026, 9, 11), "100")], fetched_at=NOW)
+    async with httpx.AsyncClient() as client:
+        odds = MarketWatchOdds(service, client, lambda: NOW)
+        odds.schedule(["TEST"])
+        await asyncio.gather(*odds._tasks.values())
+        view = odds.lookup("TEST", "call", EXPIRY, Decimal("100"))
+        assert view.status == "unavailable"
+        assert view.reason == "A coherent underlying bid and ask is unavailable"
+        assert view.itm_pct_tenths is None
+        assert calculations == []
+        assert service.history_calls == 0
+        await odds.close()
+
+
+def test_release_history_drops_a_cached_window_before_its_day_long_ttl() -> None:
+    cache = TickerCache(ttl_seconds=86_400)
+    service = OptionChainService(client=object(), history_cache=cache)  # type: ignore[arg-type]
+    key = "TEST:2026-09-15"
+    cache._entries[key] = (cache._monotonic(), object())
+    service.release_history("TEST", "2026-09-15")
+    assert key not in cache._entries
 
 
 @pytest.mark.asyncio
