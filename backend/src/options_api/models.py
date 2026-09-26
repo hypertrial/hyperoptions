@@ -28,6 +28,8 @@ class OptionQuote(BaseModel):
     ticker: Ticker
     expiration: str
     strike: Decimal
+    root: str | None = None
+    identity_reason: str | None = None
     call_bid: Decimal | None
     call_ask: Decimal | None
     call_volume: int | None = None
@@ -108,6 +110,10 @@ class CoveredCallContract(BaseModel):
     dte: int
     strike_cents: int
     in_the_money: bool
+    at_the_money: bool = False
+    strike_exact: str = ""
+    watch_key: str | None = None
+    watchability_reason: str | None = None
     call_bid_cents: int | None
     call_ask_cents: int | None
     call_spread_cents: int | None
@@ -175,6 +181,10 @@ class CashSecuredPutContract(BaseModel):
     dte: int
     strike_cents: int
     in_the_money: bool
+    at_the_money: bool = False
+    strike_exact: str = ""
+    watch_key: str | None = None
+    watchability_reason: str | None = None
     put_bid_cents: int | None
     put_ask_cents: int | None
     put_spread_cents: int | None

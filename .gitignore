@@ -19,6 +19,7 @@ dist-ssr/
 *.local
 .DS_Store
 .local/
+/data/
 *.sqlite3
 *.sqlite3-*
 *.duckdb

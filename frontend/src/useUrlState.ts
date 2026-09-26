@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect } from "react"
+import { useSearchParams } from "react-router-dom"
 
 import { normalizeColumnIds } from "./columns"
 import type { Moneyness, Side } from "./types"
@@ -42,23 +43,17 @@ export function serializeUrlState(state: UrlState): string {
 }
 
 export function useUrlState() {
-  const [state, setState] = useState<UrlState>(() => parseUrlState())
-
-  const replace = useCallback((next: UrlState) => {
-    const href = serializeUrlState(next)
-    if (href === window.location.search) return
-    window.history.replaceState(null, "", href)
-  }, [])
+  const [params, setParams] = useSearchParams()
+  const state = parseUrlState(params.toString())
+  const canonical = serializeUrlState(state).slice(1)
 
   useEffect(() => {
-    replace(state)
-  }, [replace, state])
+    if (params.toString() !== canonical) setParams(canonical, { replace: true })
+  }, [canonical, params, setParams])
 
-  useEffect(() => {
-    const onPop = () => setState(parseUrlState())
-    window.addEventListener("popstate", onPop)
-    return () => window.removeEventListener("popstate", onPop)
-  }, [])
+  const setState = useCallback((next: UrlState) => {
+    setParams(serializeUrlState(next).slice(1), { replace: true })
+  }, [setParams])
 
   return { state, setState }
 }

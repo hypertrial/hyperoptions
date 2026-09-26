@@ -1,5 +1,5 @@
 import type { CashSecuredPutContract, CoveredCallContract } from "./generated/types.gen"
-import { integer, moneyCents, percentTenths, signedE4, unsignedPercentTenths } from "./format"
+import { integer, moneyCents, moneyStrike, percentTenths, signedE4, unsignedPercentTenths } from "./format"
 import { STRATEGIES } from "./strategy"
 import type { Side } from "./types"
 
@@ -209,7 +209,7 @@ export const CALL_COLUMNS: ColumnDef<SizedCall>[] = [
     heatmap: false,
     group: "market",
     accessor: (row) => row.strike_cents,
-    format: (row) => moneyCents(row.strike_cents),
+    format: (row) => moneyStrike(row.strike_exact, row.strike_cents),
   },
   {
     id: "call_bid_cents",
@@ -329,7 +329,7 @@ export const PUT_COLUMNS: ColumnDef<SizedPut>[] = [
     heatmap: false,
     group: "market",
     accessor: (row) => row.strike_cents,
-    format: (row) => moneyCents(row.strike_cents),
+    format: (row) => moneyStrike(row.strike_exact, row.strike_cents),
   },
   {
     id: "put_bid_cents",

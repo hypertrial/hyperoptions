@@ -1,0 +1,14 @@
+{
+  "source": "yfinance Ticker.history, AAPL 2020-08-27..2020-09-04, fetched 2026-09-26",
+  "auto_adjust": false,
+  "actions": true,
+  "rows": [
+    {"date": "2020-08-27", "close": "125.01000213623047", "stock_splits": "0.0"},
+    {"date": "2020-08-28", "close": "124.80750274658203", "stock_splits": "0.0"},
+    {"date": "2020-08-31", "close": "129.0399932861328", "stock_splits": "4.0"},
+    {"date": "2020-09-01", "close": "134.17999267578125", "stock_splits": "0.0"},
+    {"date": "2020-09-02", "close": "131.39999389648438", "stock_splits": "0.0"},
+    {"date": "2020-09-03", "close": "120.87999725341797", "stock_splits": "0.0"},
+    {"date": "2020-09-04", "close": "120.95999908447266", "stock_splits": "0.0"}
+  ]
+}

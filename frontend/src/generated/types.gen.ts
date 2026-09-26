@@ -5,6 +5,20 @@ export type ClientOptions = {
 };
 
 /**
+ * BacktestRequest
+ */
+export type BacktestRequest = {
+    /**
+     * Max Strategies
+     */
+    max_strategies?: number | null;
+    /**
+     * Tickers
+     */
+    tickers?: Array<string> | null;
+};
+
+/**
  * CashSecuredPutContract
  */
 export type CashSecuredPutContract = {
@@ -24,6 +38,22 @@ export type CashSecuredPutContract = {
      * In The Money
      */
     in_the_money: boolean;
+    /**
+     * At The Money
+     */
+    at_the_money?: boolean;
+    /**
+     * Strike Exact
+     */
+    strike_exact?: string;
+    /**
+     * Watch Key
+     */
+    watch_key?: string | null;
+    /**
+     * Watchability Reason
+     */
+    watchability_reason?: string | null;
     /**
      * Put Bid Cents
      */
@@ -232,6 +262,82 @@ export type CashSecuredPutPage = {
 };
 
 /**
+ * Condition
+ */
+export type Condition = {
+    /**
+     * Indicator
+     */
+    indicator: string;
+    /**
+     * Params
+     */
+    params?: {
+        [key: string]: number | number;
+    };
+    /**
+     * Op
+     */
+    op: 'gt' | 'lt' | 'gte' | 'lte' | 'crosses_above' | 'crosses_below';
+    rhs: Rhs;
+};
+
+/**
+ * ConditionGroup
+ */
+export type ConditionGroup = {
+    /**
+     * Logic
+     */
+    logic: 'AND' | 'OR';
+    /**
+     * Conditions
+     */
+    conditions: Array<Condition>;
+};
+
+/**
+ * ConfigView
+ */
+export type ConfigView = {
+    /**
+     * Tickers
+     */
+    tickers: Array<string>;
+    /**
+     * Interval
+     */
+    interval: string;
+    /**
+     * Initial Capital
+     */
+    initial_capital: number;
+    /**
+     * Fees
+     */
+    fees: number;
+    /**
+     * Slippage
+     */
+    slippage: number;
+    /**
+     * Max Strategies
+     */
+    max_strategies: number;
+    gates: GateView;
+    /**
+     * Robustness Weights
+     */
+    robustness_weights: {
+        [key: string]: number;
+    };
+    /**
+     * Cross Ticker Min
+     */
+    cross_ticker_min: number;
+};
+
+/**
  * CoveredCallContract
  */
 export type CoveredCallContract = {
@@ -251,6 +357,22 @@ export type CoveredCallContract = {
      * In The Money
      */
     in_the_money: boolean;
+    /**
+     * At The Money
+     */
+    at_the_money?: boolean;
+    /**
+     * Strike Exact
+     */
+    strike_exact?: string;
+    /**
+     * Watch Key
+     */
+    watch_key?: string | null;
+    /**
+     * Watchability Reason
+     */
+    watchability_reason?: string | null;
     /**
      * Call Bid Cents
      */
@@ -467,6 +589,210 @@ export type CoveredCallPage = {
 };
 
 /**
+ * CrossTickerItem
+ */
+export type CrossTickerItem = {
+    /**
+     * Strategy Id
+     */
+    strategy_id: string;
+    /**
+     * Strategy
+     */
+    strategy: string;
+    /**
+     * Family
+     */
+    family: string;
+    /**
+     * Signals
+     */
+    signals: string;
+    /**
+     * Parameters
+     */
+    parameters: string;
+    /**
+     * Cross Score
+     */
+    cross_score: number;
+    /**
+     * Per Ticker
+     */
+    per_ticker: {
+        [key: string]: CrossTickerPeer;
+    };
+    /**
+     * Entry Signals
+     */
+    entry_signals?: Array<string>;
+    /**
+     * Filter Signals
+     */
+    filter_signals?: Array<string>;
+    /**
+     * Exit Signals
+     */
+    exit_signals?: Array<string>;
+    /**
+     * Exit Kind
+     */
+    exit_kind?: string;
+};
+
+/**
+ * CrossTickerPeer
+ */
+export type CrossTickerPeer = {
+    /**
+     * Score
+     */
+    score: number;
+    /**
+     * Rejected
+     */
+    rejected: boolean;
+    /**
+     * Sharpe
+     */
+    sharpe: number | null;
+    /**
+     * Limited
+     */
+    limited: boolean;
+};
+
+/**
+ * FoldView
+ */
+export type FoldView = {
+    /**
+     * Fold
+     */
+    fold: number;
+    /**
+     * Is Sharpe
+     */
+    is_sharpe: number | null;
+    /**
+     * Oos Sharpe
+     */
+    oos_sharpe: number | null;
+    /**
+     * Oos Return
+     */
+    oos_return: number | null;
+};
+
+/**
+ * ForecastView
+ */
+export type ForecastView = {
+    /**
+     * Status
+     */
+    status?: 'available' | 'unavailable';
+    /**
+     * Itm Probability
+     */
+    itm_probability?: number | null;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * As Of
+     */
+    as_of?: string | null;
+    /**
+     * Model Id
+     */
+    model_id?: string | null;
+    /**
+     * Strategy Id
+     */
+    strategy_id?: string | null;
+    /**
+     * Strategy Name
+     */
+    strategy_name?: string | null;
+    /**
+     * Signal State
+     */
+    signal_state?: 'long' | 'flat' | null;
+    /**
+     * Fit Peers
+     */
+    fit_peers?: number | null;
+    /**
+     * Audit Peers
+     */
+    audit_peers?: number | null;
+    /**
+     * Audit Blocks
+     */
+    audit_blocks?: number | null;
+    /**
+     * Cohort Size
+     */
+    cohort_size?: number | null;
+    /**
+     * Fit Samples
+     */
+    fit_samples?: number | null;
+    /**
+     * Audit Samples
+     */
+    audit_samples?: number | null;
+    /**
+     * Crps Skill Lower 90
+     */
+    crps_skill_lower_90?: number | null;
+    /**
+     * Brier Delta
+     */
+    brier_delta?: number | null;
+    /**
+     * Source
+     */
+    source?: string | null;
+    /**
+     * Survivorship Note
+     */
+    survivorship_note?: string | null;
+    /**
+     * Historical
+     */
+    historical?: boolean;
+};
+
+/**
+ * GateView
+ */
+export type GateView = {
+    /**
+     * Min Trades
+     */
+    min_trades: number;
+    /**
+     * Min Val Trades
+     */
+    min_val_trades: number;
+    /**
+     * Max Drawdown
+     */
+    max_drawdown: number;
+    /**
+     * Min Degradation
+     */
+    min_degradation: number;
+    /**
+     * Min Stability
+     */
+    min_stability: number;
+};
+
+/**
  * HTTPValidationError
  */
 export type HttpValidationError = {
@@ -484,6 +810,326 @@ export type HealthResponse = {
      * Ok
      */
     ok?: boolean;
+};
+
+/**
+ * Job
+ */
+export type Job = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * State
+     */
+    state: 'queued' | 'running' | 'succeeded' | 'failed';
+    /**
+     * Progress
+     */
+    progress?: number;
+    /**
+     * Message
+     */
+    message?: string;
+    /**
+     * Error
+     */
+    error?: string | null;
+    /**
+     * Run Id
+     */
+    run_id?: string | null;
+};
+
+/**
+ * JobView
+ */
+export type JobView = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * State
+     */
+    state: 'queued' | 'running' | 'succeeded' | 'failed';
+    /**
+     * Progress
+     */
+    progress: number;
+    /**
+     * Message
+     */
+    message: string;
+    /**
+     * Error
+     */
+    error?: string | null;
+    /**
+     * Run Id
+     */
+    run_id?: string | null;
+};
+
+/**
+ * Leaderboard
+ */
+export type Leaderboard = {
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Total
+     */
+    total: number;
+    /**
+     * Families
+     */
+    families: Array<string>;
+    /**
+     * Items
+     */
+    items: Array<LeaderboardItem>;
+};
+
+/**
+ * LeaderboardItem
+ */
+export type LeaderboardItem = {
+    /**
+     * Rank
+     */
+    rank?: number | null;
+    /**
+     * Ticker
+     */
+    ticker: string;
+    /**
+     * Strategy Id
+     */
+    strategy_id: string;
+    /**
+     * Strategy
+     */
+    strategy: string;
+    /**
+     * Family
+     */
+    family: string;
+    /**
+     * Signals
+     */
+    signals: string;
+    /**
+     * Parameters
+     */
+    parameters: string;
+    /**
+     * Robustness
+     */
+    robustness: number;
+    /**
+     * Rejected
+     */
+    rejected: boolean;
+    /**
+     * Flags
+     */
+    flags: Array<string>;
+    /**
+     * Oos Cagr
+     */
+    oos_cagr?: number | null;
+    /**
+     * Sharpe
+     */
+    sharpe?: number | null;
+    /**
+     * Max Drawdown
+     */
+    max_drawdown?: number | null;
+    /**
+     * Win Rate
+     */
+    win_rate?: number | null;
+    /**
+     * Trades
+     */
+    trades?: number | null;
+    /**
+     * Test Cagr
+     */
+    test_cagr?: number | null;
+    /**
+     * Variants
+     */
+    variants?: number;
+    /**
+     * Entry Signals
+     */
+    entry_signals?: Array<string>;
+    /**
+     * Filter Signals
+     */
+    filter_signals?: Array<string>;
+    /**
+     * Exit Signals
+     */
+    exit_signals?: Array<string>;
+    /**
+     * Exit Kind
+     */
+    exit_kind?: string;
+};
+
+/**
+ * OutcomeView
+ */
+export type OutcomeView = {
+    /**
+     * Status
+     */
+    status: 'pending' | 'provisional' | 'unsupported';
+    /**
+     * Classification
+     */
+    classification?: 'itm' | 'atm' | 'otm' | null;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * Source
+     */
+    source?: string | null;
+    /**
+     * Session Date
+     */
+    session_date?: string | null;
+    /**
+     * Retrieved At
+     */
+    retrieved_at?: string | null;
+    /**
+     * Close Exact
+     */
+    close_exact?: string | null;
+    /**
+     * Terms Note
+     */
+    terms_note?: string;
+    /**
+     * Revised
+     */
+    revised?: boolean;
+};
+
+/**
+ * OverviewCard
+ */
+export type OverviewCard = {
+    /**
+     * Ticker
+     */
+    ticker: string;
+    /**
+     * Bars
+     */
+    bars: number;
+    /**
+     * First
+     */
+    first: string | null;
+    /**
+     * Last
+     */
+    last: string | null;
+    /**
+     * Limited History
+     */
+    limited_history: boolean;
+    /**
+     * Strategy Id
+     */
+    strategy_id?: string | null;
+    /**
+     * Strategy Name
+     */
+    strategy_name?: string | null;
+    /**
+     * Signals
+     */
+    signals?: string | null;
+    /**
+     * Robustness
+     */
+    robustness?: number | null;
+    /**
+     * Oos Cagr
+     */
+    oos_cagr?: number | null;
+    /**
+     * Sharpe
+     */
+    sharpe?: number | null;
+    /**
+     * Max Drawdown
+     */
+    max_drawdown?: number | null;
+    /**
+     * Trades
+     */
+    trades?: number | null;
+    /**
+     * Buy Hold Cagr
+     */
+    buy_hold_cagr?: number | null;
+    /**
+     * Buy Hold Max Drawdown
+     */
+    buy_hold_max_drawdown?: number | null;
+    /**
+     * Test Cagr
+     */
+    test_cagr?: number | null;
+    /**
+     * Test Max Drawdown
+     */
+    test_max_drawdown?: number | null;
+    /**
+     * Test Trades
+     */
+    test_trades?: number | null;
+    /**
+     * Test Buy Hold Cagr
+     */
+    test_buy_hold_cagr?: number | null;
+    /**
+     * Entry Signals
+     */
+    entry_signals?: Array<string>;
+    /**
+     * Filter Signals
+     */
+    filter_signals?: Array<string>;
+    /**
+     * Exit Signals
+     */
+    exit_signals?: Array<string>;
+    /**
+     * Exit Kind
+     */
+    exit_kind?: string;
 };
 
 /**
@@ -506,6 +1152,328 @@ export type PeriodLows = {
      * D365 Cents
      */
     d365_cents: number | null;
+};
+
+/**
+ * ReoptView
+ */
+export type ReoptView = {
+    /**
+     * Fold
+     */
+    fold: number;
+    /**
+     * Strategy Id
+     */
+    strategy_id: string;
+    /**
+     * Oos Sharpe
+     */
+    oos_sharpe: number | null;
+    /**
+     * Oos Return
+     */
+    oos_return: number | null;
+};
+
+/**
+ * Rhs
+ */
+export type Rhs = {
+    /**
+     * Kind
+     */
+    kind: 'const' | 'indicator';
+    /**
+     * Value
+     */
+    value?: number | null;
+    /**
+     * Indicator
+     */
+    indicator?: string | null;
+    /**
+     * Params
+     */
+    params?: {
+        [key: string]: number | number;
+    };
+};
+
+/**
+ * RunTickerView
+ */
+export type RunTickerView = {
+    /**
+     * Ticker
+     */
+    ticker: string;
+    /**
+     * N Bars
+     */
+    n_bars: number;
+    /**
+     * First Ts
+     */
+    first_ts?: string | null;
+    /**
+     * Last Ts
+     */
+    last_ts?: string | null;
+    /**
+     * Limited History
+     */
+    limited_history: boolean;
+    /**
+     * Survivors
+     */
+    survivors: number;
+};
+
+/**
+ * RunView
+ */
+export type RunView = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Strategy Count
+     */
+    strategy_count: number;
+    /**
+     * Ticker Count
+     */
+    ticker_count: number;
+};
+
+/**
+ * SegmentBound
+ */
+export type SegmentBound = {
+    /**
+     * Start
+     */
+    start: string | null;
+    /**
+     * End
+     */
+    end: string | null;
+};
+
+/**
+ * SegmentView
+ */
+export type SegmentView = {
+    /**
+     * Segment
+     */
+    segment: string;
+    /**
+     * Cagr
+     */
+    cagr: number | null;
+    /**
+     * Total Return
+     */
+    total_return: number | null;
+    /**
+     * Sharpe
+     */
+    sharpe: number | null;
+    /**
+     * Sortino
+     */
+    sortino: number | null;
+    /**
+     * Max Drawdown
+     */
+    max_drawdown: number | null;
+    /**
+     * Calmar
+     */
+    calmar: number | null;
+    /**
+     * Win Rate
+     */
+    win_rate: number | null;
+    /**
+     * Profit Factor
+     */
+    profit_factor: number | null;
+    /**
+     * Avg Trade
+     */
+    avg_trade: number | null;
+    /**
+     * Median Trade
+     */
+    median_trade: number | null;
+    /**
+     * N Trades
+     */
+    n_trades: number | null;
+    /**
+     * Exposure
+     */
+    exposure: number | null;
+    /**
+     * Avg Holding Period
+     */
+    avg_holding_period: number | null;
+    /**
+     * Buy Hold Cagr
+     */
+    buy_hold_cagr: number | null;
+    /**
+     * Buy Hold Max Drawdown
+     */
+    buy_hold_max_drawdown: number | null;
+};
+
+/**
+ * StrategyDetail
+ */
+export type StrategyDetail = {
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Ticker
+     */
+    ticker: string;
+    /**
+     * Strategy Id
+     */
+    strategy_id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Family
+     */
+    family: string;
+    /**
+     * Signals
+     */
+    signals: string;
+    /**
+     * Entry Signals
+     */
+    entry_signals?: Array<string>;
+    /**
+     * Filter Signals
+     */
+    filter_signals?: Array<string>;
+    /**
+     * Exit Signals
+     */
+    exit_signals?: Array<string>;
+    /**
+     * Exit Kind
+     */
+    exit_kind?: string;
+    /**
+     * Parameters
+     */
+    parameters: {
+        [key: string]: number | number;
+    };
+    entry: ConditionGroup;
+    exit: ConditionGroup;
+    /**
+     * Robustness
+     */
+    robustness?: number | null;
+    /**
+     * Degradation
+     */
+    degradation?: number | null;
+    /**
+     * Stability
+     */
+    stability?: number | null;
+    /**
+     * Walk Forward Consistency
+     */
+    walk_forward_consistency?: number | null;
+    /**
+     * Rejected
+     */
+    rejected: boolean;
+    /**
+     * Flags
+     */
+    flags: Array<string>;
+    /**
+     * Rank
+     */
+    rank?: number | null;
+    /**
+     * Data Snapshot
+     */
+    data_snapshot?: 'exact' | 'changed';
+    /**
+     * Segment Bounds
+     */
+    segment_bounds?: {
+        [key: string]: SegmentBound;
+    };
+    /**
+     * Segments
+     */
+    segments: Array<SegmentView>;
+    /**
+     * Folds
+     */
+    folds: Array<FoldView>;
+    /**
+     * Reopt
+     */
+    reopt: Array<ReoptView>;
+    /**
+     * Dates
+     */
+    dates: Array<string>;
+    /**
+     * Close
+     */
+    close: Array<number>;
+    /**
+     * Entry Marks
+     */
+    entry_marks: Array<number | null>;
+    /**
+     * Exit Marks
+     */
+    exit_marks: Array<number | null>;
+    /**
+     * Equity
+     */
+    equity: Array<number>;
+    /**
+     * Buy Hold
+     */
+    buy_hold: Array<number>;
+    /**
+     * Drawdown
+     */
+    drawdown: Array<number>;
+    /**
+     * Trades
+     */
+    trades: Array<TradeView>;
 };
 
 /**
@@ -549,6 +1517,84 @@ export type TickerSearchResponse = {
 };
 
 /**
+ * TickerStatusView
+ */
+export type TickerStatusView = {
+    /**
+     * Ticker
+     */
+    ticker: string;
+    /**
+     * Bars
+     */
+    bars: number;
+    /**
+     * First
+     */
+    first: string | null;
+    /**
+     * Last
+     */
+    last: string | null;
+    /**
+     * Has Indicators
+     */
+    has_indicators: boolean;
+    /**
+     * Limited History
+     */
+    limited_history: boolean;
+};
+
+/**
+ * TradeView
+ */
+export type TradeView = {
+    /**
+     * Entry Date
+     */
+    entry_date: string;
+    /**
+     * Exit Date
+     */
+    exit_date: string;
+    /**
+     * Entry Price
+     */
+    entry_price: number;
+    /**
+     * Exit Price
+     */
+    exit_price: number;
+    /**
+     * Return
+     */
+    return: number;
+    /**
+     * Pnl
+     */
+    pnl: number;
+    /**
+     * Holding Bars
+     */
+    holding_bars: number;
+};
+
+/**
+ * UpdateRequest
+ */
+export type UpdateRequest = {
+    /**
+     * Full Refresh
+     */
+    full_refresh?: boolean;
+    /**
+     * Tickers
+     */
+    tickers?: Array<string> | null;
+};
+
+/**
  * ValidationError
  */
 export type ValidationError = {
@@ -574,6 +1620,87 @@ export type ValidationError = {
     ctx?: {
         [key: string]: unknown;
     };
+};
+
+/**
+ * WatchCreate
+ */
+export type WatchCreate = {
+    /**
+     * Watch Key
+     */
+    watch_key: string;
+};
+
+/**
+ * WatchCreateResponse
+ */
+export type WatchCreateResponse = {
+    item: WatchItem;
+    /**
+     * Created
+     */
+    created: boolean;
+    job: Job | null;
+};
+
+/**
+ * WatchItem
+ */
+export type WatchItem = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Ticker
+     */
+    ticker: string;
+    /**
+     * Root
+     */
+    root: string;
+    /**
+     * Side
+     */
+    side: 'call' | 'put';
+    /**
+     * Expiration
+     */
+    expiration: string;
+    /**
+     * Strike Exact
+     */
+    strike_exact: string;
+    /**
+     * Terms Note
+     */
+    terms_note: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+    forecast: ForecastView;
+    last_available_forecast?: ForecastView | null;
+    outcome: OutcomeView;
+};
+
+/**
+ * WatchListResponse
+ */
+export type WatchListResponse = {
+    /**
+     * Items
+     */
+    items: Array<WatchItem>;
+    active_job?: Job | null;
+};
+
+/**
+ * WatchRefreshResponse
+ */
+export type WatchRefreshResponse = {
+    job: Job | null;
 };
 
 export type HealthApiHealthGetData = {
@@ -695,3 +1822,465 @@ export type GetCashSecuredPutsApiCashSecuredPutsTickerGetResponses = {
 };
 
 export type GetCashSecuredPutsApiCashSecuredPutsTickerGetResponse = GetCashSecuredPutsApiCashSecuredPutsTickerGetResponses[keyof GetCashSecuredPutsApiCashSecuredPutsTickerGetResponses];
+
+export type GetWatchlistApiWatchlistGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/watchlist';
+};
+
+export type GetWatchlistApiWatchlistGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: WatchListResponse;
+};
+
+export type GetWatchlistApiWatchlistGetResponse = GetWatchlistApiWatchlistGetResponses[keyof GetWatchlistApiWatchlistGetResponses];
+
+export type AddWatchApiWatchlistPostData = {
+    body: WatchCreate;
+    path?: never;
+    query?: never;
+    url: '/api/watchlist';
+};
+
+export type AddWatchApiWatchlistPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AddWatchApiWatchlistPostError = AddWatchApiWatchlistPostErrors[keyof AddWatchApiWatchlistPostErrors];
+
+export type AddWatchApiWatchlistPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: WatchCreateResponse;
+};
+
+export type AddWatchApiWatchlistPostResponse = AddWatchApiWatchlistPostResponses[keyof AddWatchApiWatchlistPostResponses];
+
+export type DeleteWatchApiWatchlistWatchIdDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Watch Id
+         */
+        watch_id: string;
+    };
+    query?: never;
+    url: '/api/watchlist/{watch_id}';
+};
+
+export type DeleteWatchApiWatchlistWatchIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteWatchApiWatchlistWatchIdDeleteError = DeleteWatchApiWatchlistWatchIdDeleteErrors[keyof DeleteWatchApiWatchlistWatchIdDeleteErrors];
+
+export type DeleteWatchApiWatchlistWatchIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteWatchApiWatchlistWatchIdDeleteResponse = DeleteWatchApiWatchlistWatchIdDeleteResponses[keyof DeleteWatchApiWatchlistWatchIdDeleteResponses];
+
+export type RefreshWatchlistApiWatchlistRefreshPostData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/watchlist/refresh';
+};
+
+export type RefreshWatchlistApiWatchlistRefreshPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: WatchRefreshResponse;
+};
+
+export type RefreshWatchlistApiWatchlistRefreshPostResponse = RefreshWatchlistApiWatchlistRefreshPostResponses[keyof RefreshWatchlistApiWatchlistRefreshPostResponses];
+
+export type ConfigApiResearchConfigGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/research/config';
+};
+
+export type ConfigApiResearchConfigGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ConfigView;
+};
+
+export type ConfigApiResearchConfigGetResponse = ConfigApiResearchConfigGetResponses[keyof ConfigApiResearchConfigGetResponses];
+
+export type DataStatusApiResearchDataStatusGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/research/data/status';
+};
+
+export type DataStatusApiResearchDataStatusGetResponses = {
+    /**
+     * Response Data Status Api Research Data Status Get
+     *
+     * Successful Response
+     */
+    200: Array<TickerStatusView>;
+};
+
+export type DataStatusApiResearchDataStatusGetResponse = DataStatusApiResearchDataStatusGetResponses[keyof DataStatusApiResearchDataStatusGetResponses];
+
+export type UpdateDataApiResearchDataUpdatePostData = {
+    body: UpdateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/research/data/update';
+};
+
+export type UpdateDataApiResearchDataUpdatePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateDataApiResearchDataUpdatePostError = UpdateDataApiResearchDataUpdatePostErrors[keyof UpdateDataApiResearchDataUpdatePostErrors];
+
+export type UpdateDataApiResearchDataUpdatePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: JobView;
+};
+
+export type UpdateDataApiResearchDataUpdatePostResponse = UpdateDataApiResearchDataUpdatePostResponses[keyof UpdateDataApiResearchDataUpdatePostResponses];
+
+export type StartBacktestApiResearchBacktestRunPostData = {
+    body: BacktestRequest;
+    path?: never;
+    query?: never;
+    url: '/api/research/backtest/run';
+};
+
+export type StartBacktestApiResearchBacktestRunPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type StartBacktestApiResearchBacktestRunPostError = StartBacktestApiResearchBacktestRunPostErrors[keyof StartBacktestApiResearchBacktestRunPostErrors];
+
+export type StartBacktestApiResearchBacktestRunPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: JobView;
+};
+
+export type StartBacktestApiResearchBacktestRunPostResponse = StartBacktestApiResearchBacktestRunPostResponses[keyof StartBacktestApiResearchBacktestRunPostResponses];
+
+export type RunsApiResearchRunsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/research/runs';
+};
+
+export type RunsApiResearchRunsGetResponses = {
+    /**
+     * Response Runs Api Research Runs Get
+     *
+     * Successful Response
+     */
+    200: Array<RunView>;
+};
+
+export type RunsApiResearchRunsGetResponse = RunsApiResearchRunsGetResponses[keyof RunsApiResearchRunsGetResponses];
+
+export type RunApiResearchRunsRunIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: never;
+    url: '/api/research/runs/{run_id}';
+};
+
+export type RunApiResearchRunsRunIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RunApiResearchRunsRunIdGetError = RunApiResearchRunsRunIdGetErrors[keyof RunApiResearchRunsRunIdGetErrors];
+
+export type RunApiResearchRunsRunIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RunView;
+};
+
+export type RunApiResearchRunsRunIdGetResponse = RunApiResearchRunsRunIdGetResponses[keyof RunApiResearchRunsRunIdGetResponses];
+
+export type RunTickersApiResearchRunsRunIdTickersGetData = {
+    body?: never;
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: never;
+    url: '/api/research/runs/{run_id}/tickers';
+};
+
+export type RunTickersApiResearchRunsRunIdTickersGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RunTickersApiResearchRunsRunIdTickersGetError = RunTickersApiResearchRunsRunIdTickersGetErrors[keyof RunTickersApiResearchRunsRunIdTickersGetErrors];
+
+export type RunTickersApiResearchRunsRunIdTickersGetResponses = {
+    /**
+     * Response Run Tickers Api Research Runs  Run Id  Tickers Get
+     *
+     * Successful Response
+     */
+    200: Array<RunTickerView>;
+};
+
+export type RunTickersApiResearchRunsRunIdTickersGetResponse = RunTickersApiResearchRunsRunIdTickersGetResponses[keyof RunTickersApiResearchRunsRunIdTickersGetResponses];
+
+export type OverviewApiResearchOverviewGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Run Id
+         */
+        run_id?: string | null;
+    };
+    url: '/api/research/overview';
+};
+
+export type OverviewApiResearchOverviewGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type OverviewApiResearchOverviewGetError = OverviewApiResearchOverviewGetErrors[keyof OverviewApiResearchOverviewGetErrors];
+
+export type OverviewApiResearchOverviewGetResponses = {
+    /**
+     * Response Overview Api Research Overview Get
+     *
+     * Successful Response
+     */
+    200: Array<OverviewCard>;
+};
+
+export type OverviewApiResearchOverviewGetResponse = OverviewApiResearchOverviewGetResponses[keyof OverviewApiResearchOverviewGetResponses];
+
+export type LeaderboardApiResearchLeaderboardGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Run Id
+         */
+        run_id?: string | null;
+        /**
+         * Ticker
+         */
+        ticker?: string | null;
+        /**
+         * Family
+         */
+        family?: string | null;
+        /**
+         * Min Trades
+         */
+        min_trades?: number | null;
+        /**
+         * Include Rejected
+         */
+        include_rejected?: boolean;
+        /**
+         * Sort
+         */
+        sort?: string;
+        /**
+         * Order
+         */
+        order?: string;
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+        /**
+         * Group Variants
+         */
+        group_variants?: boolean;
+        /**
+         * Rule
+         */
+        rule?: string | null;
+        /**
+         * Exit Kind
+         */
+        exit_kind?: string | null;
+        /**
+         * Filters
+         */
+        filters?: number | null;
+    };
+    url: '/api/research/leaderboard';
+};
+
+export type LeaderboardApiResearchLeaderboardGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type LeaderboardApiResearchLeaderboardGetError = LeaderboardApiResearchLeaderboardGetErrors[keyof LeaderboardApiResearchLeaderboardGetErrors];
+
+export type LeaderboardApiResearchLeaderboardGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: Leaderboard;
+};
+
+export type LeaderboardApiResearchLeaderboardGetResponse = LeaderboardApiResearchLeaderboardGetResponses[keyof LeaderboardApiResearchLeaderboardGetResponses];
+
+export type CrossTickerApiResearchCrossTickerGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Run Id
+         */
+        run_id?: string | null;
+    };
+    url: '/api/research/cross-ticker';
+};
+
+export type CrossTickerApiResearchCrossTickerGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CrossTickerApiResearchCrossTickerGetError = CrossTickerApiResearchCrossTickerGetErrors[keyof CrossTickerApiResearchCrossTickerGetErrors];
+
+export type CrossTickerApiResearchCrossTickerGetResponses = {
+    /**
+     * Response Cross Ticker Api Research Cross Ticker Get
+     *
+     * Successful Response
+     */
+    200: Array<CrossTickerItem>;
+};
+
+export type CrossTickerApiResearchCrossTickerGetResponse = CrossTickerApiResearchCrossTickerGetResponses[keyof CrossTickerApiResearchCrossTickerGetResponses];
+
+export type StrategyDetailApiResearchStrategiesStrategyIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Strategy Id
+         */
+        strategy_id: string;
+    };
+    query: {
+        /**
+         * Ticker
+         */
+        ticker: string;
+        /**
+         * Run Id
+         */
+        run_id?: string | null;
+    };
+    url: '/api/research/strategies/{strategy_id}';
+};
+
+export type StrategyDetailApiResearchStrategiesStrategyIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type StrategyDetailApiResearchStrategiesStrategyIdGetError = StrategyDetailApiResearchStrategiesStrategyIdGetErrors[keyof StrategyDetailApiResearchStrategiesStrategyIdGetErrors];
+
+export type StrategyDetailApiResearchStrategiesStrategyIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: StrategyDetail;
+};
+
+export type StrategyDetailApiResearchStrategiesStrategyIdGetResponse = StrategyDetailApiResearchStrategiesStrategyIdGetResponses[keyof StrategyDetailApiResearchStrategiesStrategyIdGetResponses];
+
+export type JobApiJobsJobIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Job Id
+         */
+        job_id: string;
+    };
+    query?: never;
+    url: '/api/jobs/{job_id}';
+};
+
+export type JobApiJobsJobIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type JobApiJobsJobIdGetError = JobApiJobsJobIdGetErrors[keyof JobApiJobsJobIdGetErrors];
+
+export type JobApiJobsJobIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: JobView;
+};
+
+export type JobApiJobsJobIdGetResponse = JobApiJobsJobIdGetResponses[keyof JobApiJobsJobIdGetResponses];

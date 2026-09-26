@@ -19,6 +19,8 @@ import { useRevealLimit } from "./useRevealLimit"
 import { defaultMoneyness, useUrlState } from "./useUrlState"
 import { DEFAULT_SORT, deriveChainView, INITIAL_REVEAL, type SortState } from "./viewModel"
 import type { Moneyness, Side } from "./types"
+import { addWatch, WATCH_JOB_KEY } from "./watchlist/api"
+import type { WatchActionState } from "./watchlist/WatchButton"
 
 const OPEN_SESSIONS = new Set(["market", "regular market", "open"])
 
@@ -52,6 +54,7 @@ export default function ItmChain() {
   const [contractsText, setContractsText] = useState("")
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [copiedNotice, setCopiedNotice] = useState("")
+  const [watchStates, setWatchStates] = useState<Record<string, WatchActionState>>({})
   const [sort, setSort] = useState<SortState>(DEFAULT_SORT)
   const filtersState = useChainFilters()
   const { density, toggle: toggleDensity } = useDensity()
@@ -146,7 +149,7 @@ export default function ItmChain() {
     }, 1500)
   }
 
-  const copyVisibleRow = async (row: { expiration: string; strike_cents: number }, group: { expiration: string; dte: number }) => {
+  const copyVisibleRow = async (row: { expiration: string; strike_cents: number; strike_exact?: string }, group: { expiration: string; dte: number }) => {
     const text = formatRowClipboard(
       {
         ticker,
@@ -164,7 +167,19 @@ export default function ItmChain() {
     } catch {
       return
     }
-    markCopied(copyRowStateKey(ticker, row.expiration, row.strike_cents))
+    markCopied(copyRowStateKey(ticker, row.expiration, row.strike_exact ?? row.strike_cents))
+  }
+
+  const watchContract = async (watchKey: string) => {
+    setWatchStates((current) => ({ ...current, [watchKey]: { phase: "pending" } }))
+    try {
+      const result = await addWatch(watchKey)
+      if (result.job) sessionStorage.setItem(WATCH_JOB_KEY, result.job.id)
+      setWatchStates((current) => ({ ...current, [watchKey]: { phase: result.created ? "added" : "existing" } }))
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "Could not add this contract."
+      setWatchStates((current) => ({ ...current, [watchKey]: { phase: "error", message } }))
+    }
   }
 
   return (
@@ -311,6 +326,8 @@ export default function ItmChain() {
             })}
             onSort={selectSort}
             onCopy={(row, group) => void copyVisibleRow(row, group)}
+            watchStates={watchStates}
+            onWatch={(watchKey) => void watchContract(watchKey)}
           />
         </main>
       </div>

@@ -7,11 +7,12 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { mobilePriorityColumns, type ColumnDef, type SizedContract } from "./columns"
 import { copyRowAccessibleName, copyRowStateKey } from "./copyRow"
 import type { Density } from "./density"
-import { integer, moneyCents } from "./format"
+import { integer, moneyStrike } from "./format"
 import { heatmapHue, heatmapStop, type MetricRange } from "./heatmap"
 import type { Side } from "./types"
 import { useMediaQuery } from "./useMediaQuery"
 import type { SortState, VisibleGroup } from "./viewModel"
+import WatchButton, { type WatchActionState } from "./watchlist/WatchButton"
 
 function heatProps(value: number | null | undefined, range: MetricRange | null) {
   const stop = heatmapStop(value, range)
@@ -52,6 +53,8 @@ type Props = {
   onToggleExpiration: (expiration: string) => void
   onSort: (id: string) => void
   onCopy: (row: SizedContract, group: VisibleGroup["group"]) => void
+  watchStates: Readonly<Record<string, WatchActionState>>
+  onWatch: (watchKey: string) => void
 }
 
 function DesktopResults({
@@ -65,6 +68,8 @@ function DesktopResults({
   density,
   onSort,
   onCopy,
+  watchStates,
+  onWatch,
 }: {
   ticker: string
   columns: ColumnDef[]
@@ -76,6 +81,8 @@ function DesktopResults({
   density: Density
   onSort: (id: string) => void
   onCopy: (row: SizedContract, group: VisibleGroup["group"]) => void
+  watchStates: Readonly<Record<string, WatchActionState>>
+  onWatch: (watchKey: string) => void
 }) {
   return (
     <div className="table-scroll">
@@ -94,14 +101,16 @@ function DesktopResults({
                 </th>
               )
             })}
+            <th scope="col" title="Add this contract to the research watchlist">Watch</th>
             <th scope="col" title="Copy this row as a markdown table for ChatGPT">Copy</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => {
-            const copied = copiedKey === copyRowStateKey(ticker, row.expiration, row.strike_cents)
+          {rows.map((row, index) => {
+            const strike = moneyStrike(row.strike_exact, row.strike_cents)
+            const copied = copiedKey === copyRowStateKey(ticker, row.expiration, row.strike_exact ?? row.strike_cents)
             return (
-              <tr key={`${row.expiration}-${row.strike_cents}`}>
+              <tr key={row.watch_key ?? `${row.expiration}-${row.strike_exact ?? row.strike_cents}-${index}`}>
                 {columns.map((column, index) => (
                   <HeatCell
                     key={column.id}
@@ -112,6 +121,15 @@ function DesktopResults({
                     {column.format(row)}
                   </HeatCell>
                 ))}
+                <td className="watch-cell">
+                  <WatchButton
+                    contractLabel={`${ticker} ${row.expiration} ${strike} strike`}
+                    watchKey={row.watch_key}
+                    watchabilityReason={row.watchability_reason}
+                    state={row.watch_key ? watchStates[row.watch_key] : undefined}
+                    onWatch={onWatch}
+                  />
+                </td>
                 <td className="copy-cell">
                   <Button
                     type="button"
@@ -119,7 +137,7 @@ function DesktopResults({
                     size="icon-xs"
                     className="copy-row-button"
                     data-copied={copied ? "true" : undefined}
-                    aria-label={copyRowAccessibleName(ticker, row.expiration, moneyCents(row.strike_cents))}
+                    aria-label={copyRowAccessibleName(ticker, row.expiration, strike)}
                     onClick={() => onCopy(row, group)}
                   >
                     {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
@@ -145,6 +163,8 @@ function MobileResults({
   sort,
   onSort,
   onCopy,
+  watchStates,
+  onWatch,
 }: Omit<Parameters<typeof DesktopResults>[0], "density"> & { side: Side }) {
   const priority = mobilePriorityColumns(columns, side)
   const remaining = columns.filter((column) => !priority.some((item) => item.id === column.id))
@@ -164,13 +184,13 @@ function MobileResults({
         </Button>
       </div>
       <div className="mobile-row-list">
-        {rows.map((row) => {
-          const copied = copiedKey === copyRowStateKey(ticker, row.expiration, row.strike_cents)
-          const strike = moneyCents(row.strike_cents)
+        {rows.map((row, index) => {
+          const copied = copiedKey === copyRowStateKey(ticker, row.expiration, row.strike_exact ?? row.strike_cents)
+          const strike = moneyStrike(row.strike_exact, row.strike_cents)
           const rowName = `${ticker} ${row.expiration} strike ${strike}`
           const summary = priority.map((column) => `${column.label} ${column.format(row)}`).join(", ")
           return (
-            <Collapsible key={`${row.expiration}-${row.strike_cents}`} className="mobile-option-row">
+            <Collapsible key={row.watch_key ?? `${row.expiration}-${row.strike_exact ?? row.strike_cents}-${index}`} className="mobile-option-row">
               <CollapsibleTrigger className="mobile-row-summary" aria-label={`Show details for ${rowName}. ${summary}`}>
                 <span className="mobile-priority-grid">
                   {priority.map((column) => (
@@ -193,6 +213,14 @@ function MobileResults({
                     ))}
                   </dl>
                 ) : null}
+                <WatchButton
+                  contractLabel={rowName}
+                  watchKey={row.watch_key}
+                  watchabilityReason={row.watchability_reason}
+                  state={row.watch_key ? watchStates[row.watch_key] : undefined}
+                  mobile
+                  onWatch={onWatch}
+                />
                 <Button
                   type="button"
                   variant="outline"
@@ -226,6 +254,8 @@ export default function ExpiryTables({
   onToggleExpiration,
   onSort,
   onCopy,
+  watchStates,
+  onWatch,
 }: Props) {
   const mobile = useMediaQuery("(max-width: 39.999rem)")
   const mounted = new Map(mountedGroups.map((item) => [item.group.expiration, item]))
@@ -270,6 +300,8 @@ export default function ExpiryTables({
                   sort={sort}
                   onSort={onSort}
                   onCopy={onCopy}
+                  watchStates={watchStates}
+                  onWatch={onWatch}
                 />
               ) : (
                 <DesktopResults
@@ -283,6 +315,8 @@ export default function ExpiryTables({
                   density={density}
                   onSort={onSort}
                   onCopy={onCopy}
+                  watchStates={watchStates}
+                  onWatch={onWatch}
                 />
               )}
             </CollapsibleContent>

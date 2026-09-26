@@ -52,9 +52,7 @@ class OptionChainService:
             if not nasdaq_status_ok(payload):
                 raise NasdaqError.malformed()
             try:
-                rows, truncated, last_trade, options_available = parse_option_chain(
-                    ticker, payload
-                )
+                rows, truncated, last_trade, options_available = parse_option_chain(ticker, payload)
             except ValueError as exc:
                 raise NasdaqError.malformed() from exc
             if not rows and options_available:
@@ -72,9 +70,12 @@ class OptionChainService:
             )
 
         response, from_cache = await self._chain_cache.get_or_fetch(ticker, fetch)
-        return (
-            response.model_copy(update={"from_cache": True}) if from_cache else response
-        )
+        return response.model_copy(update={"from_cache": True}) if from_cache else response
+
+    async def get_current_chain(self, ticker: Ticker) -> OptionChainResponse:
+        """Recheck a selected contract against the provider at watch creation."""
+        self._chain_cache.discard(ticker)
+        return await self.get_chain(ticker)
 
     async def get_info(
         self, ticker: Ticker, scan_time: datetime | None = None
@@ -89,9 +90,7 @@ class OptionChainService:
                 raise NasdaqError.malformed() from exc
 
         response, from_cache = await self._info_cache.get_or_fetch(ticker, fetch)
-        return (
-            response.model_copy(update={"from_cache": True}) if from_cache else response
-        )
+        return response.model_copy(update={"from_cache": True}) if from_cache else response
 
     async def get_history(self, ticker: Ticker, from_date: str) -> HistoricalResponse:
         key = f"{ticker}:{from_date}"
@@ -114,6 +113,4 @@ class OptionChainService:
         response, from_cache = await self._history_cache.get_or_fetch(key, fetch)
         if not response.bars:
             self._history_cache.discard(key)
-        return (
-            response.model_copy(update={"from_cache": True}) if from_cache else response
-        )
+        return response.model_copy(update={"from_cache": True}) if from_cache else response

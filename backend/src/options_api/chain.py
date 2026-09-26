@@ -8,7 +8,9 @@ from decimal import Decimal
 from typing import cast
 from zoneinfo import ZoneInfo
 
+from options_api.contract_identity import make_watch_key, strike_exact
 from options_api.greeks import compute_greeks, risk_free_rate
+from options_api.market_calendar import expiry_session_completed
 from options_api.memo import ContractMemo
 from options_api.models import (
     CashSecuredPutContract,
@@ -87,9 +89,7 @@ def period_low(bars: list[HistoricalBar], today: date, days: int) -> Decimal | N
     return min(lows) if lows else None
 
 
-def _spread(
-    bid: Decimal | None, ask: Decimal | None
-) -> tuple[Decimal | None, Decimal | None]:
+def _spread(bid: Decimal | None, ask: Decimal | None) -> tuple[Decimal | None, Decimal | None]:
     if bid is None or ask is None or not bid.is_finite() or not ask.is_finite():
         return None, None
     spread = ask - bid
@@ -118,26 +118,37 @@ def _empty_info(ticker: Ticker, fetched_at: datetime) -> StockInfoResponse:
 
 
 def _empty_history(ticker: Ticker, fetched_at: datetime) -> HistoricalResponse:
-    return HistoricalResponse(
-        ticker=ticker, fetched_at=fetched_at, from_cache=False, bars=[]
-    )
+    return HistoricalResponse(ticker=ticker, fetched_at=fetched_at, from_cache=False, bars=[])
 
 
 def _qualifying_open_interest(value: int | None) -> bool:
     return value is not None and value >= MIN_OPEN_INTEREST
 
 
-def _passes_moneyness(in_the_money: bool, moneyness: Moneyness) -> bool:
+def _passes_moneyness(in_the_money: bool, at_the_money: bool, moneyness: Moneyness) -> bool:
     if moneyness == "all":
         return True
     if moneyness == "itm":
         return in_the_money
-    return not in_the_money
+    return not in_the_money and not at_the_money
 
 
-def _vs_lows(
-    strike: Decimal, lows: dict[str, Decimal | None]
-) -> dict[str, int | None]:
+def _watch_fields(row: OptionQuote, side: Side, duplicate: bool) -> dict[str, object]:
+    reason = "Ambiguous duplicate contract rows" if duplicate else row.identity_reason
+    if reason is None and row.root is None:
+        reason = "Nasdaq did not provide a contract symbol"
+    return {
+        "strike_exact": strike_exact(row.strike),
+        "watch_key": (
+            make_watch_key(row.ticker, row.root, side, row.expiration, row.strike)
+            if reason is None and row.root is not None
+            else None
+        ),
+        "watchability_reason": reason,
+    }
+
+
+def _vs_lows(strike: Decimal, lows: dict[str, Decimal | None]) -> dict[str, int | None]:
     return {
         "vs_7d_low_pct_tenths": optional_pct_tenths(
             _ratio_pct(strike - lows["d7"], lows["d7"]) if lows["d7"] else None
@@ -161,6 +172,7 @@ def _call_contract(
     lows: dict[str, Decimal | None],
     rate: Decimal,
     in_the_money: bool,
+    duplicate: bool = False,
 ) -> CoveredCallContract:
     bid = usable_price(row.call_bid)
     shares = Decimal(SHARES_PER_CONTRACT)
@@ -169,9 +181,7 @@ def _call_contract(
     outlay = stock_cost - premium if premium is not None else None
     effective_cost = current - bid if bid is not None else None
     called_pnl_per_share = row.strike + bid - current if bid is not None else None
-    called_pnl = (
-        premium - shares * (current - row.strike) if premium is not None else None
-    )
+    called_pnl = premium - shares * (current - row.strike) if premium is not None else None
     simple_apr_pct = None
     if outlay is not None and called_pnl is not None and outlay > ZERO and dte > 0:
         simple_apr_pct = called_pnl / outlay * DAYS_PER_YEAR / Decimal(dte) * HUNDRED
@@ -182,18 +192,16 @@ def _call_contract(
     drop = _ratio_pct(current - row.strike, current)
     assert drop is not None
     drop_to_breakeven = (
-        _ratio_pct(current - effective_cost, current)
-        if effective_cost is not None
-        else None
+        _ratio_pct(current - effective_cost, current) if effective_cost is not None else None
     )
-    greeks = compute_greeks(
-        "call", current, row.strike, dte, rate, row.call_bid, row.call_ask
-    )
+    greeks = compute_greeks("call", current, row.strike, dte, rate, row.call_bid, row.call_ask)
     return CoveredCallContract(
         expiration=row.expiration,
         dte=dte,
         strike_cents=to_cents(row.strike),
         in_the_money=in_the_money,
+        at_the_money=row.strike == current,
+        **_watch_fields(row, "call", duplicate),
         call_bid_cents=optional_cents(row.call_bid),
         call_ask_cents=optional_cents(row.call_ask),
         call_spread_cents=optional_cents(spread),
@@ -228,6 +236,7 @@ def _put_contract(
     lows: dict[str, Decimal | None],
     rate: Decimal,
     in_the_money: bool,
+    duplicate: bool = False,
 ) -> CashSecuredPutContract:
     bid = usable_price(row.put_bid)
     shares = Decimal(SHARES_PER_CONTRACT)
@@ -244,17 +253,15 @@ def _put_contract(
     spread, spread_pct = _spread(row.put_bid, row.put_ask)
     cushion = _ratio_pct(current - row.strike, current)
     assert cushion is not None
-    cushion_be = (
-        _ratio_pct(current - breakeven, current) if breakeven is not None else None
-    )
-    greeks = compute_greeks(
-        "put", current, row.strike, dte, rate, row.put_bid, row.put_ask
-    )
+    cushion_be = _ratio_pct(current - breakeven, current) if breakeven is not None else None
+    greeks = compute_greeks("put", current, row.strike, dte, rate, row.put_bid, row.put_ask)
     return CashSecuredPutContract(
         expiration=row.expiration,
         dte=dte,
         strike_cents=to_cents(row.strike),
         in_the_money=in_the_money,
+        at_the_money=row.strike == current,
+        **_watch_fields(row, "put", duplicate),
         put_bid_cents=optional_cents(row.put_bid),
         put_ask_cents=optional_cents(row.put_ask),
         put_spread_cents=optional_cents(spread),
@@ -393,6 +400,13 @@ def _assemble(
     raw_lows = _lows(history, today)
     grouped: dict[str, list[CoveredCallContract | CashSecuredPutContract]] = {}
     seen: set[tuple[str, Decimal]] = set()
+    duplicates: set[tuple[str, Decimal]] = set()
+    for row in chain.rows:
+        key = (row.expiration, row.strike)
+        if key in seen:
+            duplicates.add(key)
+        seen.add(key)
+    seen.clear()
     cached = (
         memo.contracts(chain.ticker, spec.side, chain.rows, current, raw_lows, today, rate)
         if memo is not None and current is not None
@@ -408,14 +422,20 @@ def _assemble(
             in_the_money = spec.in_the_money(row.strike, current)
             if (
                 dte is None
-                or dte <= 0
+                or dte < 0
+                or (
+                    dte == 0
+                    and expiry_session_completed(date.fromisoformat(row.expiration), fetched_at)
+                )
                 or not _qualifying_open_interest(spec.open_interest(row))
-                or not _passes_moneyness(in_the_money, moneyness)
+                or not _passes_moneyness(in_the_money, row.strike == current, moneyness)
             ):
                 continue
             contract = cached.get(key) if cached is not None else None
             if contract is None:
-                contract = spec.build(row, dte, current, raw_lows, rate, in_the_money)
+                contract = spec.build(
+                    row, dte, current, raw_lows, rate, in_the_money, key in duplicates
+                )
                 if cached is not None:
                     cached[key] = contract
             grouped.setdefault(row.expiration, []).append(contract)
@@ -450,9 +470,7 @@ def assemble_covered_calls(
 ) -> CoveredCallPage:
     return cast(
         CoveredCallPage,
-        _assemble(
-            CALLS, chain, info, history, today, fetched_at, moneyness, name, rate, memo
-        ),
+        _assemble(CALLS, chain, info, history, today, fetched_at, moneyness, name, rate, memo),
     )
 
 
@@ -469,16 +487,12 @@ def assemble_cash_secured_puts(
 ) -> CashSecuredPutPage:
     return cast(
         CashSecuredPutPage,
-        _assemble(
-            PUTS, chain, info, history, today, fetched_at, moneyness, name, rate, memo
-        ),
+        _assemble(PUTS, chain, info, history, today, fetched_at, moneyness, name, rate, memo),
     )
 
 
 def _optional[T](result: T | BaseException, fallback: T, *, degrade_malformed: bool) -> T:
-    if isinstance(result, NasdaqError) and (
-        degrade_malformed or result.kind != "malformed"
-    ):
+    if isinstance(result, NasdaqError) and (degrade_malformed or result.kind != "malformed"):
         return fallback
     if isinstance(result, BaseException):
         raise result
@@ -499,9 +513,7 @@ async def _load_context(
     if isinstance(chain_result, BaseException):
         raise chain_result
     info = _optional(info_result, _empty_info(ticker, now), degrade_malformed=True)
-    history = _optional(
-        history_result, _empty_history(ticker, now), degrade_malformed=False
-    )
+    history = _optional(history_result, _empty_history(ticker, now), degrade_malformed=False)
     return chain_result, info, history
 
 

@@ -13,8 +13,8 @@ export function copyRowAccessibleName(ticker: string, expiration: string, strike
   return `Copy row ${ticker} ${expiration} strike ${strikeDisplay}`
 }
 
-export function copyRowStateKey(ticker: string, expiration: string, strikeCents: number): string {
-  return `${ticker}-${expiration}-${strikeCents}`
+export function copyRowStateKey(ticker: string, expiration: string, strikeIdentity: number | string): string {
+  return `${ticker}-${expiration}-${strikeIdentity}`
 }
 
 export function formatRowClipboard(

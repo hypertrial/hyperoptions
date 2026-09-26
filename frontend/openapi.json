@@ -199,10 +199,783 @@
           }
         }
       }
+    },
+    "/api/watchlist": {
+      "get": {
+        "summary": "Get Watchlist",
+        "operationId": "get_watchlist_api_watchlist_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add Watch",
+        "operationId": "add_watch_api_watchlist_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WatchCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/watchlist/{watch_id}": {
+      "delete": {
+        "summary": "Delete Watch",
+        "operationId": "delete_watch_api_watchlist__watch_id__delete",
+        "parameters": [
+          {
+            "name": "watch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Watch Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/watchlist/refresh": {
+      "post": {
+        "summary": "Refresh Watchlist",
+        "operationId": "refresh_watchlist_api_watchlist_refresh_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchRefreshResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/research/config": {
+      "get": {
+        "summary": "Config",
+        "operationId": "config_api_research_config_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/research/data/status": {
+      "get": {
+        "summary": "Data Status",
+        "operationId": "data_status_api_research_data_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TickerStatusView"
+                  },
+                  "type": "array",
+                  "title": "Response Data Status Api Research Data Status Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/research/data/update": {
+      "post": {
+        "summary": "Update Data",
+        "operationId": "update_data_api_research_data_update_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/research/backtest/run": {
+      "post": {
+        "summary": "Start Backtest",
+        "operationId": "start_backtest_api_research_backtest_run_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BacktestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/research/runs": {
+      "get": {
+        "summary": "Runs",
+        "operationId": "runs_api_research_runs_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RunView"
+                  },
+                  "type": "array",
+                  "title": "Response Runs Api Research Runs Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/research/runs/{run_id}": {
+      "get": {
+        "summary": "Run",
+        "operationId": "run_api_research_runs__run_id__get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/research/runs/{run_id}/tickers": {
+      "get": {
+        "summary": "Run Tickers",
+        "operationId": "run_tickers_api_research_runs__run_id__tickers_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RunTickerView"
+                  },
+                  "title": "Response Run Tickers Api Research Runs  Run Id  Tickers Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/research/overview": {
+      "get": {
+        "summary": "Overview",
+        "operationId": "overview_api_research_overview_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OverviewCard"
+                  },
+                  "title": "Response Overview Api Research Overview Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/research/leaderboard": {
+      "get": {
+        "summary": "Leaderboard",
+        "operationId": "leaderboard_api_research_leaderboard_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "ticker",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ticker"
+            }
+          },
+          {
+            "name": "family",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Family"
+            }
+          },
+          {
+            "name": "min_trades",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Trades"
+            }
+          },
+          {
+            "name": "include_rejected",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Rejected"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "robustness",
+              "title": "Sort"
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "desc",
+              "title": "Order"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "group_variants",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Group Variants"
+            }
+          },
+          {
+            "name": "rule",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rule"
+            }
+          },
+          {
+            "name": "exit_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exit Kind"
+            }
+          },
+          {
+            "name": "filters",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 2,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filters"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Leaderboard"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/research/cross-ticker": {
+      "get": {
+        "summary": "Cross Ticker",
+        "operationId": "cross_ticker_api_research_cross_ticker_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CrossTickerItem"
+                  },
+                  "title": "Response Cross Ticker Api Research Cross Ticker Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/research/strategies/{strategy_id}": {
+      "get": {
+        "summary": "Strategy Detail",
+        "operationId": "strategy_detail_api_research_strategies__strategy_id__get",
+        "parameters": [
+          {
+            "name": "strategy_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Strategy Id"
+            }
+          },
+          {
+            "name": "ticker",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z0-9][A-Z0-9.\\-]{0,11}$",
+              "title": "Ticker"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{job_id}": {
+      "get": {
+        "summary": "Job",
+        "operationId": "job_api_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "BacktestRequest": {
+        "properties": {
+          "max_strategies": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 20000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Strategies"
+          },
+          "tickers": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Z0-9][A-Z0-9.\\-]{0,11}$"
+                },
+                "type": "array",
+                "maxItems": 20,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tickers"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BacktestRequest"
+      },
       "CashSecuredPutContract": {
         "properties": {
           "expiration": {
@@ -220,6 +993,38 @@
           "in_the_money": {
             "type": "boolean",
             "title": "In The Money"
+          },
+          "at_the_money": {
+            "type": "boolean",
+            "title": "At The Money",
+            "default": false
+          },
+          "strike_exact": {
+            "type": "string",
+            "title": "Strike Exact",
+            "default": ""
+          },
+          "watch_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Watch Key"
+          },
+          "watchability_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Watchability Reason"
           },
           "put_bid_cents": {
             "anyOf": [
@@ -734,6 +1539,133 @@
         ],
         "title": "CashSecuredPutPage"
       },
+      "Condition": {
+        "properties": {
+          "indicator": {
+            "type": "string",
+            "title": "Indicator"
+          },
+          "params": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Params"
+          },
+          "op": {
+            "type": "string",
+            "enum": [
+              "gt",
+              "lt",
+              "gte",
+              "lte",
+              "crosses_above",
+              "crosses_below"
+            ],
+            "title": "Op"
+          },
+          "rhs": {
+            "$ref": "#/components/schemas/Rhs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "indicator",
+          "op",
+          "rhs"
+        ],
+        "title": "Condition"
+      },
+      "ConditionGroup": {
+        "properties": {
+          "logic": {
+            "type": "string",
+            "enum": [
+              "AND",
+              "OR"
+            ],
+            "title": "Logic"
+          },
+          "conditions": {
+            "items": {
+              "$ref": "#/components/schemas/Condition"
+            },
+            "type": "array",
+            "title": "Conditions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "logic",
+          "conditions"
+        ],
+        "title": "ConditionGroup"
+      },
+      "ConfigView": {
+        "properties": {
+          "tickers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tickers"
+          },
+          "interval": {
+            "type": "string",
+            "title": "Interval"
+          },
+          "initial_capital": {
+            "type": "number",
+            "title": "Initial Capital"
+          },
+          "fees": {
+            "type": "number",
+            "title": "Fees"
+          },
+          "slippage": {
+            "type": "number",
+            "title": "Slippage"
+          },
+          "max_strategies": {
+            "type": "integer",
+            "title": "Max Strategies"
+          },
+          "gates": {
+            "$ref": "#/components/schemas/GateView"
+          },
+          "robustness_weights": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Robustness Weights"
+          },
+          "cross_ticker_min": {
+            "type": "integer",
+            "title": "Cross Ticker Min"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tickers",
+          "interval",
+          "initial_capital",
+          "fees",
+          "slippage",
+          "max_strategies",
+          "gates",
+          "robustness_weights",
+          "cross_ticker_min"
+        ],
+        "title": "ConfigView"
+      },
       "CoveredCallContract": {
         "properties": {
           "expiration": {
@@ -751,6 +1683,38 @@
           "in_the_money": {
             "type": "boolean",
             "title": "In The Money"
+          },
+          "at_the_money": {
+            "type": "boolean",
+            "title": "At The Money",
+            "default": false
+          },
+          "strike_exact": {
+            "type": "string",
+            "title": "Strike Exact",
+            "default": ""
+          },
+          "watch_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Watch Key"
+          },
+          "watchability_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Watchability Reason"
           },
           "call_bid_cents": {
             "anyOf": [
@@ -1289,6 +2253,408 @@
         ],
         "title": "CoveredCallPage"
       },
+      "CrossTickerItem": {
+        "properties": {
+          "strategy_id": {
+            "type": "string",
+            "title": "Strategy Id"
+          },
+          "strategy": {
+            "type": "string",
+            "title": "Strategy"
+          },
+          "family": {
+            "type": "string",
+            "title": "Family"
+          },
+          "signals": {
+            "type": "string",
+            "title": "Signals"
+          },
+          "parameters": {
+            "type": "string",
+            "title": "Parameters"
+          },
+          "cross_score": {
+            "type": "number",
+            "title": "Cross Score"
+          },
+          "per_ticker": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CrossTickerPeer"
+            },
+            "type": "object",
+            "title": "Per Ticker"
+          },
+          "entry_signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Entry Signals"
+          },
+          "filter_signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Filter Signals"
+          },
+          "exit_signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Exit Signals"
+          },
+          "exit_kind": {
+            "type": "string",
+            "title": "Exit Kind",
+            "default": "mirror"
+          }
+        },
+        "type": "object",
+        "required": [
+          "strategy_id",
+          "strategy",
+          "family",
+          "signals",
+          "parameters",
+          "cross_score",
+          "per_ticker"
+        ],
+        "title": "CrossTickerItem"
+      },
+      "CrossTickerPeer": {
+        "properties": {
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "rejected": {
+            "type": "boolean",
+            "title": "Rejected"
+          },
+          "sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe"
+          },
+          "limited": {
+            "type": "boolean",
+            "title": "Limited"
+          }
+        },
+        "type": "object",
+        "required": [
+          "score",
+          "rejected",
+          "sharpe",
+          "limited"
+        ],
+        "title": "CrossTickerPeer"
+      },
+      "FoldView": {
+        "properties": {
+          "fold": {
+            "type": "integer",
+            "title": "Fold"
+          },
+          "is_sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Sharpe"
+          },
+          "oos_sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oos Sharpe"
+          },
+          "oos_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oos Return"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fold",
+          "is_sharpe",
+          "oos_sharpe",
+          "oos_return"
+        ],
+        "title": "FoldView"
+      },
+      "ForecastView": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "unavailable"
+            ],
+            "title": "Status",
+            "default": "unavailable"
+          },
+          "itm_probability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Itm Probability"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason",
+            "default": "Forecast not yet prepared"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "strategy_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy Id"
+          },
+          "strategy_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy Name"
+          },
+          "signal_state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "long",
+                  "flat"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signal State"
+          },
+          "fit_peers": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fit Peers"
+          },
+          "audit_peers": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Peers"
+          },
+          "audit_blocks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Blocks"
+          },
+          "cohort_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cohort Size"
+          },
+          "fit_samples": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fit Samples"
+          },
+          "audit_samples": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Samples"
+          },
+          "crps_skill_lower_90": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crps Skill Lower 90"
+          },
+          "brier_delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brier Delta"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "survivorship_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Survivorship Note"
+          },
+          "historical": {
+            "type": "boolean",
+            "title": "Historical",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "ForecastView"
+      },
+      "GateView": {
+        "properties": {
+          "min_trades": {
+            "type": "integer",
+            "title": "Min Trades"
+          },
+          "min_val_trades": {
+            "type": "integer",
+            "title": "Min Val Trades"
+          },
+          "max_drawdown": {
+            "type": "number",
+            "title": "Max Drawdown"
+          },
+          "min_degradation": {
+            "type": "number",
+            "title": "Min Degradation"
+          },
+          "min_stability": {
+            "type": "number",
+            "title": "Min Stability"
+          }
+        },
+        "type": "object",
+        "required": [
+          "min_trades",
+          "min_val_trades",
+          "max_drawdown",
+          "min_degradation",
+          "min_stability"
+        ],
+        "title": "GateView"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1312,6 +2678,656 @@
         },
         "type": "object",
         "title": "HealthResponse"
+      },
+      "Job": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "title": "State"
+          },
+          "progress": {
+            "type": "number",
+            "title": "Progress",
+            "default": 0
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": ""
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "state"
+        ],
+        "title": "Job"
+      },
+      "JobView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "title": "State"
+          },
+          "progress": {
+            "type": "number",
+            "title": "Progress"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "state",
+          "progress",
+          "message"
+        ],
+        "title": "JobView"
+      },
+      "Leaderboard": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "families": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Families"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LeaderboardItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "total",
+          "families",
+          "items"
+        ],
+        "title": "Leaderboard"
+      },
+      "LeaderboardItem": {
+        "properties": {
+          "rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank"
+          },
+          "ticker": {
+            "type": "string",
+            "title": "Ticker"
+          },
+          "strategy_id": {
+            "type": "string",
+            "title": "Strategy Id"
+          },
+          "strategy": {
+            "type": "string",
+            "title": "Strategy"
+          },
+          "family": {
+            "type": "string",
+            "title": "Family"
+          },
+          "signals": {
+            "type": "string",
+            "title": "Signals"
+          },
+          "parameters": {
+            "type": "string",
+            "title": "Parameters"
+          },
+          "robustness": {
+            "type": "number",
+            "title": "Robustness"
+          },
+          "rejected": {
+            "type": "boolean",
+            "title": "Rejected"
+          },
+          "flags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Flags"
+          },
+          "oos_cagr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oos Cagr"
+          },
+          "sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe"
+          },
+          "max_drawdown": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Drawdown"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
+          },
+          "trades": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trades"
+          },
+          "test_cagr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Cagr"
+          },
+          "variants": {
+            "type": "integer",
+            "title": "Variants",
+            "default": 1
+          },
+          "entry_signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Entry Signals"
+          },
+          "filter_signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Filter Signals"
+          },
+          "exit_signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Exit Signals"
+          },
+          "exit_kind": {
+            "type": "string",
+            "title": "Exit Kind",
+            "default": "mirror"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ticker",
+          "strategy_id",
+          "strategy",
+          "family",
+          "signals",
+          "parameters",
+          "robustness",
+          "rejected",
+          "flags"
+        ],
+        "title": "LeaderboardItem"
+      },
+      "OutcomeView": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "provisional",
+              "unsupported"
+            ],
+            "title": "Status"
+          },
+          "classification": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "itm",
+                  "atm",
+                  "otm"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Classification"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "session_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Date"
+          },
+          "retrieved_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieved At"
+          },
+          "close_exact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Close Exact"
+          },
+          "terms_note": {
+            "type": "string",
+            "title": "Terms Note",
+            "default": "Assuming standard 100-share terms."
+          },
+          "revised": {
+            "type": "boolean",
+            "title": "Revised",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "OutcomeView"
+      },
+      "OverviewCard": {
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "title": "Ticker"
+          },
+          "bars": {
+            "type": "integer",
+            "title": "Bars"
+          },
+          "first": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First"
+          },
+          "last": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last"
+          },
+          "limited_history": {
+            "type": "boolean",
+            "title": "Limited History"
+          },
+          "strategy_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy Id"
+          },
+          "strategy_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy Name"
+          },
+          "signals": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signals"
+          },
+          "robustness": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Robustness"
+          },
+          "oos_cagr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oos Cagr"
+          },
+          "sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe"
+          },
+          "max_drawdown": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Drawdown"
+          },
+          "trades": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trades"
+          },
+          "buy_hold_cagr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Buy Hold Cagr"
+          },
+          "buy_hold_max_drawdown": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Buy Hold Max Drawdown"
+          },
+          "test_cagr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Cagr"
+          },
+          "test_max_drawdown": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Max Drawdown"
+          },
+          "test_trades": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Trades"
+          },
+          "test_buy_hold_cagr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Buy Hold Cagr"
+          },
+          "entry_signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Entry Signals"
+          },
+          "filter_signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Filter Signals"
+          },
+          "exit_signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Exit Signals"
+          },
+          "exit_kind": {
+            "type": "string",
+            "title": "Exit Kind",
+            "default": "mirror"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ticker",
+          "bars",
+          "first",
+          "last",
+          "limited_history"
+        ],
+        "title": "OverviewCard"
       },
       "PeriodLows": {
         "properties": {
@@ -1368,6 +3384,685 @@
           "d365_cents"
         ],
         "title": "PeriodLows"
+      },
+      "ReoptView": {
+        "properties": {
+          "fold": {
+            "type": "integer",
+            "title": "Fold"
+          },
+          "strategy_id": {
+            "type": "string",
+            "title": "Strategy Id"
+          },
+          "oos_sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oos Sharpe"
+          },
+          "oos_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oos Return"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fold",
+          "strategy_id",
+          "oos_sharpe",
+          "oos_return"
+        ],
+        "title": "ReoptView"
+      },
+      "Rhs": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "const",
+              "indicator"
+            ],
+            "title": "Kind"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "indicator": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Indicator"
+          },
+          "params": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Params"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "Rhs"
+      },
+      "RunTickerView": {
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "title": "Ticker"
+          },
+          "n_bars": {
+            "type": "integer",
+            "title": "N Bars"
+          },
+          "first_ts": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Ts"
+          },
+          "last_ts": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Ts"
+          },
+          "limited_history": {
+            "type": "boolean",
+            "title": "Limited History"
+          },
+          "survivors": {
+            "type": "integer",
+            "title": "Survivors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ticker",
+          "n_bars",
+          "limited_history",
+          "survivors"
+        ],
+        "title": "RunTickerView"
+      },
+      "RunView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "strategy_count": {
+            "type": "integer",
+            "title": "Strategy Count"
+          },
+          "ticker_count": {
+            "type": "integer",
+            "title": "Ticker Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "status",
+          "strategy_count",
+          "ticker_count"
+        ],
+        "title": "RunView"
+      },
+      "SegmentBound": {
+        "properties": {
+          "start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "SegmentBound"
+      },
+      "SegmentView": {
+        "properties": {
+          "segment": {
+            "type": "string",
+            "title": "Segment"
+          },
+          "cagr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cagr"
+          },
+          "total_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Return"
+          },
+          "sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe"
+          },
+          "sortino": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sortino"
+          },
+          "max_drawdown": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Drawdown"
+          },
+          "calmar": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calmar"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
+          },
+          "profit_factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profit Factor"
+          },
+          "avg_trade": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Trade"
+          },
+          "median_trade": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Trade"
+          },
+          "n_trades": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Trades"
+          },
+          "exposure": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exposure"
+          },
+          "avg_holding_period": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Holding Period"
+          },
+          "buy_hold_cagr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Buy Hold Cagr"
+          },
+          "buy_hold_max_drawdown": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Buy Hold Max Drawdown"
+          }
+        },
+        "type": "object",
+        "required": [
+          "segment",
+          "cagr",
+          "total_return",
+          "sharpe",
+          "sortino",
+          "max_drawdown",
+          "calmar",
+          "win_rate",
+          "profit_factor",
+          "avg_trade",
+          "median_trade",
+          "n_trades",
+          "exposure",
+          "avg_holding_period",
+          "buy_hold_cagr",
+          "buy_hold_max_drawdown"
+        ],
+        "title": "SegmentView"
+      },
+      "StrategyDetail": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "ticker": {
+            "type": "string",
+            "title": "Ticker"
+          },
+          "strategy_id": {
+            "type": "string",
+            "title": "Strategy Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "family": {
+            "type": "string",
+            "title": "Family"
+          },
+          "signals": {
+            "type": "string",
+            "title": "Signals"
+          },
+          "entry_signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Entry Signals"
+          },
+          "filter_signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Filter Signals"
+          },
+          "exit_signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Exit Signals"
+          },
+          "exit_kind": {
+            "type": "string",
+            "title": "Exit Kind",
+            "default": "mirror"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Parameters"
+          },
+          "entry": {
+            "$ref": "#/components/schemas/ConditionGroup"
+          },
+          "exit": {
+            "$ref": "#/components/schemas/ConditionGroup"
+          },
+          "robustness": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Robustness"
+          },
+          "degradation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degradation"
+          },
+          "stability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stability"
+          },
+          "walk_forward_consistency": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Walk Forward Consistency"
+          },
+          "rejected": {
+            "type": "boolean",
+            "title": "Rejected"
+          },
+          "flags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Flags"
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank"
+          },
+          "data_snapshot": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "changed"
+            ],
+            "title": "Data Snapshot",
+            "default": "exact"
+          },
+          "segment_bounds": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SegmentBound"
+            },
+            "type": "object",
+            "title": "Segment Bounds"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/SegmentView"
+            },
+            "type": "array",
+            "title": "Segments"
+          },
+          "folds": {
+            "items": {
+              "$ref": "#/components/schemas/FoldView"
+            },
+            "type": "array",
+            "title": "Folds"
+          },
+          "reopt": {
+            "items": {
+              "$ref": "#/components/schemas/ReoptView"
+            },
+            "type": "array",
+            "title": "Reopt"
+          },
+          "dates": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dates"
+          },
+          "close": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Close"
+          },
+          "entry_marks": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Entry Marks"
+          },
+          "exit_marks": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Exit Marks"
+          },
+          "equity": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Equity"
+          },
+          "buy_hold": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Buy Hold"
+          },
+          "drawdown": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Drawdown"
+          },
+          "trades": {
+            "items": {
+              "$ref": "#/components/schemas/TradeView"
+            },
+            "type": "array",
+            "title": "Trades"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "ticker",
+          "strategy_id",
+          "name",
+          "family",
+          "signals",
+          "parameters",
+          "entry",
+          "exit",
+          "rejected",
+          "flags",
+          "segments",
+          "folds",
+          "reopt",
+          "dates",
+          "close",
+          "entry_marks",
+          "exit_marks",
+          "equity",
+          "buy_hold",
+          "drawdown",
+          "trades"
+        ],
+        "title": "StrategyDetail"
       },
       "TickerListing": {
         "properties": {
@@ -1436,6 +4131,132 @@
         ],
         "title": "TickerSearchResponse"
       },
+      "TickerStatusView": {
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "title": "Ticker"
+          },
+          "bars": {
+            "type": "integer",
+            "title": "Bars"
+          },
+          "first": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First"
+          },
+          "last": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last"
+          },
+          "has_indicators": {
+            "type": "boolean",
+            "title": "Has Indicators"
+          },
+          "limited_history": {
+            "type": "boolean",
+            "title": "Limited History"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ticker",
+          "bars",
+          "first",
+          "last",
+          "has_indicators",
+          "limited_history"
+        ],
+        "title": "TickerStatusView"
+      },
+      "TradeView": {
+        "properties": {
+          "entry_date": {
+            "type": "string",
+            "title": "Entry Date"
+          },
+          "exit_date": {
+            "type": "string",
+            "title": "Exit Date"
+          },
+          "entry_price": {
+            "type": "number",
+            "title": "Entry Price"
+          },
+          "exit_price": {
+            "type": "number",
+            "title": "Exit Price"
+          },
+          "return": {
+            "type": "number",
+            "title": "Return"
+          },
+          "pnl": {
+            "type": "number",
+            "title": "Pnl"
+          },
+          "holding_bars": {
+            "type": "integer",
+            "title": "Holding Bars"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entry_date",
+          "exit_date",
+          "entry_price",
+          "exit_price",
+          "return",
+          "pnl",
+          "holding_bars"
+        ],
+        "title": "TradeView"
+      },
+      "UpdateRequest": {
+        "properties": {
+          "full_refresh": {
+            "type": "boolean",
+            "title": "Full Refresh",
+            "default": false
+          },
+          "tickers": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Z0-9][A-Z0-9.\\-]{0,11}$"
+                },
+                "type": "array",
+                "maxItems": 20,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tickers"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "UpdateRequest"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -1475,6 +4296,167 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WatchCreate": {
+        "properties": {
+          "watch_key": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Watch Key"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "watch_key"
+        ],
+        "title": "WatchCreate"
+      },
+      "WatchCreateResponse": {
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/WatchItem"
+          },
+          "created": {
+            "type": "boolean",
+            "title": "Created"
+          },
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Job"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "item",
+          "created",
+          "job"
+        ],
+        "title": "WatchCreateResponse"
+      },
+      "WatchItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "ticker": {
+            "type": "string",
+            "title": "Ticker"
+          },
+          "root": {
+            "type": "string",
+            "title": "Root"
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "call",
+              "put"
+            ],
+            "title": "Side"
+          },
+          "expiration": {
+            "type": "string",
+            "format": "date",
+            "title": "Expiration"
+          },
+          "strike_exact": {
+            "type": "string",
+            "title": "Strike Exact"
+          },
+          "terms_note": {
+            "type": "string",
+            "title": "Terms Note"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "forecast": {
+            "$ref": "#/components/schemas/ForecastView"
+          },
+          "last_available_forecast": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ForecastView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/OutcomeView"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "ticker",
+          "root",
+          "side",
+          "expiration",
+          "strike_exact",
+          "terms_note",
+          "created_at",
+          "forecast",
+          "outcome"
+        ],
+        "title": "WatchItem"
+      },
+      "WatchListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WatchItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "active_job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Job"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "WatchListResponse"
+      },
+      "WatchRefreshResponse": {
+        "properties": {
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Job"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "job"
+        ],
+        "title": "WatchRefreshResponse"
       }
     }
   }

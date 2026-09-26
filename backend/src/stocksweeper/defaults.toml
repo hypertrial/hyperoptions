@@ -1,0 +1,49 @@
+data_dir = ".local/research"
+
+[market]
+tickers = ["IREN", "CIFR", "WULF", "NBIS"]
+interval = "1d"
+overlap_bars = 5
+
+[market.start_dates]
+WULF = 2021-12-13
+
+[backtest]
+initial_capital = 100000
+fees = 0.001
+slippage = 0.001
+periods_per_year = 252
+
+[validation]
+train = 0.6
+validation = 0.2
+test = 0.2
+limited_history_bars = 750
+limited_train = 0.5
+limited_validation = 0.25
+limited_test = 0.25
+wf_folds = 5
+
+[generator]
+max_strategies = 20000
+seed = 7
+
+[gates]
+min_trades = 20
+min_val_trades = 5
+max_drawdown = 0.60
+min_degradation = 0.4
+min_stability = 0.5
+
+[robustness.weights]
+sharpe = 0.25
+cagr = 0.15
+max_drawdown = 0.15
+profit_factor = 0.10
+trade_sufficiency = 0.10
+walk_forward = 0.15
+stability = 0.10
+
+[cross_ticker]
+penalty_k = 0.5
+min_tickers = 4

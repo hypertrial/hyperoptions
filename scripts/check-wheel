@@ -1,0 +1,32 @@
+#!/bin/sh
+set -eu
+cd "$(dirname "$0")/.."
+
+wheel_dir=$(mktemp -d)
+trap 'rm -rf "$wheel_dir"' EXIT
+uv build backend --wheel --out-dir "$wheel_dir"
+python3 - "$wheel_dir" <<'PY'
+from pathlib import Path
+import sys
+import tomllib
+from zipfile import ZipFile
+
+wheels = list(Path(sys.argv[1]).glob("*.whl"))
+if len(wheels) != 1:
+    raise SystemExit(f"expected one backend wheel, found {len(wheels)}")
+with ZipFile(wheels[0]) as wheel:
+    required = {
+        "options_api/main.py",
+        "options_api/watchlist.py",
+        "stocksweeper/defaults.toml",
+        "stocksweeper/storage/schema.sql",
+        "stocksweeper/forecast/service.py",
+    }
+    missing = required.difference(wheel.namelist())
+    if missing:
+        raise SystemExit(f"backend wheel is missing {sorted(missing)}")
+    tomllib.loads(wheel.read("stocksweeper/defaults.toml").decode())
+    if "CREATE TABLE" not in wheel.read("stocksweeper/storage/schema.sql").decode().upper():
+        raise SystemExit("backend wheel contains no storage schema")
+print("backend wheel and packaged resources verified")
+PY

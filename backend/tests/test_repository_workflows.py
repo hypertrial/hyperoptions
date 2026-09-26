@@ -393,7 +393,7 @@ def test_verify_runs_backend_lint() -> None:
     verify = (ROOT / "scripts" / "verify").read_text()
     fast = (ROOT / "scripts" / "verify-fast").read_text()
 
-    assert "uv run ruff check src tests scripts" in verify
+    assert "uv run ruff check ." in verify
     assert "ruff check" not in fast
 
 

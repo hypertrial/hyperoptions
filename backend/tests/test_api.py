@@ -297,7 +297,17 @@ def test_openapi_financial_fields_are_integers() -> None:
             for index, value in enumerate(node):
                 walk(value, f"{path}[{index}]")
 
-    walk(schema)
+    # Research metrics are intentionally floating point. The chain's public
+    # financial values retain their scaled-integer contract.
+    chain_schemas = (
+        "CoveredCallContract",
+        "CashSecuredPutContract",
+        "CoveredCallPage",
+        "CashSecuredPutPage",
+        "PeriodLows",
+    )
+    for name in chain_schemas:
+        walk(schema["components"]["schemas"][name], name)
     assert floats == []
     contract_schema = schema["components"]["schemas"]["CoveredCallContract"]
     contract = contract_schema["properties"]
@@ -353,12 +363,18 @@ def test_openapi_financial_fields_are_integers() -> None:
 def test_removed_planner_routes_are_gone(api: TestClient) -> None:
     assert api.get("/api/itm-calls/IREN").status_code == 404
     assert api.get("/api/covered-calls").status_code == 404
-    assert api.post("/api/covered-calls").status_code == 404
+    assert api.post(
+        "/api/covered-calls", json={}, headers={"Origin": "http://localhost:5173"}
+    ).status_code == 404
     assert api.get("/api/options/IREN").status_code == 404
     assert api.get("/api/paper-observations").status_code == 404
-    assert api.post("/api/paper-observations").status_code == 404
+    assert api.post(
+        "/api/paper-observations", json={}, headers={"Origin": "http://localhost:5173"}
+    ).status_code == 404
     assert api.get("/api/context-observations").status_code == 404
-    assert api.post("/api/context-observations").status_code == 404
+    assert api.post(
+        "/api/context-observations", json={}, headers={"Origin": "http://localhost:5173"}
+    ).status_code == 404
 
 
 def test_universe_tickers_other_than_iren_are_accepted(api: TestClient) -> None:

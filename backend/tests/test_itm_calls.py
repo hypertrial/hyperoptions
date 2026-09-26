@@ -155,15 +155,18 @@ def test_assemble_groups_itm_calls_and_computes_zero_cost_metrics() -> None:
     assert page.current_cents == 4990
     assert page.current_source == "stock_bid"
     assert [group.expiration for group in page.expirations] == [
+        "2026-09-11",
         "2026-09-18",
         "2026-10-09",
     ]
-    near = page.expirations[0]
+    assert page.expirations[0].dte == 0
+    assert page.expirations[0].contracts[0].simple_apr_pct_tenths is None
+    near = page.expirations[1]
     assert near.dte == 7
     assert [row.strike_cents for row in near.contracts] == [4050]
     assert [
         row.strike_cents for group in page.expirations for row in group.contracts
-    ] == [4050, 4500]
+    ] == [4400, 4050, 4500]
     missing = near.contracts[0]
     assert missing.stock_cost_cents == to_cents(D("100") * D("49.9"))
     assert missing.premium_cents is None
@@ -189,7 +192,7 @@ def test_assemble_groups_itm_calls_and_computes_zero_cost_metrics() -> None:
     assert missing.vs_365d_low_pct_tenths == to_pct_tenths(
         (D("40.5") - D("20")) / D("20") * D("100")
     )
-    later = page.expirations[1].contracts[0]
+    later = page.expirations[2].contracts[0]
     assert later.strike_cents == 4500
     assert later.dte == 28
     assert later.stock_cost_cents == to_cents(D("100") * D("49.9"))
@@ -703,7 +706,7 @@ def test_assemble_cash_secured_puts_computes_csp_metrics_on_strike() -> None:
     )
 
 
-def test_put_open_interest_floor_and_zero_dte_are_side_specific() -> None:
+def test_put_open_interest_floor_and_expiry_day_are_side_specific() -> None:
     page = assemble_cash_secured_puts(
         _chain(
             _put_quote("2026-09-18", 45, open_interest=5),
@@ -717,11 +720,15 @@ def test_put_open_interest_floor_and_zero_dte_are_side_specific() -> None:
         TODAY,
         NOW,
     )
-    assert [row.strike_cents for row in page.expirations[0].contracts] == [4500]
-    assert page.expirations[0].contracts[0].put_open_interest == 5
+    assert [group.expiration for group in page.expirations] == [
+        "2026-09-11", "2026-09-18"
+    ]
+    assert [row.strike_cents for row in page.expirations[0].contracts] == [4200]
+    assert [row.strike_cents for row in page.expirations[1].contracts] == [4500]
+    assert page.expirations[1].contracts[0].put_open_interest == 5
 
 
-def test_atm_is_excluded_from_itm_and_included_in_otm_and_all() -> None:
+def test_atm_is_excluded_from_itm_and_otm_but_included_in_all() -> None:
     rows = (
         _sided_quote("2026-09-18", 50.0),
         _sided_quote("2026-09-18", 49.9),
@@ -735,15 +742,17 @@ def test_atm_is_excluded_from_itm_and_included_in_otm_and_all() -> None:
     put_all = assemble_cash_secured_puts(_chain(*rows), _info(), _history(), TODAY, NOW, "all")
 
     assert [row.strike_cents for row in call_itm.expirations[0].contracts] == [4500]
-    assert [row.strike_cents for row in call_otm.expirations[0].contracts] == [5000, 4990]
+    assert [row.strike_cents for row in call_otm.expirations[0].contracts] == [5000]
     assert [row.strike_cents for row in call_all.expirations[0].contracts] == [5000, 4990, 4500]
     assert [row.strike_cents for row in put_itm.expirations[0].contracts] == [5000]
-    assert [row.strike_cents for row in put_otm.expirations[0].contracts] == [4990, 4500]
+    assert [row.strike_cents for row in put_otm.expirations[0].contracts] == [4500]
     assert [row.strike_cents for row in put_all.expirations[0].contracts] == [5000, 4990, 4500]
     assert call_itm.expirations[0].contracts[0].in_the_money is True
     assert call_otm.expirations[0].contracts[0].in_the_money is False
     assert put_itm.expirations[0].contracts[0].in_the_money is True
     assert put_otm.expirations[0].contracts[0].in_the_money is False
+    assert call_all.expirations[0].contracts[1].at_the_money is True
+    assert put_all.expirations[0].contracts[1].at_the_money is True
 
 
 def test_buy_write_legs_match_cifr_shaped_quote() -> None:

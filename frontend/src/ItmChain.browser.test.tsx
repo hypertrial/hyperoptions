@@ -1,14 +1,17 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { cleanup, fireEvent, render as rtlRender, screen, waitFor, within } from "@testing-library/react"
+import type { ReactElement } from "react"
+import { BrowserRouter } from "react-router-dom"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { ApiError, fetchChain, fetchTickers } from "./api"
 import { formatContractValues } from "./columns"
 import { formatRowClipboard } from "./copyRow"
 import ItmChain from "./ItmChain"
-import { COLUMN_HEADERS, COPY_HEADERS, largeChainPage, samplePage, samplePutPage } from "./testFixtures"
+import { COLUMN_HEADERS, COPY_HEADERS, largeChainPage, sampleContract, samplePage, samplePutPage } from "./testFixtures"
 import type { CoveredCallPage } from "./types"
+import { addWatch } from "./watchlist/api"
 
 vi.mock("./api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api")>()
@@ -19,9 +22,19 @@ vi.mock("./api", async (importOriginal) => {
   }
 })
 
+vi.mock("./watchlist/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./watchlist/api")>()
+  return { ...actual, addWatch: vi.fn() }
+})
+
 const fetchMock = vi.mocked(fetchChain)
 const tickersMock = vi.mocked(fetchTickers)
+const addWatchMock = vi.mocked(addWatch)
 const writeText = vi.fn().mockResolvedValue(undefined)
+
+function render(ui: ReactElement) {
+  return rtlRender(<BrowserRouter>{ui}</BrowserRouter>)
+}
 
 function setDesktopViewport(desktop: boolean) {
   Object.defineProperty(window, "matchMedia", {
@@ -72,6 +85,7 @@ describe("chain interactions", () => {
       ))
       return { as_of: "2026-09-11T14:00:00Z", total: LISTINGS.length, results }
     })
+    addWatchMock.mockReset()
     writeText.mockReset()
     writeText.mockResolvedValue(undefined)
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } })
@@ -131,6 +145,7 @@ describe("chain interactions", () => {
       "Called P&L",
       "APR (net)",
       "Drop (BE)",
+      "Watch",
       "Copy",
     ])
     expect(headers.some((header) => header.textContent === "IV")).toBe(false)
@@ -151,6 +166,61 @@ describe("chain interactions", () => {
     expect(screen.getByRole("radio", { name: "ITM" })).toBeTruthy()
     expect(screen.getByRole("radio", { name: "OTM" })).toBeTruthy()
     expect(screen.getByRole("radio", { name: "All" })).toBeTruthy()
+  })
+
+  it("adds a selected desktop contract by its server key and distinguishes an existing watch", async () => {
+    const watchPage = page()
+    Object.assign(watchPage.expirations[0].contracts[0], { watch_key: "opaque-contract-key", watchability_reason: null })
+    Object.assign(watchPage.expirations[0].contracts[1], { watch_key: null, watchability_reason: "Adjusted option root" })
+    fetchMock.mockResolvedValue(watchPage)
+    addWatchMock.mockResolvedValue({ created: false, item: {} as never, job: null })
+    render(<ItmChain />)
+
+    const watch = await screen.findByRole("button", { name: "Watch IREN 2026-09-18 $50.00 strike" })
+    fireEvent.click(watch)
+    expect(addWatchMock).toHaveBeenCalledWith("opaque-contract-key")
+    expect(await screen.findByRole("button", { name: "Already watching IREN 2026-09-18 $50.00 strike" })).toBeTruthy()
+    const disabled = screen.getByRole("button", { name: /Watch IREN 2026-09-18 \$40\.50 strike: Adjusted option root/ })
+    expect(disabled.hasAttribute("disabled")).toBe(true)
+  })
+
+  it("shows a mobile Watch action and per-contract request errors", async () => {
+    setDesktopViewport(false)
+    const watchPage = page()
+    Object.assign(watchPage.expirations[0].contracts[0], { watch_key: "mobile-contract-key", watchability_reason: null })
+    fetchMock.mockResolvedValue(watchPage)
+    addWatchMock.mockRejectedValue(new Error("Watchlist database is busy"))
+    render(<ItmChain />)
+
+    fireEvent.click(await screen.findByRole("button", { name: /Show details for IREN 2026-09-18 strike \$50\.00/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Watch IREN 2026-09-18 strike $50.00" }))
+    expect(addWatchMock).toHaveBeenCalledWith("mobile-contract-key")
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Watchlist database is busy")
+    expect(screen.getByRole("button", { name: "Retry watch IREN 2026-09-18 strike $50.00" })).toBeTruthy()
+  })
+
+  it("keeps exact millistrikes distinct in the chain and Watch controls", async () => {
+    const exactPage = page({
+      expirations: [{
+        expiration: "2026-09-18",
+        dte: 7,
+        contracts: [
+          sampleContract({ strike_cents: 4001, strike_exact: "40.005", watch_key: "key-005" }),
+          sampleContract({ strike_cents: 4001, strike_exact: "40.006", watch_key: "key-006" }),
+        ],
+      }],
+    })
+    fetchMock.mockResolvedValue(exactPage)
+    addWatchMock.mockResolvedValue({ created: true, item: {} as never, job: null })
+    render(<ItmChain />)
+
+    const exactFive = await screen.findByRole("button", { name: "Watch IREN 2026-09-18 $40.005 strike" })
+    const exactSix = screen.getByRole("button", { name: "Watch IREN 2026-09-18 $40.006 strike" })
+    expect(exactFive.closest("tr")?.querySelector("th")?.textContent).toBe("$40.005")
+    expect(exactSix.closest("tr")?.querySelector("th")?.textContent).toBe("$40.006")
+    fireEvent.click(exactFive)
+    expect(addWatchMock).toHaveBeenCalledWith("key-005")
+    expect(exactSix.getAttribute("aria-label")).toContain("$40.006")
   })
 
   it("opens the custom ticker listbox on type without a trigger chevron", async () => {
@@ -735,12 +805,12 @@ describe("chain interactions", () => {
     render(<ItmChain />)
 
     await waitFor(() => expect(screen.getByRole("columnheader", { name: "IV" })).toBeTruthy())
-    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["Strike", "IV", "Copy"])
+    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["Strike", "IV", "Watch", "Copy"])
     fireEvent.click(screen.getByRole("radio", { name: "Cash-secured puts" }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "put", "otm"))
     expect(screen.queryByRole("columnheader", { name: "IV" })).toBeNull()
     expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
-      "Strike", "Bid", "Sprd %", "OI", "Premium", "Breakeven", "APR (net)", "Cushion (BE)", "Copy",
+      "Strike", "Bid", "Sprd %", "OI", "Premium", "Breakeven", "APR (net)", "Cushion (BE)", "Watch", "Copy",
     ])
     expect(window.location.search).not.toContain("cols=")
   })
@@ -765,7 +835,7 @@ describe("chain interactions", () => {
 
     await screen.findByRole("columnheader", { name: "IV" })
     expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
-      "Strike", "IV", "Copy",
+      "Strike", "IV", "Watch", "Copy",
     ])
     expect(screen.getByRole("button", { name: "Columns2" })).toBeTruthy()
     expect(window.location.search).toContain("cols=strike_cents%2Civ_pct_tenths")

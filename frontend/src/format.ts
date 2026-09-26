@@ -14,6 +14,10 @@ export function moneyCents(value: number | null | undefined): string {
   return formatted.startsWith("-") ? formatted : `-${formatted}`
 }
 
+export function moneyStrike(exact: string | null | undefined, cents: number): string {
+  return exact ? `$${exact}` : moneyCents(cents)
+}
+
 export function percentTenths(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value) || !Number.isInteger(value)) return "—"
   const sign = value > 0 ? "+" : value < 0 ? "-" : ""

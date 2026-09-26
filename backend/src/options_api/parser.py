@@ -5,6 +5,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
+from options_api.contract_identity import row_identity
 from options_api.models import (
     HistoricalBar,
     OptionQuote,
@@ -173,10 +174,15 @@ def _parse_row(
     expiration = parse_expiration(mapping.get("drillDownURL")) or fallback_expiration
     if expiration is None:
         return None
+    root, identity_reason = row_identity(mapping.get("drillDownURL"), ticker, expiration, strike)
+    if fallback_expiration is not None and fallback_expiration != expiration:
+        identity_reason = "Nasdaq expiry group differs from contract symbol"
     return OptionQuote(
         ticker=ticker,
         expiration=expiration,
         strike=strike,
+        root=root,
+        identity_reason=identity_reason,
         call_bid=parse_price(mapping.get("c_Bid")),
         call_ask=parse_price(mapping.get("c_Ask")),
         call_volume=parse_nonnegative_int(mapping.get("c_Volume")),
@@ -195,9 +201,7 @@ def _clean_text(value: Any) -> str | None:
     return text or None
 
 
-def parse_stock_info(
-    ticker: Ticker, payload: Any, fetched_at: datetime
-) -> StockInfoResponse:
+def parse_stock_info(ticker: Ticker, payload: Any, fetched_at: datetime) -> StockInfoResponse:
     root = _as_mapping(payload)
     data = _as_mapping(root.get("data")) if root else None
     primary = _as_mapping(data.get("primaryData")) if data else None

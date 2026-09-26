@@ -2,12 +2,23 @@
 name = "options-api"
 version = "0.1.0"
 description = "Local Nasdaq covered-call and cash-secured-put options workstation"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
+    "duckdb>=1.2",
+    "exchange-calendars>=4.11,<5",
     "fastapi>=0.115",
     "httpx[http2]>=0.28",
-    "pydantic>=2.10",
+    "numba>=0.61",
+    "numpy>=2",
+    "pandas>=2.2",
+    "pandas-ta-classic>=0.8",
+    "plotly>=5.18,<6",
+    "polars>=1.30",
+    "pyarrow>=18",
+    "pydantic>=2.13",
     "uvicorn[standard]>=0.32",
+    "vectorbt>=1.1",
+    "yfinance>=1.7",
 ]
 
 [dependency-groups]
@@ -27,9 +38,15 @@ line-length = 100
 select = ["E", "F", "B", "UP", "SIM", "RUF"]
 allowed-confusables = ["−"]
 
+[tool.ruff.lint.per-file-ignores]
+"src/stocksweeper/**/*.py" = ["SIM", "RUF"]
+
 [build-system]
 requires = ["uv_build>=0.11.13,<0.12.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = ["options_api", "stocksweeper"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

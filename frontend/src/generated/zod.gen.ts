@@ -3,6 +3,14 @@
 import * as z from 'zod';
 
 /**
+ * BacktestRequest
+ */
+export const zBacktestRequest = z.object({
+    max_strategies: z.int().gte(1).lte(20000).nullish(),
+    tickers: z.array(z.string().regex(/^[A-Z0-9][A-Z0-9.\-]{0,11}$/)).min(1).max(20).nullish()
+});
+
+/**
  * CashSecuredPutContract
  */
 export const zCashSecuredPutContract = z.object({
@@ -10,6 +18,10 @@ export const zCashSecuredPutContract = z.object({
     dte: z.int(),
     strike_cents: z.int(),
     in_the_money: z.boolean(),
+    at_the_money: z.boolean().optional().default(false),
+    strike_exact: z.string().optional().default(''),
+    watch_key: z.string().nullish(),
+    watchability_reason: z.string().nullish(),
     put_bid_cents: z.int().nullable(),
     put_ask_cents: z.int().nullable(),
     put_spread_cents: z.int().nullable(),
@@ -54,6 +66,10 @@ export const zCoveredCallContract = z.object({
     dte: z.int(),
     strike_cents: z.int(),
     in_the_money: z.boolean(),
+    at_the_money: z.boolean().optional().default(false),
+    strike_exact: z.string().optional().default(''),
+    watch_key: z.string().nullish(),
+    watchability_reason: z.string().nullish(),
     call_bid_cents: z.int().nullable(),
     call_ask_cents: z.int().nullable(),
     call_spread_cents: z.int().nullable(),
@@ -93,10 +109,223 @@ export const zCoveredCallExpiration = z.object({
 });
 
 /**
+ * CrossTickerPeer
+ */
+export const zCrossTickerPeer = z.object({
+    score: z.number(),
+    rejected: z.boolean(),
+    sharpe: z.number().nullable(),
+    limited: z.boolean()
+});
+
+/**
+ * CrossTickerItem
+ */
+export const zCrossTickerItem = z.object({
+    strategy_id: z.string(),
+    strategy: z.string(),
+    family: z.string(),
+    signals: z.string(),
+    parameters: z.string(),
+    cross_score: z.number(),
+    per_ticker: z.record(z.string(), zCrossTickerPeer),
+    entry_signals: z.array(z.string()).optional(),
+    filter_signals: z.array(z.string()).optional(),
+    exit_signals: z.array(z.string()).optional(),
+    exit_kind: z.string().optional().default('mirror')
+});
+
+/**
+ * FoldView
+ */
+export const zFoldView = z.object({
+    fold: z.int(),
+    is_sharpe: z.number().nullable(),
+    oos_sharpe: z.number().nullable(),
+    oos_return: z.number().nullable()
+});
+
+/**
+ * ForecastView
+ */
+export const zForecastView = z.object({
+    status: z.enum(['available', 'unavailable']).optional().default('unavailable'),
+    itm_probability: z.number().nullish(),
+    reason: z.string().nullish().default('Forecast not yet prepared'),
+    as_of: z.iso.date().nullish(),
+    model_id: z.string().nullish(),
+    strategy_id: z.string().nullish(),
+    strategy_name: z.string().nullish(),
+    signal_state: z.enum(['long', 'flat']).nullish(),
+    fit_peers: z.int().nullish(),
+    audit_peers: z.int().nullish(),
+    audit_blocks: z.int().nullish(),
+    cohort_size: z.int().nullish(),
+    fit_samples: z.int().nullish(),
+    audit_samples: z.int().nullish(),
+    crps_skill_lower_90: z.number().nullish(),
+    brier_delta: z.number().nullish(),
+    source: z.string().nullish(),
+    survivorship_note: z.string().nullish(),
+    historical: z.boolean().optional().default(false)
+});
+
+/**
+ * GateView
+ */
+export const zGateView = z.object({
+    min_trades: z.int(),
+    min_val_trades: z.int(),
+    max_drawdown: z.number(),
+    min_degradation: z.number(),
+    min_stability: z.number()
+});
+
+/**
+ * ConfigView
+ */
+export const zConfigView = z.object({
+    tickers: z.array(z.string()),
+    interval: z.string(),
+    initial_capital: z.number(),
+    fees: z.number(),
+    slippage: z.number(),
+    max_strategies: z.int(),
+    gates: zGateView,
+    robustness_weights: z.record(z.string(), z.number()),
+    cross_ticker_min: z.int()
+});
+
+/**
  * HealthResponse
  */
 export const zHealthResponse = z.object({
     ok: z.boolean().optional().default(true)
+});
+
+/**
+ * Job
+ */
+export const zJob = z.object({
+    id: z.string(),
+    kind: z.string(),
+    state: z.enum([
+        'queued',
+        'running',
+        'succeeded',
+        'failed'
+    ]),
+    progress: z.number().optional().default(0),
+    message: z.string().optional().default(''),
+    error: z.string().nullish(),
+    run_id: z.string().nullish()
+});
+
+/**
+ * JobView
+ */
+export const zJobView = z.object({
+    id: z.string(),
+    kind: z.string(),
+    state: z.enum([
+        'queued',
+        'running',
+        'succeeded',
+        'failed'
+    ]),
+    progress: z.number(),
+    message: z.string(),
+    error: z.string().nullish(),
+    run_id: z.string().nullish()
+});
+
+/**
+ * LeaderboardItem
+ */
+export const zLeaderboardItem = z.object({
+    rank: z.int().nullish(),
+    ticker: z.string(),
+    strategy_id: z.string(),
+    strategy: z.string(),
+    family: z.string(),
+    signals: z.string(),
+    parameters: z.string(),
+    robustness: z.number(),
+    rejected: z.boolean(),
+    flags: z.array(z.string()),
+    oos_cagr: z.number().nullish(),
+    sharpe: z.number().nullish(),
+    max_drawdown: z.number().nullish(),
+    win_rate: z.number().nullish(),
+    trades: z.int().nullish(),
+    test_cagr: z.number().nullish(),
+    variants: z.int().optional().default(1),
+    entry_signals: z.array(z.string()).optional(),
+    filter_signals: z.array(z.string()).optional(),
+    exit_signals: z.array(z.string()).optional(),
+    exit_kind: z.string().optional().default('mirror')
+});
+
+/**
+ * Leaderboard
+ */
+export const zLeaderboard = z.object({
+    run_id: z.string(),
+    total: z.int(),
+    families: z.array(z.string()),
+    items: z.array(zLeaderboardItem)
+});
+
+/**
+ * OutcomeView
+ */
+export const zOutcomeView = z.object({
+    status: z.enum([
+        'pending',
+        'provisional',
+        'unsupported'
+    ]),
+    classification: z.enum([
+        'itm',
+        'atm',
+        'otm'
+    ]).nullish(),
+    reason: z.string().nullish(),
+    source: z.string().nullish(),
+    session_date: z.iso.date().nullish(),
+    retrieved_at: z.iso.datetime().nullish(),
+    close_exact: z.string().nullish(),
+    terms_note: z.string().optional().default('Assuming standard 100-share terms.'),
+    revised: z.boolean().optional().default(false)
+});
+
+/**
+ * OverviewCard
+ */
+export const zOverviewCard = z.object({
+    ticker: z.string(),
+    bars: z.int(),
+    first: z.iso.date().nullable(),
+    last: z.iso.date().nullable(),
+    limited_history: z.boolean(),
+    strategy_id: z.string().nullish(),
+    strategy_name: z.string().nullish(),
+    signals: z.string().nullish(),
+    robustness: z.number().nullish(),
+    oos_cagr: z.number().nullish(),
+    sharpe: z.number().nullish(),
+    max_drawdown: z.number().nullish(),
+    trades: z.int().nullish(),
+    buy_hold_cagr: z.number().nullish(),
+    buy_hold_max_drawdown: z.number().nullish(),
+    test_cagr: z.number().nullish(),
+    test_max_drawdown: z.number().nullish(),
+    test_trades: z.int().nullish(),
+    test_buy_hold_cagr: z.number().nullish(),
+    entry_signals: z.array(z.string()).optional(),
+    filter_signals: z.array(z.string()).optional(),
+    exit_signals: z.array(z.string()).optional(),
+    exit_kind: z.string().optional().default('mirror')
 });
 
 /**
@@ -172,6 +401,110 @@ export const zCoveredCallPage = z.object({
 });
 
 /**
+ * ReoptView
+ */
+export const zReoptView = z.object({
+    fold: z.int(),
+    strategy_id: z.string(),
+    oos_sharpe: z.number().nullable(),
+    oos_return: z.number().nullable()
+});
+
+/**
+ * Rhs
+ */
+export const zRhs = z.object({
+    kind: z.enum(['const', 'indicator']),
+    value: z.number().nullish(),
+    indicator: z.string().nullish(),
+    params: z.record(z.string(), z.union([
+        z.int(),
+        z.number()
+    ])).optional()
+});
+
+/**
+ * Condition
+ */
+export const zCondition = z.object({
+    indicator: z.string(),
+    params: z.record(z.string(), z.union([
+        z.int(),
+        z.number()
+    ])).optional(),
+    op: z.enum([
+        'gt',
+        'lt',
+        'gte',
+        'lte',
+        'crosses_above',
+        'crosses_below'
+    ]),
+    rhs: zRhs
+});
+
+/**
+ * ConditionGroup
+ */
+export const zConditionGroup = z.object({
+    logic: z.enum(['AND', 'OR']),
+    conditions: z.array(zCondition)
+});
+
+/**
+ * RunTickerView
+ */
+export const zRunTickerView = z.object({
+    ticker: z.string(),
+    n_bars: z.int(),
+    first_ts: z.iso.date().nullish(),
+    last_ts: z.iso.date().nullish(),
+    limited_history: z.boolean(),
+    survivors: z.int()
+});
+
+/**
+ * RunView
+ */
+export const zRunView = z.object({
+    id: z.string(),
+    created_at: z.iso.datetime(),
+    status: z.string(),
+    strategy_count: z.int(),
+    ticker_count: z.int()
+});
+
+/**
+ * SegmentBound
+ */
+export const zSegmentBound = z.object({
+    start: z.string().nullable(),
+    end: z.string().nullable()
+});
+
+/**
+ * SegmentView
+ */
+export const zSegmentView = z.object({
+    segment: z.string(),
+    cagr: z.number().nullable(),
+    total_return: z.number().nullable(),
+    sharpe: z.number().nullable(),
+    sortino: z.number().nullable(),
+    max_drawdown: z.number().nullable(),
+    calmar: z.number().nullable(),
+    win_rate: z.number().nullable(),
+    profit_factor: z.number().nullable(),
+    avg_trade: z.number().nullable(),
+    median_trade: z.number().nullable(),
+    n_trades: z.int().nullable(),
+    exposure: z.number().nullable(),
+    avg_holding_period: z.number().nullable(),
+    buy_hold_cagr: z.number().nullable(),
+    buy_hold_max_drawdown: z.number().nullable()
+});
+
+/**
  * TickerListing
  */
 export const zTickerListing = z.object({
@@ -188,6 +521,81 @@ export const zTickerSearchResponse = z.object({
     as_of: z.iso.datetime(),
     total: z.int(),
     results: z.array(zTickerListing)
+});
+
+/**
+ * TickerStatusView
+ */
+export const zTickerStatusView = z.object({
+    ticker: z.string(),
+    bars: z.int(),
+    first: z.iso.date().nullable(),
+    last: z.iso.date().nullable(),
+    has_indicators: z.boolean(),
+    limited_history: z.boolean()
+});
+
+/**
+ * TradeView
+ */
+export const zTradeView = z.object({
+    entry_date: z.string(),
+    exit_date: z.string(),
+    entry_price: z.number(),
+    exit_price: z.number(),
+    return: z.number(),
+    pnl: z.number(),
+    holding_bars: z.int()
+});
+
+/**
+ * StrategyDetail
+ */
+export const zStrategyDetail = z.object({
+    run_id: z.string(),
+    ticker: z.string(),
+    strategy_id: z.string(),
+    name: z.string(),
+    family: z.string(),
+    signals: z.string(),
+    entry_signals: z.array(z.string()).optional(),
+    filter_signals: z.array(z.string()).optional(),
+    exit_signals: z.array(z.string()).optional(),
+    exit_kind: z.string().optional().default('mirror'),
+    parameters: z.record(z.string(), z.union([
+        z.int(),
+        z.number()
+    ])),
+    entry: zConditionGroup,
+    exit: zConditionGroup,
+    robustness: z.number().nullish(),
+    degradation: z.number().nullish(),
+    stability: z.number().nullish(),
+    walk_forward_consistency: z.number().nullish(),
+    rejected: z.boolean(),
+    flags: z.array(z.string()),
+    rank: z.int().nullish(),
+    data_snapshot: z.enum(['exact', 'changed']).optional().default('exact'),
+    segment_bounds: z.record(z.string(), zSegmentBound).optional(),
+    segments: z.array(zSegmentView),
+    folds: z.array(zFoldView),
+    reopt: z.array(zReoptView),
+    dates: z.array(z.string()),
+    close: z.array(z.number()),
+    entry_marks: z.array(z.union([z.number(), z.null()])),
+    exit_marks: z.array(z.union([z.number(), z.null()])),
+    equity: z.array(z.number()),
+    buy_hold: z.array(z.number()),
+    drawdown: z.array(z.number()),
+    trades: z.array(zTradeView)
+});
+
+/**
+ * UpdateRequest
+ */
+export const zUpdateRequest = z.object({
+    full_refresh: z.boolean().optional().default(false),
+    tickers: z.array(z.string().regex(/^[A-Z0-9][A-Z0-9.\-]{0,11}$/)).min(1).max(20).nullish()
 });
 
 /**
@@ -209,6 +617,54 @@ export const zHttpValidationError = z.object({
 });
 
 /**
+ * WatchCreate
+ */
+export const zWatchCreate = z.object({
+    watch_key: z.string().min(1).max(80)
+});
+
+/**
+ * WatchItem
+ */
+export const zWatchItem = z.object({
+    id: z.string(),
+    ticker: z.string(),
+    root: z.string(),
+    side: z.enum(['call', 'put']),
+    expiration: z.iso.date(),
+    strike_exact: z.string(),
+    terms_note: z.string(),
+    created_at: z.iso.datetime(),
+    forecast: zForecastView,
+    last_available_forecast: zForecastView.nullish(),
+    outcome: zOutcomeView
+});
+
+/**
+ * WatchCreateResponse
+ */
+export const zWatchCreateResponse = z.object({
+    item: zWatchItem,
+    created: z.boolean(),
+    job: zJob.nullable()
+});
+
+/**
+ * WatchListResponse
+ */
+export const zWatchListResponse = z.object({
+    items: z.array(zWatchItem),
+    active_job: zJob.nullish()
+});
+
+/**
+ * WatchRefreshResponse
+ */
+export const zWatchRefreshResponse = z.object({
+    job: zJob.nullable()
+});
+
+/**
  * Successful Response
  */
 export const zHealthApiHealthGetResponse = zHealthResponse;
@@ -227,3 +683,93 @@ export const zGetCoveredCallsApiCoveredCallsTickerGetResponse = zCoveredCallPage
  * Successful Response
  */
 export const zGetCashSecuredPutsApiCashSecuredPutsTickerGetResponse = zCashSecuredPutPage;
+
+/**
+ * Successful Response
+ */
+export const zGetWatchlistApiWatchlistGetResponse = zWatchListResponse;
+
+/**
+ * Successful Response
+ */
+export const zAddWatchApiWatchlistPostResponse = zWatchCreateResponse;
+
+/**
+ * Successful Response
+ */
+export const zDeleteWatchApiWatchlistWatchIdDeleteResponse = z.void();
+
+/**
+ * Successful Response
+ */
+export const zRefreshWatchlistApiWatchlistRefreshPostResponse = zWatchRefreshResponse;
+
+/**
+ * Successful Response
+ */
+export const zConfigApiResearchConfigGetResponse = zConfigView;
+
+/**
+ * Response Data Status Api Research Data Status Get
+ *
+ * Successful Response
+ */
+export const zDataStatusApiResearchDataStatusGetResponse = z.array(zTickerStatusView);
+
+/**
+ * Successful Response
+ */
+export const zUpdateDataApiResearchDataUpdatePostResponse = zJobView;
+
+/**
+ * Successful Response
+ */
+export const zStartBacktestApiResearchBacktestRunPostResponse = zJobView;
+
+/**
+ * Response Runs Api Research Runs Get
+ *
+ * Successful Response
+ */
+export const zRunsApiResearchRunsGetResponse = z.array(zRunView);
+
+/**
+ * Successful Response
+ */
+export const zRunApiResearchRunsRunIdGetResponse = zRunView;
+
+/**
+ * Response Run Tickers Api Research Runs  Run Id  Tickers Get
+ *
+ * Successful Response
+ */
+export const zRunTickersApiResearchRunsRunIdTickersGetResponse = z.array(zRunTickerView);
+
+/**
+ * Response Overview Api Research Overview Get
+ *
+ * Successful Response
+ */
+export const zOverviewApiResearchOverviewGetResponse = z.array(zOverviewCard);
+
+/**
+ * Successful Response
+ */
+export const zLeaderboardApiResearchLeaderboardGetResponse = zLeaderboard;
+
+/**
+ * Response Cross Ticker Api Research Cross Ticker Get
+ *
+ * Successful Response
+ */
+export const zCrossTickerApiResearchCrossTickerGetResponse = z.array(zCrossTickerItem);
+
+/**
+ * Successful Response
+ */
+export const zStrategyDetailApiResearchStrategiesStrategyIdGetResponse = zStrategyDetail;
+
+/**
+ * Successful Response
+ */
+export const zJobApiJobsJobIdGetResponse = zJobView;
