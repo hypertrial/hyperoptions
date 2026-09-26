@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from stocksweeper.backtest.engine import simulate
+from stocksweeper.backtest.engine import simulate, simulate_one
 from stocksweeper.backtest.metrics import metrics_from_returns
 from stocksweeper.config import load_settings
 
@@ -45,3 +45,17 @@ def test_open_trade_keeps_the_entry_mark_out_of_closed_stats():
     assert metrics.win_rate is None
     assert metrics.profit_factor is None
     assert metrics.exposure == 0.0
+
+
+def test_single_strategy_drawdown_includes_initial_capital(monkeypatch):
+    import stocksweeper.backtest.engine as engine
+
+    monkeypatch.setattr(engine, "simulate", lambda *args: (np.array([[-0.5], [0.0]]), [[]]))
+    index = pd.bdate_range("2024-01-02", periods=2)
+    zeros = np.zeros(2)
+    signals = np.zeros(2, dtype=bool)
+    settings = load_settings()
+    equity, drawdown, trades = simulate_one(index, zeros, zeros, signals, signals, settings)
+    np.testing.assert_allclose(equity, [settings.backtest.initial_capital * 0.5] * 2)
+    np.testing.assert_allclose(drawdown, [-0.5, -0.5])
+    assert trades == []

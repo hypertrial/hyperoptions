@@ -59,7 +59,7 @@ def simulate_one(
     column_exits = exits.reshape(-1, 1)
     returns, trades = simulate(index, open_, close, column_entries, column_exits, settings)
     equity = settings.backtest.initial_capital * np.cumprod(1.0 + returns[:, 0])
-    peak = np.maximum.accumulate(equity)
+    peak = np.maximum.accumulate(np.maximum(equity, settings.backtest.initial_capital))
     drawdown = equity / peak - 1.0
     return equity, drawdown, trades[0]
 

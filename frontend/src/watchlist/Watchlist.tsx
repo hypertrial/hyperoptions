@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import type { Job } from "../generated/types.gen"
@@ -20,6 +20,7 @@ export default function Watchlist({ chainUrl = "/" }: { chainUrl?: string }) {
   const [deleteErrors, setDeleteErrors] = useState<Record<string, string>>({})
   const [jobId, setJobId] = useState<string | null>(() => sessionStorage.getItem(WATCH_JOB_KEY))
   const [job, setJob] = useState<Job | null>(null)
+  const mutationVersion = useRef(0)
 
   const applyResponse = useCallback((response: WatchlistResponse) => {
     setItems(response.items)
@@ -33,7 +34,9 @@ export default function Watchlist({ chainUrl = "/" }: { chainUrl?: string }) {
   }, [])
 
   const load = useCallback(async () => {
-    applyResponse(await getWatchlist())
+    const version = mutationVersion.current
+    const response = await getWatchlist()
+    if (version === mutationVersion.current) applyResponse(response)
   }, [applyResponse])
 
   useEffect(() => {
@@ -122,6 +125,7 @@ export default function Watchlist({ chainUrl = "/" }: { chainUrl?: string }) {
     setDeleteErrors((current) => { const next = { ...current }; delete next[id]; return next })
     try {
       await deleteWatch(id)
+      mutationVersion.current += 1
       setItems((current) => current.filter((item) => item.id !== id))
     } catch (cause) {
       setDeleteErrors((current) => ({ ...current, [id]: message(cause) }))

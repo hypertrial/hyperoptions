@@ -755,6 +755,21 @@ def test_atm_is_excluded_from_itm_and_otm_but_included_in_all() -> None:
     assert put_all.expirations[0].contracts[1].at_the_money is True
 
 
+def test_chain_sorts_exact_strikes_even_when_rounded_cents_match() -> None:
+    strikes = (D("40.005"), D("40.006"), D("39.999"))
+    calls = assemble_covered_calls(
+        _chain(*(_quote("2026-09-18", strike) for strike in strikes)),
+        _info(), _history(), TODAY, NOW, "all",
+    )
+    puts = assemble_cash_secured_puts(
+        _chain(*(_put_quote("2026-09-18", strike) for strike in strikes)),
+        _info(), _history(), TODAY, NOW, "all",
+    )
+    expected = ["40.006", "40.005", "39.999"]
+    assert [row.strike_exact for row in calls.expirations[0].contracts] == expected
+    assert [row.strike_exact for row in puts.expirations[0].contracts] == expected
+
+
 def test_buy_write_legs_match_cifr_shaped_quote() -> None:
     trade_day = date(2026, 9, 18)
     page = assemble_covered_calls(

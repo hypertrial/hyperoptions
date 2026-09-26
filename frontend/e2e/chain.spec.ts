@@ -122,6 +122,22 @@ test("maps non-optionable and missing symbols without contacting Nasdaq from the
   expect(nasdaqHits).toEqual([])
 })
 
+test("keeps unavailable odds reasons accessible without filling every compact row", async ({ page }) => {
+  await page.goto("/")
+  const oddsCell = page.locator(".odds-cell").first()
+  await expect(oddsCell).toContainText("Odds unavailable")
+  await expect(oddsCell.locator(".odds-reason p")).not.toBeVisible()
+  await oddsCell.getByText("Why unavailable?").click()
+  await expect(oddsCell).toContainText("A coherent underlying bid and ask is unavailable")
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  const row = page.locator(".mobile-option-row").first()
+  await expect(row.locator(".mobile-row-summary")).toContainText("Odds unavailable")
+  await expect(row.locator(".mobile-row-summary")).not.toContainText("A coherent underlying bid and ask is unavailable")
+  await row.getByRole("button", { name: /Show details for IREN/ }).click()
+  await expect(row.locator(".mobile-row-details")).toContainText("A coherent underlying bid and ask is unavailable")
+})
+
 for (const viewport of [
   { width: 1440, height: 900 },
   { width: 1024, height: 768 },

@@ -446,7 +446,7 @@ def _assemble(
             grouped.setdefault(row.expiration, []).append(contract)
     expirations = []
     for expiration, contracts in sorted(grouped.items()):
-        kept = sorted(contracts, key=lambda item: item.strike_cents, reverse=True)
+        kept = sorted(contracts, key=lambda item: Decimal(item.strike_exact), reverse=True)
         expirations.append(
             spec.expiration_model(
                 expiration=expiration,

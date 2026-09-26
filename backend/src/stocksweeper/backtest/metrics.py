@@ -193,7 +193,7 @@ def _max_drawdown(returns: np.ndarray) -> float | None:
     if len(returns) == 0:
         return None
     equity = np.cumprod(1.0 + returns)
-    peak = np.maximum.accumulate(equity)
+    peak = np.maximum.accumulate(np.maximum(equity, 1.0))
     drawdown = equity / peak - 1.0
     return float(np.min(drawdown))
 

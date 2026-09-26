@@ -220,6 +220,9 @@
   .watch-odds .odds-values { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .watch-odds .odds-values > span { display: grid; gap: 3px; color: var(--muted-foreground); font-size: .8rem; }
   .watch-odds .odds-values strong { color: var(--foreground); font-size: 1.8rem; font-variant-numeric: tabular-nums; }
+  .watch-odds .odds-unavailable { display: grid; gap: 4px; }
+  .watch-odds .odds-unavailable strong { color: var(--foreground); font-size: 1.05rem; }
+  .watch-odds .odds-unavailable span { color: var(--muted-foreground); font-size: .82rem; line-height: 1.5; }
   .watch-outcome strong { font-size: 1.05rem; }
   .watch-muted,
   .watch-provenance,
@@ -955,7 +958,13 @@
   tbody td.odds-cell { min-width: 9rem; white-space: normal; text-align: left; }
   .odds-values.compact { display: grid; gap: 2px; line-height: 1.3; }
   .odds-values.compact strong { font-variant-numeric: tabular-nums; }
-  .odds-unavailable.compact { display: block; max-width: 13rem; color: var(--muted-foreground); font-size: .72rem; line-height: 1.35; }
+  .odds-unavailable.compact { display: block; color: var(--muted-foreground); font-size: .75rem; font-weight: 600; line-height: 1.35; }
+  .odds-reason { margin-top: 4px; color: var(--muted-foreground); font-size: .72rem; line-height: 1.4; }
+  .odds-reason summary { width: fit-content; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+  .odds-reason summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  .odds-reason p { max-width: 16rem; margin: 5px 0 0; }
+  .mobile-odds-reason { margin: 0 0 12px; color: var(--muted-foreground); font-size: .8rem; line-height: 1.5; }
+  .mobile-odds-reason strong { color: var(--foreground); }
   .watch-action { display: grid; justify-items: center; gap: 3px; }
   .watch-row-button { min-width: 4.2rem; }
   .watch-action-note { max-width: 12rem; color: var(--destructive); font-size: .7rem; line-height: 1.25; white-space: normal; }

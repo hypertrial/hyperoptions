@@ -12,7 +12,6 @@ function MarketOddsSection({ odds }: { odds: MarketOdds | null | undefined }) {
       <p className="watch-muted">Risk-neutral estimate for the regular-session close on expiry.</p>
       <p className="watch-odds"><OddsValues odds={odds} /></p>
       {provenance ? <p className="watch-provenance">{provenance}</p> : null}
-      {odds?.model_version ? <p className="watch-provenance">Model {odds.model_version}</p> : null}
     </section>
   )
 }
@@ -58,7 +57,7 @@ export default function WatchCard({ item, deleting, deleteError, onDelete }: {
     <article className="watch-card">
       <div className="watch-card-head">
         <div>
-          <p className="eyebrow">{item.ticker} · {item.root} root</p>
+          <p className="eyebrow">{item.ticker}{item.root !== item.ticker ? ` · ${item.root} root` : ""}</p>
           <h2>{item.side === "call" ? "Call" : "Put"} · ${item.strike_exact} · {item.expiration}</h2>
           <p className="watch-muted">{item.terms_note || "Assuming standard 100-share terms."} Watched since {dateTime(item.created_at)}.</p>
         </div>

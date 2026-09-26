@@ -9,7 +9,7 @@ import { copyRowAccessibleName, copyRowStateKey } from "./copyRow"
 import type { Density } from "./density"
 import { integer, moneyStrike } from "./format"
 import { heatmapHue, heatmapStop, type MetricRange } from "./heatmap"
-import { oddsLabel } from "./marketOdds"
+import { oddsAvailable, oddsLabel, oddsMessage } from "./marketOdds"
 import OddsValues from "./OddsValues"
 import type { Side } from "./types"
 import { useMediaQuery } from "./useMediaQuery"
@@ -125,7 +125,12 @@ function DesktopResults({
                     >
                       {column.format(row)}
                     </HeatCell>
-                    {index === 0 ? <td className="odds-cell"><OddsValues odds={row.market_odds} compact /></td> : null}
+                    {index === 0 ? <td className="odds-cell">
+                      <OddsValues odds={row.market_odds} compact />
+                      {!oddsAvailable(row.market_odds) && row.market_odds?.status !== "pending" ? (
+                        <details className="odds-reason"><summary>Why unavailable?</summary><p>{oddsMessage(row.market_odds)}</p></details>
+                      ) : null}
+                    </td> : null}
                   </Fragment>
                 ))}
                 <td className="watch-cell">
@@ -214,6 +219,7 @@ function MobileResults({
                 <ChevronRight className="row-chevron" aria-hidden="true" />
               </CollapsibleTrigger>
               <CollapsibleContent className="mobile-row-details">
+                {!oddsAvailable(odds) && odds?.status !== "pending" ? <p className="mobile-odds-reason"><strong>Why odds are unavailable:</strong> {oddsMessage(odds)}</p> : null}
                 {remaining.length > 0 ? (
                   <dl>
                     {remaining.map((column) => (

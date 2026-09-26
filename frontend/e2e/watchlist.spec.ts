@@ -156,6 +156,23 @@ test("shows dated market odds and close-based outcomes, then tracks the result c
   await expect(page.getByText("Expiry results checked.")).toBeVisible()
 })
 
+test("names unavailable odds before the reason and hides the model identifier", async ({ page }) => {
+  await page.route("**/api/watchlist", async (route) => {
+    await route.fulfill({ json: { items: [{ ...item, market_odds: {
+      ...item.market_odds,
+      status: "unavailable",
+      itm_pct_tenths: null,
+      otm_pct_tenths: null,
+      reason: "A coherent underlying bid and ask is unavailable",
+    } }] } })
+  })
+  await page.goto("/watchlist")
+  const odds = page.getByRole("region", { name: "Market-implied odds" })
+  await expect(odds).toContainText("Odds unavailable")
+  await expect(odds).toContainText("A coherent underlying bid and ask is unavailable")
+  await expect(odds).not.toContainText("regimelib-0.1.0-market-odds-v1")
+})
+
 test("retired research deep links open the watchlist without research requests", async ({ page }) => {
   const researchRequests: string[] = []
   page.on("request", (request) => {

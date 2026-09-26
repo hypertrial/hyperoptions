@@ -26,7 +26,7 @@ def test_metrics_match_hand_calculation():
     std = float(np.std(returns, ddof=1))
     assert metrics.sharpe == pytest_approx(mean / std * math.sqrt(252))
     equity = np.cumprod(1 + returns)
-    peak = np.maximum.accumulate(equity)
+    peak = np.maximum.accumulate(np.maximum(equity, 1.0))
     assert metrics.max_drawdown == pytest_approx(float(np.min(equity / peak - 1)))
     assert metrics.win_rate == pytest_approx(2 / 3)
     assert metrics.profit_factor == pytest_approx(0.30 / 0.10)
@@ -40,6 +40,16 @@ def test_flat_series_has_no_sharpe_and_zero_drawdown():
     assert metrics.sharpe is None
     assert metrics.cagr == pytest_approx(1.01**252 - 1)
     assert metrics.max_drawdown == pytest_approx(0.0)
+
+
+def test_first_bar_loss_counts_toward_max_drawdown_for_full_and_segment_metrics():
+    returns = np.array([-0.50, 0.0, 0.50])
+    full = metrics_from_returns(returns, [], periods_per_year=252)
+    first_segment = metrics_from_returns(returns, [], periods_per_year=252, segment=(0, 2))
+    later_segment = metrics_from_returns(returns, [], periods_per_year=252, segment=(1, 3))
+    assert full.max_drawdown == pytest_approx(-0.50)
+    assert first_segment.max_drawdown == pytest_approx(-0.50)
+    assert later_segment.max_drawdown == pytest_approx(0.0)
 
 
 def test_segment_metrics_match_a_trade_scan_per_slice():

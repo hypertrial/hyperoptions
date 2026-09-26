@@ -1,5 +1,6 @@
 import type { ColumnDef, ColumnId, SizedContract } from "./columns"
 import { scaleByContracts } from "./contracts"
+import { parseExactDecimal } from "./decimal"
 import { STRATEGIES } from "./strategy"
 import { invertedDteRange, passesFilters, type FilterState } from "./filters"
 import { metricRanges, type MetricRanges } from "./heatmap"
@@ -69,6 +70,16 @@ function sortRows(rows: SizedContract[], columns: ColumnDef[], sort: SortState):
   const column = columns.find((item) => item.id === sort.id)
   if (!column) return rows
   return [...rows].sort((left, right) => {
+    if (sort.id === "strike_cents") {
+      const leftStrike = parseExactDecimal(left.strike_exact ?? "")
+      const rightStrike = parseExactDecimal(right.strike_exact ?? "")
+      if (leftStrike && rightStrike) {
+        const a = leftStrike.value * 10n ** BigInt(rightStrike.scale)
+        const b = rightStrike.value * 10n ** BigInt(leftStrike.scale)
+        const compared = a < b ? -1 : a > b ? 1 : 0
+        return sort.dir === "asc" ? compared : -compared
+      }
+    }
     const leftValue = column.accessor(left)
     const rightValue = column.accessor(right)
     if (leftValue == null && rightValue == null) return 0

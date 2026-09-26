@@ -3,7 +3,11 @@ import { oddsAvailable, oddsMessage, type MarketOdds } from "./marketOdds"
 
 export default function OddsValues({ odds, compact = false }: { odds: MarketOdds | null | undefined; compact?: boolean }) {
   if (!oddsAvailable(odds)) {
-    return <span className={compact ? "odds-unavailable compact" : "watch-unavailable"}>{oddsMessage(odds)}</span>
+    const pending = odds?.status === "pending"
+    const status = pending ? "Calculating odds…" : "Odds unavailable"
+    return compact
+      ? <span className="odds-unavailable compact" aria-label={pending ? status : `${status}: ${oddsMessage(odds)}`}>{status}</span>
+      : <span className="odds-unavailable"><strong>{status}</strong>{!pending ? <span>{oddsMessage(odds)}</span> : null}</span>
   }
   return (
     <span className={compact ? "odds-values compact" : "odds-values"}>
