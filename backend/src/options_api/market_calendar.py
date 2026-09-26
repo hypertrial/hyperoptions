@@ -52,6 +52,12 @@ def latest_completed_session(as_of: datetime) -> date:
     return session.date()
 
 
+def first_session_after_completed(as_of: datetime) -> date:
+    """First session whose date-only actions may postdate a watch at as_of."""
+    completed = latest_completed_session(as_of)
+    return _calendar().next_session(completed.isoformat()).date()
+
+
 def expiry_session_completed(expiration: date, as_of: datetime) -> bool:
     return latest_completed_session(as_of) >= session_on_or_before(expiration)
 

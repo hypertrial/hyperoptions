@@ -13,7 +13,11 @@ from fastapi.testclient import TestClient
 
 from options_api.chain import assemble_cash_secured_puts, assemble_covered_calls
 from options_api.contract_identity import make_watch_key, parse_watch_key, row_identity
-from options_api.market_calendar import latest_completed_session, session_on_or_before
+from options_api.market_calendar import (
+    first_session_after_completed,
+    latest_completed_session,
+    session_on_or_before,
+)
 from options_api.models import MarketOddsView, OptionChainResponse, OptionQuote, StockInfoResponse
 from options_api.models import TickerListing
 from options_api.main import create_app
@@ -184,6 +188,42 @@ def test_split_guard_and_provisional_outcome_with_evidence() -> None:
     assert retry.status == "pending"
     assert retry.classification is None
     assert "history" in (retry.reason or "").lower()
+
+
+@pytest.mark.parametrize(("watched_at", "action_day", "expected"), [
+    (datetime(2026, 7, 2, 19, tzinfo=UTC), date(2026, 7, 2), "unsupported"),
+    (datetime(2026, 7, 2, 21, tzinfo=UTC), date(2026, 7, 2), "provisional"),
+    (datetime(2026, 7, 2, 21, tzinfo=UTC), date(2026, 7, 6), "unsupported"),
+])
+@pytest.mark.parametrize("action_kind", ["split", "ambiguous"])
+def test_completed_action_session_precedes_later_watch(
+    watched_at: datetime, action_day: date, expected: str, action_kind: str
+) -> None:
+    history = CloseHistory(
+        {date(2026, 7, 10): D("49.99")},
+        frozenset({action_day}) if action_kind == "split" else frozenset(),
+        frozenset({action_day}) if action_kind == "ambiguous" else frozenset(),
+        True,
+    )
+    result = resolve_outcome(
+        ticker="IREN", root="IREN", side="put", strike=D("50"),
+        expiration=date(2026, 7, 10), watched_at=watched_at,
+        as_of=datetime(2026, 7, 11, 22, tzinfo=UTC),
+        provider=FakeCloseProvider(history),
+    )
+    assert result.status == expected
+
+
+def test_first_future_action_session_respects_early_close_and_weekend() -> None:
+    assert first_session_after_completed(datetime(2026, 11, 27, 17, 59, tzinfo=UTC)) == (
+        date(2026, 11, 27)
+    )
+    assert first_session_after_completed(datetime(2026, 11, 27, 18, tzinfo=UTC)) == (
+        date(2026, 11, 30)
+    )
+    assert first_session_after_completed(datetime(2026, 11, 28, 2, tzinfo=UTC)) == (
+        date(2026, 11, 30)
+    )
 
 
 def test_outcome_retrieval_time_is_captured_after_provider_response() -> None:
@@ -646,7 +686,7 @@ def test_watch_api_revalidates_current_chain_and_blocks_cross_site_writes(
         def fetch(self, ticker: str, start: date, end: date) -> CloseHistory:
             return CloseHistory({date(2026, 9, 18): D("47")}, frozenset(), frozenset(), True)
 
-    current = [datetime(2026, 9, 11, 14, tzinfo=UTC)]
+    current = [datetime(2026, 9, 11, 21, tzinfo=UTC)]
     app = create_app(
         client_factory=lambda: httpx.AsyncClient(transport=httpx.MockTransport(respond)),
         clock=lambda: current[0],
@@ -661,6 +701,14 @@ def test_watch_api_revalidates_current_chain_and_blocks_cross_site_writes(
     with TestClient(app, base_url="http://127.0.0.1") as client:
         app.state.universe.seed([TickerListing(symbol="IREN", name="IREN", sector="Finance")])
         app.state.market_odds.schedule = lambda tickers: None
+        contract_starts: list[date | None] = []
+        original_lookup = app.state.predictive_odds.lookup
+
+        def capture_lookup(*args, **kwargs):
+            contract_starts.append(kwargs.get("contract_since"))
+            return original_lookup(*args, **kwargs)
+
+        app.state.predictive_odds.lookup = capture_lookup
         assert client.get(
             "/api/health", headers={"Sec-Fetch-Site": "cross-site"}
         ).status_code == 403
@@ -690,6 +738,7 @@ def test_watch_api_revalidates_current_chain_and_blocks_cross_site_writes(
         first = client.post("/api/watchlist", json={"watch_key": key}, headers=origin)
         assert first.status_code == 200
         assert first.json()["created"] is True
+        assert contract_starts[0] == date(2026, 9, 14)
         item = first.json()["item"]
         assert item["root"] == "IREN"
         assert item["strike_exact"] == "48.000"

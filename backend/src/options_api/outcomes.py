@@ -10,7 +10,11 @@ from collections.abc import Callable
 from typing import Literal, Protocol
 from zoneinfo import ZoneInfo
 
-from options_api.market_calendar import latest_completed_session, session_on_or_before
+from options_api.market_calendar import (
+    first_session_after_completed,
+    latest_completed_session,
+    session_on_or_before,
+)
 
 _NY = ZoneInfo("America/New_York")
 TERMS_NOTE = "Assuming standard 100-share terms."
@@ -136,6 +140,7 @@ def resolve_outcome(
             "pending", None, "Expiry trading session has not completed", None, target, as_of, None
         )
     start = min(watched_at.astimezone(_NY).date(), target)
+    action_start = first_session_after_completed(watched_at)
     end = as_of.astimezone(_NY).date() + timedelta(days=1)
     if (end - start).days > MAX_OUTCOME_HISTORY_DAYS:
         return OutcomeResult(
@@ -167,7 +172,7 @@ def resolve_outcome(
             retrieved_at,
             None,
         )
-    if any(start <= day <= target for day in history.split_dates):
+    if any(action_start <= day <= target for day in history.split_dates):
         return OutcomeResult(
             "unsupported",
             None,
@@ -177,7 +182,7 @@ def resolve_outcome(
             retrieved_at,
             None,
         )
-    if any(start <= day <= target for day in history.ambiguous_action_dates):
+    if any(action_start <= day <= target for day in history.ambiguous_action_dates):
         return OutcomeResult(
             "unsupported",
             None,

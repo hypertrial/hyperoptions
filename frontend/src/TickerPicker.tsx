@@ -4,6 +4,7 @@ import {
   Combobox,
   ComboboxInput,
 } from "@/components/ui/combobox"
+import { Button } from "@/components/ui/button"
 import { ApiError, fetchTickers } from "./api"
 import type { TickerListing } from "./types"
 
@@ -23,6 +24,7 @@ export default function TickerPicker({ ticker, disabled, onSelect }: Props) {
   const [active, setActive] = useState(0)
   const [unavailable, setUnavailable] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [retry, setRetry] = useState(0)
   const requestId = useRef(0)
 
   useEffect(() => {
@@ -52,7 +54,7 @@ export default function TickerPicker({ ticker, disabled, onSelect }: Props) {
       })
     }, DEBOUNCE_MS)
     return () => window.clearTimeout(handle)
-  }, [disabled, query])
+  }, [disabled, query, retry])
 
   const choose = (symbol: string) => {
     onSelect(symbol)
@@ -136,7 +138,15 @@ export default function TickerPicker({ ticker, disabled, onSelect }: Props) {
           />
         </Combobox>
       </label>
-      {unavailable ? <p className="control-note" role="status">Ticker list unavailable</p> : null}
+      {unavailable ? (
+        <div>
+          <p className="control-note" role="status">Ticker list unavailable</p>
+          <Button type="button" variant="link" size="xs" disabled={loading} onClick={() => {
+            setLoading(true)
+            setRetry((value) => value + 1)
+          }}>Retry ticker list</Button>
+        </div>
+      ) : null}
       {open && !unavailable ? (
         <ul
           id={listId}

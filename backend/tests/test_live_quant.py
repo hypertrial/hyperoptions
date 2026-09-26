@@ -244,14 +244,20 @@ def test_zero_pnl_is_not_a_loss_and_fifth_percentile_uses_lower_tail() -> None:
     assert result.p05_pnl_cents == -450_000
 
 
+@pytest.mark.parametrize(("watched_at", "contract_since"), [
+    (datetime(2026, 9, 25, 19, tzinfo=UTC), date(2026, 9, 25)),
+    (datetime(2026, 9, 25, 21, tzinfo=UTC), date(2026, 9, 28)),
+])
 @pytest.mark.asyncio
-async def test_watchlist_api_keeps_all_three_quant_views_separate() -> None:
+async def test_watchlist_api_keeps_all_three_quant_views_separate(
+    watched_at: datetime, contract_since: date
+) -> None:
     market = _Market(_quote())
     predictive = _Predictive(_distribution())
     item = WatchItem(
         id="a" * 32, ticker="IREN", root="IREN", side="call",
         expiration=EXPIRY, strike_exact="100.000", terms_note="Standard terms assumed",
-        created_at=datetime(2026, 9, 25, 19, tzinfo=UTC),
+        created_at=watched_at,
         outcome=OutcomeView(status="pending"),
     )
     state = SimpleNamespace(
@@ -270,3 +276,4 @@ async def test_watchlist_api_keeps_all_three_quant_views_separate() -> None:
     assert serialized["predictive_odds"]["as_of_session"] == "2026-09-25"
     assert serialized["hypothetical_risk"]["status"] == "available"
     assert serialized["hypothetical_risk"]["quote_session"] == "2026-09-25"
+    assert predictive.calls == [{"side": "call", "contract_since": contract_since}]

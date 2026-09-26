@@ -612,9 +612,24 @@ describe("chain interactions", () => {
   })
 
   it("disables ticker submit when the universe is unavailable", async () => {
+    tickersMock.mockRejectedValueOnce(new ApiError(503, "Ticker universe unavailable"))
+      .mockResolvedValueOnce({ as_of: "2026-09-11T14:00:00Z", total: LISTINGS.length, results: LISTINGS })
+    render(<ItmChain />)
+    await waitFor(() => expect(screen.getByText("Ticker list unavailable")).toBeTruthy())
+    expect(screen.getByRole("combobox")).toHaveProperty("disabled", true)
+    fireEvent.click(screen.getByRole("button", { name: "Retry ticker list" }))
+    await waitFor(() => expect(screen.getByRole("combobox")).toHaveProperty("disabled", false))
+    expect(tickersMock).toHaveBeenCalledTimes(2)
+    await selectTicker("CIFR")
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("CIFR", "call", "itm"))
+  })
+
+  it("stays blocked after a repeated ticker-universe outage", async () => {
     tickersMock.mockRejectedValue(new ApiError(503, "Ticker universe unavailable"))
     render(<ItmChain />)
     await waitFor(() => expect(screen.getByText("Ticker list unavailable")).toBeTruthy())
+    fireEvent.click(screen.getByRole("button", { name: "Retry ticker list" }))
+    await waitFor(() => expect(tickersMock).toHaveBeenCalledTimes(2))
     expect(screen.getByRole("combobox")).toHaveProperty("disabled", true)
   })
 

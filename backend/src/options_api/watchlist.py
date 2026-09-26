@@ -18,6 +18,7 @@ from options_api.contract_identity import make_watch_key, parse_watch_key, strik
 from options_api.live_quant import quant_for_contract
 from options_api.market_calendar import (
     expiry_session_completed,
+    first_session_after_completed,
     latest_completed_session,
     session_on_or_before,
 )
@@ -492,7 +493,7 @@ async def get_watchlist(request: Request) -> WatchListResponse:
             side=item.side,
             expiry=item.expiration,
             strike=Decimal(item.strike_exact),
-            contract_since=item.created_at.date(),
+            contract_since=first_session_after_completed(item.created_at),
             watched=True,
         )
         item.market_odds = result.market
@@ -555,7 +556,7 @@ async def add_watch(request: Request, body: WatchCreate) -> WatchCreateResponse:
         side=side,
         expiry=expiry,
         strike=strike,
-        contract_since=record.created_at.date(),
+        contract_since=first_session_after_completed(record.created_at),
         watched=True,
     )
     item.market_odds = result.market
