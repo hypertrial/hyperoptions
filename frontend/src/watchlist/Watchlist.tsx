@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import type { Job } from "../generated/types.gen"
+import { dateTime } from "../format"
 import { deleteWatch, getJob, getWatchlist, refreshWatchlist, WATCH_JOB_KEY } from "./api"
 import type { WatchItem, WatchlistResponse } from "./types"
 import WatchCard from "./WatchCard"
@@ -14,6 +15,9 @@ export default function Watchlist({ chainUrl = "/" }: { chainUrl?: string }) {
   const [items, setItems] = useState<WatchItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [staleError, setStaleError] = useState<string | null>(null)
+  const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null)
+  const [retrying, setRetrying] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
@@ -21,10 +25,13 @@ export default function Watchlist({ chainUrl = "/" }: { chainUrl?: string }) {
   const [jobId, setJobId] = useState<string | null>(() => sessionStorage.getItem(WATCH_JOB_KEY))
   const [job, setJob] = useState<Job | null>(null)
   const mutationVersion = useRef(0)
+  const pendingLoad = useRef<Promise<void> | null>(null)
 
   const applyResponse = useCallback((response: WatchlistResponse) => {
     setItems(response.items)
     setError(null)
+    setStaleError(null)
+    setLastLoadedAt(new Date().toISOString())
     const active = response.active_job
     if (active && (active.state === "queued" || active.state === "running")) {
       sessionStorage.setItem(WATCH_JOB_KEY, active.id)
@@ -33,10 +40,14 @@ export default function Watchlist({ chainUrl = "/" }: { chainUrl?: string }) {
     }
   }, [])
 
-  const load = useCallback(async () => {
+  const load = useCallback(() => {
+    if (pendingLoad.current) return pendingLoad.current
     const version = mutationVersion.current
-    const response = await getWatchlist()
-    if (version === mutationVersion.current) applyResponse(response)
+    const pending = getWatchlist()
+      .then((response) => { if (version === mutationVersion.current) applyResponse(response) })
+      .finally(() => { pendingLoad.current = null })
+    pendingLoad.current = pending
+    return pending
   }, [applyResponse])
 
   useEffect(() => {
@@ -51,7 +62,7 @@ export default function Watchlist({ chainUrl = "/" }: { chainUrl?: string }) {
         await load()
       } catch (cause) {
         if (active && first) setError(message(cause))
-        // Keep the last displayed result after the first load fails.
+        else if (active) setStaleError(message(cause))
       } finally {
         if (active && first) setLoading(false)
         first = false
@@ -120,6 +131,17 @@ export default function Watchlist({ chainUrl = "/" }: { chainUrl?: string }) {
     }
   }
 
+  const retryStale = async () => {
+    setRetrying(true)
+    try {
+      await load()
+    } catch (cause) {
+      setStaleError(message(cause))
+    } finally {
+      setRetrying(false)
+    }
+  }
+
   const remove = async (id: string) => {
     setDeleting(id)
     setDeleteErrors((current) => { const next = { ...current }; delete next[id]; return next })
@@ -161,6 +183,7 @@ export default function Watchlist({ chainUrl = "/" }: { chainUrl?: string }) {
       {notice ? <p className="watch-notice" role="status">{notice}</p> : null}
       {loading ? <p role="status">Loading watched contracts…</p> : null}
       {error ? <div className="watch-error" role="alert"><p>Could not load the watchlist. {error}</p><Button variant="outline" type="button" onClick={() => { setLoading(true); void load().catch((cause) => setError(message(cause))).finally(() => setLoading(false)) }}>Retry</Button></div> : null}
+      {staleError && !error ? <div className="watch-error" role="alert"><p>Could not refresh the watchlist. Showing the last loaded watchlist{lastLoadedAt ? ` from ${dateTime(lastLoadedAt)}` : ""}. {staleError}</p><Button variant="outline" type="button" disabled={retrying} onClick={() => { void retryStale() }}>{retrying ? "Retrying…" : "Retry"}</Button></div> : null}
       {!loading && !error && items.length === 0 ? (
         <div className="watch-empty"><h2>No watched contracts yet</h2><p>Open the option chain and use Watch on a supported contract.</p><Link to={chainUrl}>Browse option chain</Link></div>
       ) : null}

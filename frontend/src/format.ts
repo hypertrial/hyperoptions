@@ -51,6 +51,7 @@ const fetchedAtFormat = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
   hour: "numeric",
   minute: "2-digit",
+  timeZoneName: "short",
 })
 
 export function plural(count: number, singular: string): string {

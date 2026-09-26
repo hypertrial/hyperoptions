@@ -76,6 +76,10 @@ describe("formatters", () => {
     expect(dateTime(null)).toBe("—")
     expect(dateTime("not-a-date")).toBe("not-a-date")
     expect(dateTime("2026-09-11T14:00:00Z")).toMatch(/Sep 1[12], 2026/)
+    const localZone = new Intl.DateTimeFormat("en-US", { timeZoneName: "short" })
+      .formatToParts(new Date("2026-09-11T14:00:00Z"))
+      .find((part) => part.type === "timeZoneName")?.value
+    expect(dateTime("2026-09-11T14:00:00Z")).toContain(localZone)
     expect(dateTime("2026-09-11T14:00:00Z")).not.toMatch(/\d{1,2}\/\d{1,2}\/\d{4}/)
     expect(moneyCents(undefined)).toBe("—")
     expect(moneyCents(Number.NaN)).toBe("—")

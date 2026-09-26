@@ -107,6 +107,53 @@ it("updates pending odds from the visible watchlist poll", async () => {
   expect(reads).toBeGreaterThanOrEqual(2)
 })
 
+it("warns when a later watchlist read fails and clears the warning after retry", async () => {
+  window.history.replaceState(null, "", "/watchlist")
+  let reads = 0
+  vi.stubGlobal("fetch", vi.fn(async () => {
+    reads += 1
+    if (reads === 2) throw new Error("Provider temporarily unavailable")
+    return new Response(JSON.stringify({ items: [watched] }))
+  }))
+
+  render(<App />)
+  expect(await screen.findByRole("region", { name: "Odds estimates" })).toBeTruthy()
+  document.dispatchEvent(new Event("visibilitychange"))
+  const warning = await screen.findByRole("alert")
+  expect(warning.textContent).toContain("Showing the last loaded watchlist")
+  expect(warning.textContent).toContain("Provider temporarily unavailable")
+  expect(screen.getByRole("region", { name: "Odds estimates" })).toBeTruthy()
+
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }))
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull())
+  expect(reads).toBe(3)
+})
+
+it("shares a pending retry with the next poll so responses cannot arrive out of order", async () => {
+  window.history.replaceState(null, "", "/watchlist")
+  let reads = 0
+  let finishRetry: ((response: Response) => void) | undefined
+  vi.stubGlobal("fetch", vi.fn(() => {
+    reads += 1
+    if (reads === 2) return Promise.reject(new Error("Provider temporarily unavailable"))
+    if (reads === 3) return new Promise<Response>((resolve) => { finishRetry = resolve })
+    return Promise.resolve(new Response(JSON.stringify({ items: [watched] })))
+  }))
+
+  render(<App />)
+  expect(await screen.findByRole("region", { name: "Odds estimates" })).toBeTruthy()
+  document.dispatchEvent(new Event("visibilitychange"))
+  expect(await screen.findByRole("alert")).toBeTruthy()
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }))
+  await waitFor(() => expect(finishRetry).toBeTypeOf("function"))
+  document.dispatchEvent(new Event("visibilitychange"))
+  expect(reads).toBe(3)
+
+  await act(async () => { finishRetry!(new Response(JSON.stringify({ items: [watched] }))) })
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull())
+  expect(reads).toBe(3)
+})
+
 it("does not revive an old real-world forecast when current market odds are unavailable", async () => {
   window.history.replaceState(null, "", "/watchlist")
   const item = {
