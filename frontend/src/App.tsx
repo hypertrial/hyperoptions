@@ -10,10 +10,9 @@ function Workspace() {
   const location = useLocation()
   const [lastChainUrl, setLastChainUrl] = useState("/")
   const watchlist = location.pathname === "/watchlist"
-
-  const rememberChainUrl = () => {
-    if (location.pathname === "/") setLastChainUrl(`${location.pathname}${location.search}`)
-  }
+  const liveChainUrl = location.pathname === "/" ? `${location.pathname}${location.search}` : null
+  if (liveChainUrl !== null && liveChainUrl !== lastChainUrl) setLastChainUrl(liveChainUrl)
+  const chainUrl = liveChainUrl ?? lastChainUrl
 
   return (
     <div className="app">
@@ -21,8 +20,8 @@ function Workspace() {
         Skip to {watchlist ? "watchlist" : "chain"}
       </a>
       <nav className="workspace-nav" aria-label="Workstation">
-        <Link aria-current={location.pathname === "/" ? "page" : undefined} to={lastChainUrl}>Option chain</Link>
-        <Link aria-current={watchlist ? "page" : undefined} to="/watchlist" onClick={rememberChainUrl}>Watchlist</Link>
+        <Link aria-current={location.pathname === "/" ? "page" : undefined} to={chainUrl}>Option chain</Link>
+        <Link aria-current={watchlist ? "page" : undefined} to="/watchlist">Watchlist</Link>
       </nav>
       <Routes>
         <Route path="/" element={<ItmChain />} />

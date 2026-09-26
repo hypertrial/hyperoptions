@@ -310,6 +310,7 @@ def test_readme_test_block_runs_from_repository_root(tmp_path: Path) -> None:
     assert log.read_text().splitlines() == [
         "uv run pytest -q",
         "npm test",
+        "npx --no-install playwright install chromium",
         "npx --no-install playwright test",
     ]
 

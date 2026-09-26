@@ -38,6 +38,56 @@ it("refreshes a visible chain every five minutes during regular market hours", a
   expect(fetchMock).toHaveBeenCalledTimes(3)
 })
 
+it("clears the previous chain while a new ticker is loading", async () => {
+  let releaseNext: (page: ReturnType<typeof samplePage>) => void = () => {}
+  fetchMock.mockResolvedValueOnce(samplePage())
+  const hook = renderHook(
+    ({ ticker }: { ticker: string }) => useChainPage(ticker, "call", "itm"),
+    { initialProps: { ticker: "IREN" } },
+  )
+  await act(async () => { await Promise.resolve() })
+  expect(hook.result.current.page?.ticker).toBe("IREN")
+  expect(hook.result.current.loading).toBe(false)
+
+  fetchMock.mockImplementationOnce(() => new Promise((resolve) => { releaseNext = resolve }))
+  hook.rerender({ ticker: "CIFR" })
+  expect(hook.result.current.loading).toBe(true)
+  expect(hook.result.current.page).toBeNull()
+
+  await act(async () => {
+    releaseNext(samplePage({ ticker: "CIFR" }))
+    await Promise.resolve()
+  })
+  expect(hook.result.current.loading).toBe(false)
+  expect(hook.result.current.page?.ticker).toBe("CIFR")
+})
+
+it("drops a stale response that arrives after the ticker changes", async () => {
+  let releaseFirst: (page: ReturnType<typeof samplePage>) => void = () => {}
+  let releaseNext: (page: ReturnType<typeof samplePage>) => void = () => {}
+  fetchMock.mockImplementationOnce(() => new Promise((resolve) => { releaseFirst = resolve }))
+  const hook = renderHook(
+    ({ ticker }: { ticker: string }) => useChainPage(ticker, "call", "itm"),
+    { initialProps: { ticker: "IREN" } },
+  )
+  fetchMock.mockImplementationOnce(() => new Promise((resolve) => { releaseNext = resolve }))
+  hook.rerender({ ticker: "CIFR" })
+
+  await act(async () => {
+    releaseFirst(samplePage())
+    await Promise.resolve()
+  })
+  expect(hook.result.current.page).toBeNull()
+  expect(hook.result.current.loading).toBe(true)
+
+  await act(async () => {
+    releaseNext(samplePage({ ticker: "CIFR" }))
+    await Promise.resolve()
+  })
+  expect(hook.result.current.loading).toBe(false)
+  expect(hook.result.current.page?.ticker).toBe("CIFR")
+})
+
 it("checks pending odds quickly and stops daytime refresh after the close", async () => {
   const pending = samplePage()
   Object.assign(pending.expirations[0].contracts[0], { market_odds: { status: "pending" } })

@@ -13,6 +13,15 @@ export function useChainPage(ticker: Ticker, side: Side, moneyness: Moneyness) {
   const [loading, setLoading] = useState(true)
   const requestId = useRef(0)
   const lastRequestedAt = useRef(0)
+  const requestKey = `${ticker}|${side}|${moneyness}`
+  const [activeKey, setActiveKey] = useState(requestKey)
+  if (activeKey !== requestKey) {
+    setActiveKey(requestKey)
+    requestId.current += 1
+    setPage(null)
+    setError(null)
+    setLoading(true)
+  }
 
   const load = useCallback(async (
     selected: Ticker,

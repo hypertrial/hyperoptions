@@ -5,7 +5,9 @@ cd "$(dirname "$0")/.."
 wheel_dir=$(mktemp -d)
 trap 'rm -rf "$wheel_dir"' EXIT
 uv build backend --wheel --out-dir "$wheel_dir"
-python3 - "$wheel_dir" <<'PY'
+(
+  cd backend
+  uv run python - "$wheel_dir" <<'PY'
 from pathlib import Path
 import sys
 import tomllib
@@ -30,3 +32,4 @@ with ZipFile(wheels[0]) as wheel:
         raise SystemExit("backend wheel contains no storage schema")
 print("backend wheel and packaged resources verified")
 PY
+)

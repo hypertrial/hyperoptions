@@ -114,10 +114,11 @@ Watch jobs, watched contracts, close-based observations, and legacy forecast sna
 ```bash
 (cd backend && uv run pytest -q)
 (cd frontend && npm test)
+(cd frontend && npx --no-install playwright install chromium)
 (cd frontend && npx --no-install playwright test)
 ```
 
-Playwright starts a mocked FastAPI server and Vite, then proves the `/api` proxy and that the browser never calls Nasdaq. Use the project-pinned Playwright command; do not run a global `npx playwright`.
+Playwright starts a mocked FastAPI server and Vite, then proves the `/api` proxy and that the browser never calls Nasdaq. Install the pinned Chromium before the first local run; `npm install` does not download it. Use the project-pinned Playwright command; do not run a global `npx playwright`.
 
 ## Verification gates
 
@@ -128,4 +129,4 @@ scripts/verify
 
 `scripts/verify-fast` is browser-free: documentation, shell syntax, backend tests, and frontend unit tests.
 
-`scripts/verify` is the completion gate: whitespace checks, backend Ruff and tests, frontend npm audit, tests, lint, generated-contract cleanliness, production build, and Playwright. `scripts/check-wheel` builds the backend wheel and checks bundled TOML/SQL resources. CI installs frozen dependencies and the pinned Chromium revision, then runs both scripts.
+`scripts/verify` is the completion gate: whitespace checks, backend Ruff and tests, frontend npm audit, tests, lint, generated-contract cleanliness, production build, the pinned Chromium install, and Playwright. `scripts/check-wheel` builds the backend wheel and checks bundled TOML/SQL resources with the project's Python. CI installs frozen dependencies and the pinned Chromium revision, then runs both scripts.
