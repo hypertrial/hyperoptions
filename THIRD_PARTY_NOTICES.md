@@ -10,7 +10,7 @@ substantially from VectorBT. See [VectorBT's license](https://github.com/polakow
 for the terms that apply to that dependency. The installed application should not
 be described as an unrestricted MIT-only stack.
 
-Research bars and provisional option-expiry observations use Yahoo Finance through
+Watchlist forecast bars and provisional option-expiry observations use Yahoo Finance through
 [yfinance](https://github.com/ranaroussi/yfinance). yfinance describes use of Yahoo's
 API as intended for personal use and directs users to Yahoo's data terms. The app
 is a local personal workstation; downloaded market data is stored locally and is

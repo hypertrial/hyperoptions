@@ -1,1 +1,1 @@
-"""DuckDB persistence for sweeps and leaderboards."""
+"""DuckDB persistence for watches, jobs, and forecast evidence."""

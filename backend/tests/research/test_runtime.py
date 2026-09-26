@@ -1,4 +1,4 @@
-"""Local process and job safety for the merged research engine."""
+"""Local process and job safety for the watchlist engine."""
 
 from __future__ import annotations
 
@@ -42,12 +42,12 @@ def test_queue_is_bounded_persistent_and_coalesces(tmp_path) -> None:
         started.set()
         assert release.wait(5)
 
-    active = manager.submit("data", blocking, coalesce_key="refresh:IREN")
+    active = manager.submit("watch_refresh", blocking, coalesce_key="refresh:IREN")
     assert started.wait(2)
-    assert manager.submit("data", blocking, coalesce_key="refresh:IREN").id == active.id
-    pending = [manager.submit("data", lambda _progress: None) for _ in range(4)]
+    assert manager.submit("watch_refresh", blocking, coalesce_key="refresh:IREN").id == active.id
+    pending = [manager.submit("watch_refresh", lambda _progress: None) for _ in range(4)]
     with pytest.raises(JobBusy, match="queue is full"):
-        manager.submit("data", lambda _progress: None)
+        manager.submit("watch_refresh", lambda _progress: None)
     assert manager.get(pending[0].id).state == "queued"
 
     manager.stop_accepting()
@@ -68,8 +68,8 @@ def test_write_guard_rejects_before_read_and_caps_chunked_body(tmp_path) -> None
             "asgi": {"version": "3.0"},
             "method": "POST",
             "scheme": "http",
-            "path": "/api/research/backtest/run",
-            "raw_path": b"/api/research/backtest/run",
+            "path": "/api/watchlist/refresh",
+            "raw_path": b"/api/watchlist/refresh",
             "query_string": b"",
             "root_path": "",
             "headers": [

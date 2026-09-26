@@ -31,9 +31,6 @@ from options_api.outcomes import CloseProvider
 from options_api.service import OptionChainService
 from options_api.universe import TickerUniverse
 from options_api.watchlist import WatchlistService, router as watchlist_router
-from stocksweeper.api.routes_data import jobs_router, router as research_data_router
-from stocksweeper.api.routes_meta import router as research_meta_router
-from stocksweeper.api.routes_results import router as research_results_router
 from stocksweeper.config import Settings, load_settings
 from stocksweeper.pipeline.jobs import JobManager
 from stocksweeper.storage.db import single_instance
@@ -339,9 +336,6 @@ def create_app(
     app.add_middleware(LocalHostMiddleware)
     app.include_router(router)
     app.include_router(watchlist_router, dependencies=[Depends(_check_origin)])
-    for research_router in (research_meta_router, research_data_router, research_results_router):
-        app.include_router(research_router, dependencies=[Depends(_check_origin)])
-    app.include_router(jobs_router, dependencies=[Depends(_check_origin)])
     return app
 
 

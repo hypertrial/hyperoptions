@@ -6,6 +6,8 @@ const unavailableReasons: Record<string, string> = {
   model_not_ready: "The pooled model is still being prepared.",
   cohort_insufficient: "The peer cohort did not meet the sample requirements.",
   validation_failed: "The model did not pass its holdout validation.",
+  crps_audit_failed: "The strategy-conditioned model did not beat the unconditional baseline in the holdout audit.",
+  brier_audit_failed: "Strike-grid accuracy was worse than the baseline in the holdout audit.",
   ticker_history_short: "This ticker has too little completed price history.",
   ticker_strategy_unqualified: "No strategy passed this ticker’s validation gate.",
   market_data_missing: "Completed market data is missing.",
@@ -28,29 +30,38 @@ function reasonText(reason: string | null | undefined, fallback: string): string
 
 function ForecastEvidence({ forecast, historical = false }: { forecast: WatchForecast | null; historical?: boolean }) {
   const available = forecast?.status === "available" && forecast.itm_probability != null && Number.isFinite(forecast.itm_probability)
+  const hasEvidence = forecast != null && (
+    forecast.strategy_id != null || forecast.strategy_name != null || forecast.model_id != null
+    || forecast.fit_peers != null || forecast.crps_skill_lower_90 != null || forecast.brier_delta != null
+  )
   return (
     <>
       {available ? (
         <>
           <p className="watch-probability"><strong>{(forecast.itm_probability! * 100).toFixed(1)}%</strong> ITM probability</p>
           <p className="watch-muted">As of completed market session {forecast.as_of ?? "unavailable"}. {historical ? "This stored pre-expiry estimate is historical, not a current probability or expiry result." : "This is a model estimate, not an expiry result."}</p>
+        </>
+      ) : (
+        <p className="watch-unavailable"><strong>Probability unavailable.</strong> {reasonText(forecast?.reason, "Forecast preparation pending.")}</p>
+      )}
+      {hasEvidence && forecast ? (
+        <>
+          {!available && forecast.as_of ? <p className="watch-muted">Audit evidence as of completed market session {forecast.as_of}.</p> : null}
           <dl className="watch-facts">
-            <div><dt>Strategy</dt><dd>{forecast.strategy_name ?? forecast.strategy_id ?? "—"}</dd></div>
-            <div><dt>Signal</dt><dd>{forecast.signal_state ?? "—"}</dd></div>
-            <div><dt>Frozen cohort</dt><dd>{forecast.cohort_size?.toLocaleString("en-US") ?? "—"} peers</dd></div>
-            <div><dt>Fitting peers</dt><dd>{forecast.fit_peers?.toLocaleString("en-US") ?? "—"}</dd></div>
-            <div><dt>Fitting / audit observations</dt><dd>{forecast.fit_samples?.toLocaleString("en-US") ?? "—"} / {forecast.audit_samples?.toLocaleString("en-US") ?? "—"}</dd></div>
-            <div><dt>Audit peers / blocks</dt><dd>{forecast.audit_peers ?? "—"} / {forecast.audit_blocks ?? "—"}</dd></div>
-            <div><dt>Holdout model-skill uncertainty</dt><dd>{forecast.crps_skill_lower_90 == null ? "—" : `${forecast.crps_skill_lower_90.toFixed(3)} CRPS improvement lower 90% bound`}</dd></div>
-            <div><dt>Holdout Brier change</dt><dd>{forecast.brier_delta == null ? "—" : forecast.brier_delta.toFixed(4)}</dd></div>
+            {(forecast.strategy_name || forecast.strategy_id) ? <div><dt>Strategy</dt><dd>{forecast.strategy_name ?? forecast.strategy_id}</dd></div> : null}
+            {forecast.signal_state ? <div><dt>Signal</dt><dd>{forecast.signal_state}</dd></div> : null}
+            {forecast.cohort_size != null ? <div><dt>Frozen cohort</dt><dd>{forecast.cohort_size.toLocaleString("en-US")} peers</dd></div> : null}
+            {forecast.fit_peers != null ? <div><dt>Fitting peers</dt><dd>{forecast.fit_peers.toLocaleString("en-US")}</dd></div> : null}
+            {forecast.fit_samples != null && forecast.audit_samples != null ? <div><dt>Fitting / audit observations</dt><dd>{forecast.fit_samples.toLocaleString("en-US")} / {forecast.audit_samples.toLocaleString("en-US")}</dd></div> : null}
+            {forecast.audit_peers != null && forecast.audit_blocks != null ? <div><dt>Audit peers / blocks</dt><dd>{forecast.audit_peers} / {forecast.audit_blocks}</dd></div> : null}
+            {forecast.crps_skill_lower_90 != null ? <div><dt>Holdout model-skill uncertainty (CRPS lower 90% bound)</dt><dd>{forecast.crps_skill_lower_90.toFixed(4)} (needs &gt; 0)</dd></div> : null}
+            {forecast.brier_delta != null ? <div><dt>Holdout Brier change</dt><dd>{forecast.brier_delta >= 0 ? "+" : ""}{forecast.brier_delta.toFixed(6)} (needs ≤ 0)</dd></div> : null}
           </dl>
           {forecast.model_id ? <p className="watch-provenance">Model version {forecast.model_id}</p> : null}
           {forecast.source ? <p className="watch-provenance">Forecast price source: {forecast.source}</p> : null}
           {forecast.survivorship_note ? <p className="watch-limitation">{forecast.survivorship_note}</p> : null}
         </>
-      ) : (
-        <p className="watch-unavailable"><strong>Probability unavailable.</strong> {reasonText(forecast?.reason, "Forecast preparation pending.")}</p>
-      )}
+      ) : null}
     </>
   )
 }
@@ -71,8 +82,9 @@ function Forecast({ forecast, lastAvailable, expired }: { forecast: WatchForecas
   )
 }
 
-function Outcome({ outcome }: { outcome: WatchOutcome }) {
+function Outcome({ outcome, expiration }: { outcome: WatchOutcome; expiration: string }) {
   const provisional = outcome.status === "provisional" && outcome.classification != null
+  const notExpired = outcome.status === "pending" && outcome.reason === "Expiry trading session has not completed"
   return (
     <section className="watch-card-section" aria-label="Expiry result">
       <h3>Expiry · close-based result</h3>
@@ -89,6 +101,8 @@ function Outcome({ outcome }: { outcome: WatchOutcome }) {
           </dl>
           <p className="watch-muted">{outcome.terms_note ?? "Assuming standard 100-share terms."} This is not an OCC exercise or assignment decision.</p>
         </>
+      ) : notExpired ? (
+        <p className="watch-unavailable"><strong>Not expired yet.</strong> The {outcome.session_date ?? expiration} expiry trading session has not completed. The close-based result will be checked afterward.</p>
       ) : (
         <p className="watch-unavailable">
           <strong>{outcome.status === "unsupported" ? "Expiry result unsupported." : "Expiry result pending."}</strong>{" "}
@@ -125,7 +139,7 @@ export default function WatchCard({ item, deleting, deleteError, onDelete }: {
       {deleteError ? <p role="alert" className="watch-error">{deleteError}</p> : null}
       <div className="watch-card-grid">
         <Forecast forecast={item.forecast} lastAvailable={item.last_available_forecast ?? null} expired={expired} />
-        <Outcome outcome={item.outcome} />
+        <Outcome outcome={item.outcome} expiration={item.expiration} />
       </div>
     </article>
   )

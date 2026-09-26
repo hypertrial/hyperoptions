@@ -4,7 +4,6 @@ import pandas as pd
 from stocksweeper.backtest.engine import simulate
 from stocksweeper.backtest.metrics import metrics_from_returns
 from stocksweeper.config import load_settings
-from stocksweeper.pipeline.detail import _fill_marks
 
 
 def test_orders_fill_on_the_next_bar_open():
@@ -46,16 +45,3 @@ def test_open_trade_keeps_the_entry_mark_out_of_closed_stats():
     assert metrics.win_rate is None
     assert metrics.profit_factor is None
     assert metrics.exposure == 0.0
-    entry_marks = _fill_marks(8, trades[0], "entry")
-    exit_marks = _fill_marks(8, trades[0], "exit")
-    assert entry_marks[trade.entry_idx] == trade.entry_price
-    assert all(mark is None for mark in exit_marks)
-    shown = [item for item in trades[0] if item.closed and item.exit_idx < 8]
-    assert shown == []
-    side = "flat"
-    for entry, exit_mark in zip(entry_marks, exit_marks, strict=True):
-        if entry is not None:
-            side = "long"
-        if exit_mark is not None:
-            side = "flat"
-    assert side == "long"

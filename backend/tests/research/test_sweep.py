@@ -3,8 +3,6 @@ import pandas as pd
 
 from stocksweeper.backtest.engine import simulate, simulate_one
 from stocksweeper.config import load_settings
-from stocksweeper.pipeline.sweep import _cross
-from stocksweeper.validation.robustness import cross_ticker_score
 from stocksweeper.validation.walkforward import fold_metrics, fold_windows, reoptimized
 
 
@@ -63,73 +61,3 @@ def test_reoptimized_picks_the_best_in_sample_column():
     picked = reoptimized(in_sample, out_sharpe, out_return, {"trend": [0, 1], "other": []})
     assert picked["trend"] == [(1, 1, 0.4, 0.02)]
     assert picked["other"] == []
-
-
-def test_cross_score_uses_only_passing_positive_sharpe_rows():
-    settings = load_settings().model_copy(
-        update={"cross_ticker": load_settings().cross_ticker.model_copy(update={"min_tickers": 1})}
-    )
-    rows = [
-        _row("alpha", "IREN", rejected=False, score=40.0, sharpe=1.0),
-        _row("alpha", "CIFR", rejected=True, score=10.0, sharpe=0.5),
-        _row("alpha", "WULF", rejected=False, score=20.0, sharpe=-0.2),
-    ]
-    scored = _cross("run", rows, settings, 1)
-    assert len(scored) == 1
-    assert scored[0]["qualified"] is True
-    assert scored[0]["cross_score"] == 40.0
-
-
-def test_limited_history_does_not_veto_cross_ticker():
-    settings = load_settings()
-    rows = [
-        _row("alpha", "IREN", rejected=False, score=40.0, sharpe=1.0),
-        _row("alpha", "CIFR", rejected=False, score=30.0, sharpe=0.8),
-        _row("alpha", "WULF", rejected=False, score=20.0, sharpe=0.4),
-        _row("alpha", "NBIS", rejected=True, score=0.0, sharpe=-0.2, limited=True),
-    ]
-    scored = _cross("run", rows, settings, 3)
-    assert scored[0]["qualified"] is True
-    assert scored[0]["cross_score"] == cross_ticker_score([40.0, 30.0, 20.0], 0.5)
-
-
-def test_a_full_history_failure_blocks_cross_ticker():
-    settings = load_settings()
-    rows = [
-        _row("alpha", "IREN", rejected=True, score=0.0, sharpe=-0.1),
-        _row("alpha", "CIFR", rejected=False, score=30.0, sharpe=0.8),
-        _row("alpha", "WULF", rejected=False, score=20.0, sharpe=0.4),
-        _row("alpha", "NBIS", rejected=True, score=0.0, sharpe=-0.2, limited=True),
-    ]
-    scored = _cross("run", rows, settings, 3)
-    assert scored[0]["qualified"] is False
-
-
-def test_all_limited_tickers_qualify_on_one_pass():
-    settings = load_settings()
-    rows = [
-        _row("alpha", "NBIS", rejected=False, score=12.0, sharpe=0.3, limited=True),
-        _row("alpha", "CIFR", rejected=True, score=0.0, sharpe=-0.2, limited=True),
-    ]
-    scored = _cross("run", rows, settings, 0)
-    assert scored[0]["qualified"] is True
-    assert scored[0]["cross_score"] == 12.0
-
-
-def _row(
-    strategy_id: str,
-    ticker: str,
-    *,
-    rejected: bool,
-    score: float,
-    sharpe: float,
-    limited: bool = False,
-) -> dict:
-    return {
-        "strategy_id": strategy_id,
-        "ticker": ticker,
-        "rejected": rejected,
-        "score": score,
-        "val_sharpe": sharpe,
-        "limited": limited,
-    }

@@ -1,1 +1,1 @@
-"""Sweep orchestration and the in-process job registry."""
+"""Forecast selection evaluation and the bounded background job registry."""

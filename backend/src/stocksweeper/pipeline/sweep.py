@@ -1,12 +1,10 @@
-"""Generate strategies, backtest every ticker, score robustness, and store the run."""
+"""Evaluate the fixed strategy catalog for watchlist forecast selection."""
 
 from __future__ import annotations
 
 import json
 import math
-import uuid
 from collections import defaultdict
-from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -16,20 +14,14 @@ from stocksweeper.backtest.engine import simulate
 from stocksweeper.backtest.metrics import Metrics, buy_and_hold_returns, segment_metrics
 from stocksweeper.config import Settings
 from stocksweeper.data.store import MarketStore, describe_bars, effective_ohlcv
-from stocksweeper.data.synthetic import synthetic_ohlcv
 from stocksweeper.indicators.engine import ensure_indicators
 from stocksweeper.indicators.names import IndicatorRequest
-from stocksweeper.indicators.registry import curated_requests
-from stocksweeper.storage.repo import Repository, utc_now
 from stocksweeper.strategy.compiler import compile_batch
-from stocksweeper.strategy.generator import generate_strategies, requests_for
 from stocksweeper.strategy.model import Strategy
-from stocksweeper.validation.robustness import cross_ticker_score, score_strategy
+from stocksweeper.validation.robustness import score_strategy
 from stocksweeper.validation.sensitivity import stability_scores
 from stocksweeper.validation.splits import split_segments
 from stocksweeper.validation.walkforward import consistency, fold_metrics, fold_windows, reoptimized
-
-Progress = Callable[[float, str], None]
 
 
 @dataclass
@@ -49,113 +41,10 @@ class TickerRows:
 
 
 METRIC_FIELDS = (
-    "cagr",
-    "total_return",
-    "sharpe",
-    "sortino",
-    "max_drawdown",
-    "calmar",
-    "win_rate",
-    "profit_factor",
-    "avg_trade",
-    "median_trade",
-    "n_trades",
-    "exposure",
-    "avg_holding_period",
+    "cagr", "total_return", "sharpe", "sortino", "max_drawdown", "calmar",
+    "win_rate", "profit_factor", "avg_trade", "median_trade", "n_trades",
+    "exposure", "avg_holding_period",
 )
-
-
-def run_sweep(
-    settings: Settings,
-    progress: Progress | None = None,
-    *,
-    synthetic: bool = False,
-    synthetic_bars: int = 480,
-) -> str:
-    """Run one research sweep. Returns the new run id.
-
-    Synthetic mode writes deterministic bars and loosens the rejection gates so
-    a local demo has something to rank. Real sweeps keep the configured gates,
-    and they never download data on their own.
-    """
-    if synthetic:
-        settings = _loosen(settings)
-        _write_synthetic(settings, synthetic_bars)
-    store = MarketStore(settings.resolved_data_dir())
-    tickers = list(settings.market.tickers)
-    for ticker in tickers:
-        effective_ohlcv(store, ticker, settings)
-    report(progress, 0.02, "generating strategies")
-    strategies = generate_strategies(settings.generator.max_strategies, settings.generator.seed)
-    if not strategies:
-        raise RuntimeError("the generator produced no strategies")
-    indicator_requests = [*requests_for(strategies), *curated_requests()]
-    run_id = uuid.uuid4().hex[:12]
-    result_rows: list[dict[str, object]] = []
-    fold_rows: list[dict[str, object]] = []
-    reopt_rows: list[dict[str, object]] = []
-    robust_rows: list[dict[str, object]] = []
-    benchmark_rows: list[dict[str, object]] = []
-    qualified_inputs: list[dict[str, object]] = []
-    ticker_rows: list[dict[str, object]] = []
-
-    for index, ticker in enumerate(tickers):
-        report(progress, 0.05 + 0.9 * index / len(tickers), f"backtesting {ticker}")
-        evaluated = _evaluate_ticker(
-            settings,
-            store,
-            ticker,
-            strategies,
-            indicator_requests,
-            run_id,
-        )
-        result_rows.extend(evaluated.results)
-        fold_rows.extend(evaluated.folds)
-        reopt_rows.extend(evaluated.reopt)
-        robust_rows.extend(evaluated.robust)
-        qualified_inputs.extend(evaluated.qualified)
-        benchmark_rows.extend(evaluated.benchmarks)
-        ticker_rows.append(
-            {
-                "run_id": run_id,
-                "ticker": ticker,
-                "n_bars": evaluated.n_bars,
-                "first_ts": evaluated.first_ts,
-                "last_ts": evaluated.last_ts,
-                "bars_hash": evaluated.bars_hash,
-                "limited_history": evaluated.limited,
-                "survivors": evaluated.survivors,
-            }
-        )
-
-    report(progress, 0.96, "scoring cross-ticker robustness")
-    full_history = sum(1 for row in ticker_rows if not row["limited_history"])
-    cross_rows = _cross(run_id, qualified_inputs, settings, int(full_history))
-    report(progress, 0.98, "writing results")
-    Repository(settings.resolved_data_dir()).save_sweep(
-        {
-            "runs": [
-                {
-                    "id": run_id,
-                    "created_at": utc_now(),
-                    "config_json": json.dumps(settings.model_dump(mode="json"), default=str),
-                    "status": "completed",
-                    "strategy_count": len(strategies),
-                    "ticker_count": len(tickers),
-                }
-            ],
-            "strategies": [_strategy_row(strategy) for strategy in strategies],
-            "results": result_rows,
-            "robustness": robust_rows,
-            "walk_forward": fold_rows,
-            "reopt": reopt_rows,
-            "cross_ticker": cross_rows,
-            "benchmarks": benchmark_rows,
-            "run_tickers": ticker_rows,
-        }
-    )
-    report(progress, 1.0, "completed")
-    return run_id
 
 
 def _evaluate_ticker(
@@ -166,7 +55,7 @@ def _evaluate_ticker(
     indicator_requests: list[IndicatorRequest],
     run_id: str,
 ) -> TickerRows:
-    """Backtest one ticker and return the rows a sweep stores for it."""
+    """Score candidate rules against one ticker's selection history."""
     periods = settings.backtest.periods_per_year
     ohlcv = effective_ohlcv(store, ticker, settings)
     n_bars, first_ts, last_ts, bars_hash = describe_bars(ohlcv)
@@ -299,86 +188,6 @@ def _evaluate_ticker(
     return rows
 
 
-def _write_synthetic(settings: Settings, bars: int) -> None:
-    store = MarketStore(settings.resolved_data_dir())
-    for index, ticker in enumerate(settings.market.tickers):
-        bars_frame = synthetic_ohlcv(bars, seed=1000 + index, ticker=ticker)
-        store.write(bars_frame, ticker, settings.market.interval)
-
-
-def _loosen(settings: Settings) -> Settings:
-    return settings.model_copy(
-        update={
-            "gates": settings.gates.model_copy(
-                update={
-                    "min_trades": 1,
-                    "min_val_trades": 1,
-                    "min_degradation": 0.0,
-                    "min_stability": 0.0,
-                    "max_drawdown": 0.95,
-                }
-            )
-        }
-    )
-
-
-def _cross(
-    run_id: str,
-    rows: list[dict[str, object]],
-    settings: Settings,
-    full_history_tickers: int,
-) -> list[dict[str, object]]:
-    """Qualify on full-history tickers. Limited-history names still affect the score."""
-    required = min(settings.cross_ticker.min_tickers, full_history_tickers)
-    grouped: dict[str, list[dict[str, object]]] = defaultdict(list)
-    for row in rows:
-        grouped[str(row["strategy_id"])].append(row)
-    payload: list[dict[str, object]] = []
-    for strategy_id, items in grouped.items():
-        good = [
-            item
-            for item in items
-            if not item["rejected"] and _required_float(item["val_sharpe"], default=0.0) > 0
-        ]
-        full_passes = [item for item in good if not item.get("limited")]
-        if full_history_tickers == 0:
-            qualified = len(good) >= 1
-        else:
-            qualified = len(full_passes) >= required
-        per_ticker = {
-            str(item["ticker"]): {
-                "score": item["score"],
-                "rejected": item["rejected"],
-                "sharpe": item["val_sharpe"],
-                "limited": bool(item.get("limited")),
-            }
-            for item in items
-        }
-        payload.append(
-            {
-                "run_id": run_id,
-                "strategy_id": strategy_id,
-                "cross_score": cross_ticker_score(
-                    [_required_float(item["score"]) for item in good],
-                    settings.cross_ticker.penalty_k,
-                ),
-                "per_ticker_json": json.dumps(per_ticker),
-                "qualified": qualified,
-            }
-        )
-    return payload
-
-
-def _strategy_row(strategy: Strategy) -> dict[str, object]:
-    return {
-        "id": strategy.id,
-        "name": strategy.name,
-        "family": strategy.family,
-        "definition_json": strategy.model_dump_json(),
-        "signals": strategy.signals,
-    }
-
-
 def _metrics(metrics: Metrics) -> dict[str, object]:
     return {field: getattr(metrics, field) for field in METRIC_FIELDS}
 
@@ -399,8 +208,3 @@ def _number(value: object) -> float | None:
     if not math.isfinite(number):
         return None
     return number
-
-
-def report(progress: Progress | None, fraction: float, message: str) -> None:
-    if progress is not None:
-        progress(fraction, message)

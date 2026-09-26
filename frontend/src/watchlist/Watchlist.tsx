@@ -135,9 +135,9 @@ export default function Watchlist({ chainUrl = "/" }: { chainUrl?: string }) {
     <main id="main-content" className="watchlist-page">
       <header className="watchlist-header">
         <div>
-          <p className="eyebrow">StockSweeper · selected contracts</p>
+          <p className="eyebrow">Selected option contracts</p>
           <h1>Watchlist</h1>
-          <p>Research items only. Watches are not trades or positions; no holdings or premiums are tracked.</p>
+          <p>Watches are for tracking contracts, not trades or positions. No holdings or premiums are tracked.</p>
           <p>Choose contracts from the <Link to={chainUrl}>option chain</Link>. Forecasts use completed sessions and appear only when validation passes.</p>
         </div>
         <Button type="button" variant="outline" disabled={refreshing || jobBusy} onClick={() => { void refresh() }}>

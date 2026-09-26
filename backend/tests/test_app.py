@@ -62,6 +62,22 @@ def test_prefetch_can_stay_off_until_a_request() -> None:
         assert calls["n"] == 1
 
 
+def test_manual_research_routes_are_not_exposed() -> None:
+    app = create_app(
+        client_factory=_client_factory(_screener, {"n": 0}),
+        prefetch_universe=False,
+    )
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        paths = client.get("/openapi.json").json()["paths"]
+        assert not any(path.startswith("/api/research/") for path in paths)
+        assert "/api/jobs/{job_id}" in paths
+        assert client.get("/api/research/config").status_code == 404
+        assert client.post(
+            "/api/research/backtest/run", json={},
+            headers={"Origin": "http://127.0.0.1:5173"},
+        ).status_code == 404
+
+
 @pytest.mark.asyncio
 async def test_shutdown_during_a_slow_universe_fetch_finishes_promptly() -> None:
     started = asyncio.Event()

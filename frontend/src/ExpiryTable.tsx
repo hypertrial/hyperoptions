@@ -101,7 +101,7 @@ function DesktopResults({
                 </th>
               )
             })}
-            <th scope="col" title="Add this contract to the research watchlist">Watch</th>
+            <th scope="col" title="Add this contract to the watchlist">Watch</th>
             <th scope="col" title="Copy this row as a markdown table for ChatGPT">Copy</th>
           </tr>
         </thead>

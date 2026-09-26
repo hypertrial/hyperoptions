@@ -10,7 +10,7 @@ from stocksweeper.forecast.models import ForecastSnapshot
 from stocksweeper.forecast.repository import ForecastRepository
 
 
-def test_forecast_evidence_and_versions_are_separate_from_research_runs(tmp_path) -> None:
+def test_forecast_evidence_and_versions_initialize_without_manual_run_tables(tmp_path) -> None:
     repository = ForecastRepository(tmp_path)
     repository.initialize()
     repository.save_selection("AAPL", "prefix-v1", "catalog-v1", {"strategy_id": "rule-1"})
@@ -60,9 +60,23 @@ def test_forecast_evidence_and_versions_are_separate_from_research_runs(tmp_path
     assert repository.get_build("2026-09", 10, "candidates-v1", "catalog-v1") == qualified
 
     with duckdb.connect(str(tmp_path / "results.duckdb"), read_only=True) as connection:
-        assert connection.execute("SELECT count(*) FROM runs").fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT count(*) FROM information_schema.tables WHERE table_name = 'runs'"
+        ).fetchone()[0] == 0
         assert connection.execute("SELECT count(*) FROM forecast_model_versions").fetchone()[0] == 2
         assert connection.execute("SELECT count(*) FROM forecast_evidence").fetchone()[0] == 2
+
+
+def test_existing_manual_run_table_is_preserved_for_existing_local_data(tmp_path) -> None:
+    path = tmp_path / "results.duckdb"
+    with duckdb.connect(str(path)) as connection:
+        connection.execute("CREATE TABLE runs (id VARCHAR PRIMARY KEY)")
+        connection.execute("INSERT INTO runs VALUES ('old-run')")
+
+    repository = ForecastRepository(tmp_path)
+    repository.initialize()
+    with duckdb.connect(str(path), read_only=True) as connection:
+        assert connection.execute("SELECT id FROM runs").fetchall() == [("old-run",)]
 
 
 def test_builds_append_revisions_and_reject_model_identity_collision(tmp_path) -> None:

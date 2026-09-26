@@ -64,7 +64,7 @@ it("opens the watchlist deep link with a dated forecast and separate provisional
 
   expect(await screen.findByRole("heading", { name: "Watchlist" })).toBeTruthy()
   expect(screen.getByRole("link", { name: "Watchlist" }).getAttribute("aria-current")).toBe("page")
-  expect(screen.getByText(/Research items only/)).toBeTruthy()
+  expect(screen.getByText(/Watches are for tracking contracts/)).toBeTruthy()
   await screen.findByRole("region", { name: "Pre-expiry forecast" })
   expect(screen.getByRole("region", { name: "Pre-expiry forecast" }).textContent).toContain("63.8% ITM probability")
   expect(screen.getByRole("region", { name: "Pre-expiry forecast" }).textContent).toContain("2026-09-17")
@@ -117,6 +117,47 @@ it("shows unavailable evidence and tracks a background refresh without inventing
   await waitFor(() => expect(screen.getByRole("progressbar", { name: "Watchlist refresh progress" }).getAttribute("aria-valuenow")).toBe("40"))
   expect(screen.getByText(/Preparing forecast/)).toBeTruthy()
   expect(fetchMock).toHaveBeenCalledWith("/api/watchlist/refresh", expect.objectContaining({ method: "POST", body: "{}" }))
+})
+
+it("explains failed audit gates and future expiry without publishing a probability", async () => {
+  window.history.replaceState(null, "", "/watchlist")
+  const failed: WatchItem = {
+    ...watched,
+    expiration: "2026-10-16",
+    forecast: {
+      ...watched.forecast!, status: "unavailable", itm_probability: null,
+      reason: "crps_audit_failed", as_of: "2026-09-25", strategy_name: "ROC",
+      cohort_size: 100, fit_peers: 75, audit_peers: 25, audit_blocks: 50,
+      fit_samples: 16189, audit_samples: 584,
+      crps_skill_lower_90: -0.0033024768, brier_delta: 0.0007887774,
+    },
+    outcome: {
+      ...watched.outcome, status: "pending", classification: null,
+      reason: "Expiry trading session has not completed", session_date: "2026-10-16",
+      close_exact: null,
+    },
+  }
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ items: [failed] }))))
+
+  render(<App />)
+  const forecast = await screen.findByRole("region", { name: "Pre-expiry forecast" })
+  expect(forecast.textContent).toContain("Probability unavailable")
+  expect(forecast.textContent).toContain("holdout audit")
+  expect(forecast.textContent).toContain("2026-09-25")
+  expect(forecast.textContent).toContain("ROC")
+  expect(forecast.textContent).toContain("75")
+  expect(forecast.textContent).toContain("25 / 50")
+  expect(forecast.textContent).toContain("16,189 / 584")
+  expect(forecast.textContent).toContain("-0.0033")
+  expect(forecast.textContent).toContain("+0.000789")
+  expect(forecast.textContent).toContain("needs > 0")
+  expect(forecast.textContent).toContain("needs ≤ 0")
+  expect(forecast.textContent).not.toContain("crps audit failed")
+  expect(forecast.textContent).not.toContain("63.8%")
+  const expiry = screen.getByRole("region", { name: "Expiry result" })
+  expect(expiry.textContent).toContain("Not expired yet")
+  expect(expiry.textContent).toContain("2026-10-16")
+  expect(expiry.textContent).not.toContain("Awaiting first expiry check")
 })
 
 it("discovers an automatic refresh and shows its result without a page reload", async () => {
@@ -201,7 +242,7 @@ it("labels a stored forecast historical while the expiry close is still pending"
   expect(screen.getByRole("region", { name: "Expiry result" }).textContent).toContain("Expiry result pending")
 })
 
-it("removes a watched research item through the watchlist API", async () => {
+it("removes a watched contract through the watchlist API", async () => {
   window.history.replaceState(null, "", "/watchlist")
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     if (String(input) === "/api/watchlist/watch-1" && init?.method === "DELETE") return new Response(null, { status: 204 })

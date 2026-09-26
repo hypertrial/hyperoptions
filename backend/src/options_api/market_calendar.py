@@ -1,4 +1,4 @@
-"""Completed US equity sessions for option research and indicative outcomes."""
+"""Completed US equity sessions for watch forecasts and indicative outcomes."""
 
 from __future__ import annotations
 

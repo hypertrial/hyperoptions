@@ -141,8 +141,7 @@ def require_ohlcv(store: MarketStore, ticker: str, interval: str = "1d") -> pl.D
     frame = store.read(ticker, interval)
     if frame is None or frame.is_empty():
         raise FileNotFoundError(
-            f"no local bars for {ticker}. Update data before backtesting; "
-            "nothing is downloaded implicitly."
+            f"no local bars for {ticker}. Watchlist forecasts require prepared price history."
         )
     return frame
 

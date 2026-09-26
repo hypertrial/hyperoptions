@@ -123,3 +123,16 @@ test("opens a watchlist deep link with separate forecast and result and tracks r
   completeJob = true
   await expect(page.getByText("Watchlist updated.")).toBeVisible()
 })
+
+test("retired research deep links open the watchlist without research requests", async ({ page }) => {
+  const researchRequests: string[] = []
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/research/")) {
+      researchRequests.push(request.url())
+    }
+  })
+  await page.goto("/research/strategies/old-rule?ticker=IREN&run=old")
+  await expect(page).toHaveURL(/\/watchlist$/)
+  await expect(page.getByRole("heading", { name: "Watchlist" })).toBeVisible()
+  expect(researchRequests).toEqual([])
+})

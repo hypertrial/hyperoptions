@@ -45,7 +45,7 @@ class DataDirectoryLock:
 
 @contextmanager
 def single_instance(data_dir: Path) -> Iterator[DataDirectoryLock]:
-    """Keep one app process attached to a local research data directory."""
+    """Keep one app process attached to the local watchlist data directory."""
     data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     data_dir.chmod(0o700)
     descriptor = os.open(data_dir / ".app.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
@@ -55,7 +55,7 @@ def single_instance(data_dir: Path) -> Iterator[DataDirectoryLock]:
         try:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            raise RuntimeError(f"research data directory is in use: {data_dir}") from exc
+            raise RuntimeError(f"watchlist data directory is in use: {data_dir}") from exc
         lock = DataDirectoryLock(handle)
         yield lock
     finally:

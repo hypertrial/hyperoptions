@@ -336,7 +336,11 @@ class WatchlistService:
         self.forecast: Any = None
 
     def item(
-        self, record: WatchRecord, outcomes: dict[str, OutcomeView] | None = None
+        self,
+        record: WatchRecord,
+        outcomes: dict[str, OutcomeView] | None = None,
+        *,
+        as_of: datetime | None = None,
     ) -> WatchItem:
         def belongs_to_watch(snapshot: Any) -> bool:
             created = snapshot.created_at
@@ -351,9 +355,17 @@ class WatchlistService:
             outcomes = self.store.latest_outcomes()
         outcome = outcomes.get(record.id)
         if outcome is None:
+            completed = expiry_session_completed(
+                record.expiration, as_of or datetime.now(UTC)
+            )
             outcome = OutcomeView(
                 status="pending",
-                reason="Awaiting first expiry check",
+                reason=(
+                    "Awaiting first expiry close check"
+                    if completed
+                    else "Expiry trading session has not completed"
+                ),
+                session_date=session_on_or_before(record.expiration),
             )
         forecast = ForecastView()
         last_available_forecast = None
@@ -395,9 +407,9 @@ class WatchlistService:
             outcome=outcome,
         )
 
-    def items(self) -> list[WatchItem]:
+    def items(self, *, as_of: datetime | None = None) -> list[WatchItem]:
         outcomes = self.store.latest_outcomes()
-        return [self.item(record, outcomes) for record in self.store.list()]
+        return [self.item(record, outcomes, as_of=as_of) for record in self.store.list()]
 
     def queue_refresh(
         self,
@@ -454,7 +466,7 @@ class WatchlistService:
         coalesce_key = None if force else f"watch_refresh:{submitted_session}:{batch_hash}"
 
         def work(progress) -> None:
-            # A research sweep can hold the worker past a close or corporate
+            # Earlier watch preparation can hold the worker past a close or corporate
             # action. Resolve prices and evidence at execution, not submission.
             execution_as_of = clock() if clock is not None else as_of
             if execution_as_of.tzinfo is None:
@@ -539,6 +551,14 @@ class WatchlistService:
 router = APIRouter()
 
 
+@router.get("/api/jobs/{job_id}", response_model=Job)
+def get_job(job_id: str, request: Request) -> Job:
+    found = request.app.state.jobs.get(job_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    return found
+
+
 def _now(request: Request) -> datetime:
     configured = request.app.state.clock()
     if configured.tzinfo is None:
@@ -567,7 +587,7 @@ def _queue(request: Request, *, force: bool = False, retry_pending: bool = False
 @router.get("/api/watchlist", response_model=WatchListResponse)
 async def get_watchlist(request: Request) -> WatchListResponse:
     return WatchListResponse(
-        items=request.app.state.watchlist.items(),
+        items=request.app.state.watchlist.items(as_of=_now(request)),
         active_job=request.app.state.jobs.active("watch_refresh"),
     )
 
@@ -612,7 +632,9 @@ async def add_watch(request: Request, body: WatchCreate) -> WatchCreateResponse:
     record, created = store.add(body.watch_key, ticker, root, side, expiry, strike, _now(request))
     job = _queue(request) if created else None
     return WatchCreateResponse(
-        item=request.app.state.watchlist.item(record), created=created, job=job
+        item=request.app.state.watchlist.item(record, as_of=_now(request)),
+        created=created,
+        job=job,
     )
 
 

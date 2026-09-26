@@ -1,4 +1,4 @@
-"""Local technical strategy backtester."""
+"""Local strategy engine for watched option forecasts."""
 
 from __future__ import annotations
 

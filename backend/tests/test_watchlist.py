@@ -396,7 +396,7 @@ def test_queued_refresh_uses_execution_time_after_expiry_close(tmp_path: Path) -
     )
     jobs = JobManager(tmp_path)
     released = Event()
-    jobs.submit("research", lambda progress: released.wait(2.0) and None)
+    jobs.submit("watch_refresh", lambda progress: released.wait(2.0) and None)
     current = [datetime(2026, 9, 18, 19, tzinfo=UTC)]
     queued = watchlist.queue_refresh(
         jobs, as_of=current[0], candidates=[], clock=lambda: current[0]
@@ -415,7 +415,7 @@ def test_watch_added_while_refresh_is_queued_gets_its_own_followup(tmp_path: Pat
     watchlist = WatchlistService(tmp_path)
     jobs = JobManager(tmp_path)
     released = Event()
-    jobs.submit("research", lambda progress: released.wait(2.0) and None)
+    jobs.submit("watch_refresh", lambda progress: released.wait(2.0) and None)
     now = datetime(2026, 9, 11, 20, 31, tzinfo=UTC)
     first, _ = watchlist.store.add(
         "w1:IREN:IREN:call:2026-09-18:50.000", "IREN", "IREN", "call",
@@ -554,6 +554,24 @@ def test_expiry_keeps_dated_available_forecast_beside_latest_unavailable(
     assert item.last_available_forecast.itm_probability == 0.62
     assert item.last_available_forecast.as_of == date(2026, 9, 16)
     assert item.last_available_forecast.historical is True
+
+
+def test_missing_outcome_explains_expiry_timing(tmp_path: Path) -> None:
+    watchlist = WatchlistService(tmp_path)
+    record, _ = watchlist.store.add(
+        "w1:IREN:IREN:call:2026-10-16:41.500", "IREN", "IREN", "call",
+        date(2026, 10, 16), D("41.5"), datetime(2026, 9, 26, tzinfo=UTC),
+    )
+
+    before = watchlist.item(record, as_of=datetime(2026, 10, 16, 19, tzinfo=UTC))
+    assert before.outcome.status == "pending"
+    assert before.outcome.reason == "Expiry trading session has not completed"
+    assert before.outcome.session_date == date(2026, 10, 16)
+
+    after = watchlist.item(record, as_of=datetime(2026, 10, 16, 22, tzinfo=UTC))
+    assert after.outcome.status == "pending"
+    assert after.outcome.reason == "Awaiting first expiry close check"
+    assert after.outcome.session_date == date(2026, 10, 16)
 
 
 def test_readded_watch_does_not_inherit_old_forecast_snapshot(tmp_path: Path) -> None:

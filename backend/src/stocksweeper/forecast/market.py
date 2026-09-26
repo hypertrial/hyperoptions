@@ -1,4 +1,4 @@
-"""Dividend-unadjusted, split-normalized daily prices kept apart from research bars."""
+"""Dividend-unadjusted, split-normalized daily prices for watchlist forecasts."""
 
 from __future__ import annotations
 

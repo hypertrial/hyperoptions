@@ -1,4 +1,4 @@
-"""One durable local research job at a time."""
+"""One durable local watchlist job at a time."""
 
 from __future__ import annotations
 
@@ -74,13 +74,13 @@ class JobManager:
     def submit(self, kind: str, worker: Worker, *, coalesce_key: str | None = None) -> Job:
         with self._lock:
             if self._closing:
-                raise JobBusy("research jobs are shutting down")
+                raise JobBusy("background jobs are shutting down")
             if coalesce_key is not None and coalesce_key in self._keys:
                 existing = self.get(self._keys[coalesce_key])
                 if existing is not None:
                     return existing
             if len(self._queued) >= 4:
-                raise JobBusy("research job queue is full")
+                raise JobBusy("background job queue is full")
             job = Job(id=uuid.uuid4().hex[:12], kind=kind, state="queued", message="queued")
             now = datetime.now(UTC)
             with connect(self.path) as connection:
@@ -143,8 +143,8 @@ class JobManager:
             result = worker(progress)
             self._update(job_id, state="succeeded", progress=1, message="done", run_id=result)
         except Exception:
-            LOG.exception("research job %s failed", job_id)
-            self._update(job_id, state="failed", error="research job failed", message="failed")
+            LOG.exception("background job %s failed", job_id)
+            self._update(job_id, state="failed", error="background job failed", message="failed")
 
     def _update(self, job_id: str, **changes: object) -> None:
         changes["updated_at"] = datetime.now(UTC)

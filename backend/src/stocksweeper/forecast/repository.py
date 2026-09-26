@@ -1,4 +1,4 @@
-"""Durable forecast versions and evidence, separate from research run tables."""
+"""Durable watchlist forecast versions and evidence."""
 
 from __future__ import annotations
 
