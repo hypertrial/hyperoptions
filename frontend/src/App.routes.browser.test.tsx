@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
 
 import App from "./App"
@@ -31,7 +31,7 @@ it("opens a research deep link and requests namespaced data", async () => {
 
   expect(await screen.findByRole("heading", { name: "Strategy leaderboard" })).toBeTruthy()
   expect(screen.getByRole("link", { name: "Option chain" }).getAttribute("href")).toBe("/")
-  expect(screen.getByRole("link", { name: "Research" }).getAttribute("aria-current")).toBe("page")
+  expect(within(screen.getByRole("navigation", { name: "Workstation" })).queryByRole("link", { name: "Research" })).toBeNull()
   await waitFor(() => expect(fetchMock).toHaveBeenCalled())
   expect(fetchMock.mock.calls.every(([path]) => String(path).startsWith("/api/research/"))).toBe(true)
 })

@@ -27,11 +27,6 @@ function Workspace() {
       </a>
       <nav className="workspace-nav" aria-label="Workstation">
         <Link aria-current={location.pathname === "/" ? "page" : undefined} to={lastChainUrl}>Option chain</Link>
-        <Link
-          aria-current={research ? "page" : undefined}
-          to="/research"
-          onClick={rememberChainUrl}
-        >Research</Link>
         <Link aria-current={watchlist ? "page" : undefined} to="/watchlist" onClick={rememberChainUrl}>Watchlist</Link>
       </nav>
       <Routes>
