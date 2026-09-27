@@ -21,6 +21,7 @@ it("keeps the live chain query on the option chain link", () => {
   expect(href).toContain("t=CIFR")
   expect(href).toContain("side=put")
   expect(href).toContain("m=otm")
+  expect(document.title).toBe("Option chain · HyperOptions")
 })
 
 it("restores that chain query after opening the watchlist", async () => {
@@ -33,10 +34,12 @@ it("restores that chain query after opening the watchlist", async () => {
   render(<App />)
   fireEvent.click(screen.getByRole("link", { name: "Watchlist" }))
   expect(await screen.findByRole("heading", { name: "Watchlist" })).toBeTruthy()
+  expect(document.title).toBe("Watchlist · HyperOptions")
   fireEvent.click(screen.getByRole("link", { name: "Option chain" }))
   await waitFor(() => expect(window.location.search).toContain("t=CIFR"))
   expect(window.location.search).toContain("side=put")
   expect(window.location.search).toContain("m=otm")
+  expect(document.title).toBe("Option chain · HyperOptions")
 })
 
 it.each([
@@ -68,4 +71,5 @@ it("offers navigation when a route does not exist", () => {
   expect(main.textContent).toContain("Page not found")
   expect(main.querySelector('a[href="/"]')?.textContent).toContain("option chain")
   expect(main.querySelector('a[href="/watchlist"]')?.textContent).toContain("watchlist")
+  expect(document.title).toBe("Page not found · HyperOptions")
 })
