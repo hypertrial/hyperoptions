@@ -29,9 +29,9 @@ function sessionState(page: ReturnType<typeof useChainPage>["page"]): SessionInf
   const raw = page?.market_session?.trim()
   if (!raw) return { label: "Session unavailable", state: "unknown", detail: null }
   const normalized = raw.toLowerCase()
-  if (OPEN_SESSIONS.has(normalized)) return { label: "Market open", state: "open", detail: null }
-  if (normalized === "closed") return { label: "Market closed", state: "closed", detail: null }
-  return { label: "Market closed", state: "closed", detail: raw }
+  if (OPEN_SESSIONS.has(normalized)) return { label: "Market open at fetch", state: "open", detail: null }
+  if (normalized === "closed") return { label: "Market closed at fetch", state: "closed", detail: null }
+  return { label: "Market closed at fetch", state: "closed", detail: raw }
 }
 
 function emptyCopy(ticker: string, side: Side, moneyness: Moneyness, optionsAvailable: boolean, priced: boolean) {

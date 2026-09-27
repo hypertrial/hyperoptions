@@ -54,6 +54,30 @@ test("labels the browser-local fetch time beside the ET quote time", async ({ br
   }
 })
 
+test("reveals overflowing tablet metrics to pointer and keyboard users", async ({ page }) => {
+  await page.setViewportSize({ width: 768, height: 900 })
+  await page.goto("/")
+  const scroll = page.locator(".table-scroll").first()
+  await expect(scroll).toBeVisible()
+  await expect(page.getByText("Scroll table sideways to view more metrics").first()).toBeVisible()
+  await expect(scroll).toHaveAttribute("tabindex", "0")
+  const actionBounds = await scroll.evaluate((node) => {
+    const row = node.querySelector("tbody tr")!
+    return {
+      watchButtonRight: row.querySelector(".watch-cell button")!.getBoundingClientRect().right,
+      copyCellLeft: row.querySelector(".copy-cell")!.getBoundingClientRect().left,
+    }
+  })
+  expect(actionBounds.watchButtonRight).toBeLessThanOrEqual(actionBounds.copyCellLeft)
+  await scroll.focus()
+  await page.keyboard.press("ArrowRight")
+  await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0)
+
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await expect(page.getByText("Scroll table sideways to view more metrics")).toHaveCount(0)
+  await expect(scroll).not.toHaveAttribute("tabindex", "0")
+})
+
 test("surfaces a controlled provider error and keeps Nasdaq out of the browser", async ({ page }) => {
   const nasdaqHits = watchNasdaq(page)
   await page.goto("/")
@@ -189,7 +213,7 @@ for (const viewport of [
     } else {
       const trigger = page.getByRole("button", { name: "Settings", exact: true })
       await expect(trigger).toBeVisible()
-      await expect(page.locator(".mobile-market-quote .market-session-status strong")).toHaveText(/^(Open|Closed|Unavailable)$/)
+      await expect(page.locator(".mobile-market-quote .market-session-status strong")).toHaveText(/^(Open at fetch|Closed at fetch|Unavailable)$/)
       await trigger.click()
       await expect(page.getByRole("heading", { name: "Market setup" })).toBeVisible()
       const putStrategy = page.getByRole("radio", { name: "Cash-secured puts" })

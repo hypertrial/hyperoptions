@@ -1,6 +1,6 @@
 import { expect, it } from "vitest"
 
-import { preferredOddsKind, predictiveAvailable, quoteSupportLabel } from "./marketOdds"
+import { oddsLabel, preferredOddsKind, predictiveAvailable, quoteSupportLabel } from "./marketOdds"
 import type { MarketOddsView, PredictiveOddsView } from "./generated/types.gen"
 
 it("keeps market-implied odds primary and accepts predictive odds only as a complete partition", () => {
@@ -20,4 +20,11 @@ it("labels quote tightness without treating malformed scores as evidence", () =>
   expect(quoteSupportLabel(odds)).toBe("Quote tightness 70/100 · ITM bounds 50.0%–80.0%")
   expect(quoteSupportLabel({ ...odds, quote_support_score: 101 })).toBeNull()
   expect(quoteSupportLabel({ ...odds, bound_low_pct_tenths: 900 })).toBeNull()
+})
+
+it("includes both unavailable methods in a compact accessible odds label", () => {
+  expect(oddsLabel(
+    { status: "unavailable", reason: "Quote bounds inconsistent" },
+    { status: "unavailable", reason: "Insufficient completed history" },
+  )).toContain("Historical forecast: Insufficient completed history")
 })
