@@ -205,6 +205,46 @@ test("shows a separate forecast, prior market context, and dated hypothetical ri
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
 
+test("shows a complete populated watch card at 100% desktop zoom", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 800 })
+  await page.route("**/api/watchlist", async (route) => {
+    await route.fulfill({ json: { items: [{
+      ...item,
+      expiration: "2026-10-30",
+      outcome: { ...item.outcome, session_date: "2026-10-30" },
+      market_odds: { ...item.market_odds, status: "unavailable", itm_pct_tenths: null, otm_pct_tenths: null, reason: "Quote bounds inconsistent" },
+      last_available_market_odds: item.market_odds,
+      predictive_odds: {
+        status: "available", method: "lognormal_ewma", itm_pct_tenths: 612,
+        otm_pct_tenths: 388, atm_pct_tenths: 0, as_of_session: "2026-09-25",
+        expiry_session: "2026-10-30", support: 60,
+      },
+      hypothetical_risk: {
+        status: "available", assumed_spot_cents: 4990, assumed_bid_cents: 125,
+        quote_source: "nasdaq", quote_session: "2026-09-25",
+        expected_pnl_cents: 765, expected_return_pct_tenths: 16,
+        loss_pct_tenths: 342, p05_pnl_cents: -9300,
+      },
+    }] } })
+  })
+  await page.goto("/watchlist")
+  const card = page.getByRole("article")
+  await expect(card.getByRole("region", { name: "Hypothetical expiry risk" })).toContainText("5th-percentile P&L")
+  await card.getByText(/Previous market-implied estimate/).click()
+  const { bottom, viewportHeight, scrollWidth, viewportWidth } = await page.evaluate(() => ({
+    bottom: document.querySelector(".watch-card")!.getBoundingClientRect().bottom,
+    viewportHeight: innerHeight,
+    scrollWidth: document.documentElement.scrollWidth,
+    viewportWidth: innerWidth,
+  }))
+  expect(bottom).toBeLessThanOrEqual(viewportHeight)
+  expect(scrollWidth).toBeLessThanOrEqual(viewportWidth)
+  for (const width of [1152, 768, 320]) {
+    await page.setViewportSize({ width, height: 800 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+  }
+})
+
 test("retired research deep links open the watchlist without research requests", async ({ page }) => {
   const researchRequests: string[] = []
   page.on("request", (request) => {

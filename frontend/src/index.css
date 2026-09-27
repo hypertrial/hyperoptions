@@ -199,22 +199,22 @@
   .workspace-nav a[aria-current="page"] { background: var(--primary); color: var(--primary-foreground); }
   .workspace-nav a:hover:not([aria-current="page"]) { background: var(--muted); }
 
-  .watchlist-page { max-width: 72rem; margin: 0 auto; padding: clamp(12px, 2vw, 28px) 0; }
-  .watchlist-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 20px; }
+  .watchlist-page { max-width: 72rem; margin: 0 auto; padding: 16px 0; }
+  .watchlist-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 12px; }
   .watchlist-header h1 { margin: 0 0 8px; font-size: clamp(1.8rem, 4vw, 2.5rem); font-weight: 750; line-height: 1.1; }
-  .watchlist-header p:not(.eyebrow) { max-width: 56rem; margin: 0 0 8px; color: var(--muted-foreground); font-size: .9rem; }
+  .watchlist-header p:not(.eyebrow) { max-width: 56rem; margin: 0 0 4px; color: var(--muted-foreground); font-size: .9rem; }
   .watchlist-header a,
   .watch-empty a { color: var(--foreground); text-decoration: underline; text-decoration-color: var(--primary); text-underline-offset: 3px; }
   .watchlist-header > button { flex: none; }
   .watch-card-list { display: grid; gap: 16px; }
   .watch-card { min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
-  .watch-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px; border-bottom: 1px solid var(--border); }
+  .watch-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
   .watch-card-head h2 { margin: 0 0 8px; font-size: 1.15rem; font-weight: 700; }
   .watch-card-head .eyebrow { margin-bottom: 4px; }
-  .watch-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .watch-card-section { min-width: 0; padding: 18px; }
+  .watch-card-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .9fr) minmax(0, 1.15fr); }
+  .watch-card-section { min-width: 0; padding: 14px 18px; }
   .watch-card-section + .watch-card-section { border-left: 1px solid var(--border); }
-  .watch-risk-section { grid-column: 1 / -1; border-top: 1px solid var(--border); border-left: 0 !important; }
+  .watch-risk-section { border-left: 1px solid var(--border); }
   .watch-card-section h3 { margin: 0 0 12px; font-size: .83rem; font-weight: 700; text-transform: uppercase; letter-spacing: .045em; }
   .watch-outcome { margin: 0 0 8px; font-size: .94rem; }
   .watch-odds { margin: 12px 0; }
@@ -234,7 +234,7 @@
   .watch-provenance { overflow-wrap: break-word; }
   .watch-prior-odds { margin-top: 12px; color: var(--muted-foreground); font-size: .78rem; line-height: 1.5; }
   .watch-prior-odds summary { width: fit-content; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
-  .watch-prior-odds p { margin: 6px 0 0; }
+  .watch-prior-odds p { margin: 3px 0 0; }
   .watch-facts { display: grid; gap: 1px; margin: 12px 0; overflow: hidden; border: 1px solid var(--border); border-radius: 6px; background: var(--border); }
   .watch-facts div { display: flex; justify-content: space-between; gap: 12px; min-width: 0; padding: 7px 9px; background: var(--card); font-size: .78rem; }
   .watch-facts dt { flex: 0 1 48%; color: var(--muted-foreground); }
@@ -1055,6 +1055,10 @@
     .filter-cluster { grid-template-columns: repeat(3, minmax(8rem, 1fr)); }
   }
 
+  @media (max-width: 72rem) {
+    .watch-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .watch-risk-section { grid-column: 1 / -1; border-top: 1px solid var(--border); border-left: 0 !important; }
+  }
   @media (max-width: 48rem) {
     .column-picker-actions { align-items: stretch; flex-direction: column; }
     .column-picker-body { grid-template-columns: repeat(2, minmax(0, 1fr)); }
