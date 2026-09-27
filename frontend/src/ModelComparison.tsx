@@ -1,4 +1,5 @@
-import { useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import type { MarketOddsView, PredictiveOddsView } from "./generated/types.gen"
 import { marketModelName, physicalModelName, type PhysicalModel } from "./forecastModels"
 import { unsignedPercentTenths } from "./format"
@@ -41,9 +42,13 @@ function reasonList(value: unknown): string {
     : "None recorded"
 }
 
+function reasonLabel(reason: string | null | undefined): string {
+  return reason ? reason.replaceAll("_", " ") : "No valid estimate"
+}
+
 function evidencePanel(title: string, value: unknown) {
   const report = data(value)
-  if (!report) return <p>{title}: no report available. N=0 · Brier N/A · significance not estimable.</p>
+  if (!report) return <p className="model-evidence-empty">{title}: no report available</p>
   const brier = data(report.brier)
   const logLoss = data(report.log_loss)
   const blocks = number(report.independent_date_blocks) ?? 0
@@ -56,8 +61,9 @@ function evidencePanel(title: string, value: unknown) {
       ? `[${score(interval[0])}, ${score(interval[1])}]` : "significance not estimable"
   const calibration = data(report.calibration_by_side)
   const latency = data(report.latency_ms)
-  return <section className="model-evidence" aria-label={`${title} evidence`}>
-    <h5>{title}</h5>
+  return <details className="model-evidence">
+    <summary>{title} · N={count(units)} · Brier {units ? score(brier?.candidate) : "N/A"}</summary>
+    <div className="model-evidence-content" role="region" aria-label={`${title} evidence`}>
     <p>{title === "Retrospective replay" ? "Current-vintage screening; not an as-issued accuracy claim." : "Prospective as-issued accuracy; descriptive until enough outcomes mature."}</p>
     <p>Report {typeof report.generated_at === "string" ? report.generated_at.slice(0, 10) : "date unavailable"} · model {String(report.model_version ?? "unknown")} · input {String(report.input_version ?? "unknown")} · report hash {typeof report.report_hash === "string" ? report.report_hash.slice(0, 12) : "unrecorded"}</p>
     {typeof report.audit_session === "string" ? <p>Frozen audit cohort: {report.audit_session}{typeof report.audit_frozen_at === "string" ? ` · captured ${report.audit_frozen_at.slice(0, 10)}` : ""}</p> : null}
@@ -80,7 +86,8 @@ function evidencePanel(title: string, value: unknown) {
         : "N=0 · N/A"}</p>
     })}
     <p>{latency && "p50" in latency ? `Forecast p50/p95 ${milliseconds(latency.p50)}/${milliseconds(latency.p95)}` : `Preparation p50/p95 ${milliseconds(data(latency?.prepare)?.p50)}/${milliseconds(data(latency?.prepare)?.p95)} · lookup p50/p95 ${milliseconds(data(latency?.lookup)?.p50)}/${milliseconds(data(latency?.lookup)?.p95)}`}</p>
-  </section>
+    </div>
+  </details>
 }
 
 function PhysicalResult({ model, selected, evidenceIndex }: { model: PredictiveOddsView; selected: PhysicalModel; evidenceIndex?: Data | null }) {
@@ -91,14 +98,16 @@ function PhysicalResult({ model, selected, evidenceIndex }: { model: PredictiveO
     : model.method === "student_t_ewma" || model.method === "gjr_garch_t"
       ? `${count(model.support)} simulated paths`
       : `${count(model.support)} completed returns`
-  return <li className="model-result">
-    <div className="model-result-heading"><strong>{physicalModelName(model.method)}</strong>{model.method === selected ? <span className="model-tag">Selected</span> : null}</div>
-    <p>{valid ? `${unsignedPercentTenths(model.itm_pct_tenths)} ITM · ${unsignedPercentTenths(model.otm_pct_tenths)} OTM` : `${model.status === "pending" ? "Pending" : "Unavailable"}: ${model.reason ?? "No valid estimate"}`}</p>
+  return <li className="model-result"><details>
+    <summary className="model-result-heading"><strong>{physicalModelName(model.method)}{model.method === selected ? <span className="model-tag">Selected</span> : null}</strong><span className={valid ? "model-result-value" : "model-result-unavailable"}>{valid ? `${unsignedPercentTenths(model.itm_pct_tenths)} ITM · ${unsignedPercentTenths(model.otm_pct_tenths)} OTM` : `${model.status === "pending" ? "Pending" : "Unavailable"} · ${reasonLabel(model.reason)}`}</span></summary>
+    <div className="model-result-details">
+    {!valid && model.reason ? <p className="model-meta">Reason code: {model.reason}</p> : null}
     <p className="model-meta">{model.price_basis === "validated_underlying_quote" ? "Validated stock quote" : model.price_basis === "completed_close" ? "Completed stock close" : "Input basis unavailable"} · input {model.price_as_of ?? model.as_of_session ?? "date unavailable"} · expiry {model.expiry_session ?? "unknown"} · version {model.model_version ?? "unknown"} · {support}</p>
     <p className="model-meta">{model.method === "empirical_scaled" ? `Independent history blocks ${model.independent_blocks ?? "N/A"} (minimum 30)` : model.simulation_error_95_pct_tenths != null ? `Maximum 95% simulation error ±${(model.simulation_error_95_pct_tenths / 10).toFixed(1)} percentage points; model uncertainty excluded` : "Simulation precision N/A"} · fit {milliseconds(model.fit_ms)} · lookup {milliseconds(model.lookup_ms)} · data {model.data_hash?.slice(0, 12) ?? "hash unavailable"}</p>
     {evidencePanel("Prospective as-issued", evidence?.prospective)}
     {evidencePanel("Retrospective replay", evidence?.retrospective)}
-  </li>
+    </div>
+  </details></li>
 }
 
 function MarketResult({ model }: { model: MarketOddsView }) {
@@ -107,14 +116,16 @@ function MarketResult({ model }: { model: MarketOddsView }) {
   const heldOut = number(evidence?.held_out_count) ?? 0
   const inside = number(evidence?.held_out_inside) ?? 0
   const check = (value: unknown) => value === true ? "yes" : value === false ? "no" : "N/A"
-  return <li className="model-result">
-    <div className="model-result-heading"><strong>{marketModelName(model.method)} · risk-neutral</strong>{model.method === "regimelib" ? <span className="model-tag">Benchmark</span> : null}</div>
-    <p>{valid ? `${unsignedPercentTenths(model.itm_pct_tenths)} ITM · ${unsignedPercentTenths(model.otm_pct_tenths)} OTM` : `${model.status === "pending" ? "Pending" : "Unavailable"}: ${model.reason ?? "No valid estimate"}`}</p>
+  return <li className="model-result"><details>
+    <summary className="model-result-heading"><strong>{marketModelName(model.method)}{model.method === "regimelib" ? <span className="model-tag">Benchmark</span> : null}</strong><span className={valid ? "model-result-value" : "model-result-unavailable"}>{valid ? `${unsignedPercentTenths(model.itm_pct_tenths)} ITM · ${unsignedPercentTenths(model.otm_pct_tenths)} OTM` : `${model.status === "pending" ? "Pending" : "Unavailable"} · ${reasonLabel(model.reason)}`}</span></summary>
+    <div className="model-result-details">
+    {!valid && model.reason ? <p className="model-meta">Reason code: {model.reason}</p> : null}
     <p className="model-meta">{quoteSupportLabel(model) ?? "Quote bounds N/A"} · session {model.session_date ?? "unavailable"} · version {model.model_version ?? "unknown"}</p>
     <p className="model-meta">Held-out quote coverage {heldOut ? `${inside}/${heldOut} (${percent(inside / heldOut)})` : "N=0 · N/A"} · paired quotes {count(evidence?.paired_held_out_count)} · bid/ask fit {check(evidence?.bid_ask_fit)} · one-tick stable {check(evidence?.one_tick_stable)}</p>
     {number(evidence?.paired_shadow_inside) != null && number(evidence?.paired_benchmark_inside) != null ? <p className="model-meta">Matched held-out fit: curve {count(evidence?.paired_shadow_inside)} vs benchmark {count(evidence?.paired_benchmark_inside)} of {count(evidence?.paired_held_out_count)} quotes.</p> : null}
     <p className="model-meta">Fit {milliseconds(evidence?.fit_ms)} · refresh {milliseconds(evidence?.refresh_ms)} · rejections: {reasonList(evidence?.rejection_reasons)}</p>
-  </li>
+    </div>
+  </details></li>
 }
 
 export default function ModelComparison({ physical, market, selected, evidenceIndex }: {
@@ -124,20 +135,29 @@ export default function ModelComparison({ physical, market, selected, evidenceIn
   evidenceIndex?: Data | null
 }) {
   const [open, setOpen] = useState(false)
+  const titleId = useId()
+  const dialog = useRef<HTMLDialogElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (open) dialog.current?.showModal()
+  }, [open])
   const comparable = physical?.filter((model) => predictiveAvailable(model) && model.price_basis === "completed_close" && model.itm_pct_tenths != null) ?? []
   const disagreement = comparable.length >= 2
     ? ((Math.max(...comparable.map((model) => model.itm_pct_tenths!)) - Math.min(...comparable.map((model) => model.itm_pct_tenths!))) / 10).toFixed(1)
     : null
-  return <details className="model-comparison">
-    <summary onClick={() => setOpen((current) => !current)}>Compare models</summary>
-    {open ? <div className="model-comparison-body">
-      <section aria-label="Physical forecast models"><h4>Stock-close forecasts</h4><p>Real-world expiry-close odds. Your selection sets the compact odds and hypothetical risk; accuracy evidence remains separate.</p>
-        <p>Model spread: {disagreement == null ? "N/A (fewer than two comparable estimates)" : `${disagreement} percentage points across ${comparable.length} completed-close models`}. This shows method sensitivity, not forecast accuracy.</p>
-        <ul>{physical?.length ? physical.map((model, index) => <PhysicalResult key={model.method ?? index} model={model} selected={selected} evidenceIndex={evidenceIndex} />) : <li>No physical model results yet.</li>}</ul>
-      </section>
-      <section aria-label="Risk-neutral market models"><h4>Option-price estimates</h4><p>Risk-neutral odds from option quotes. Quote fit does not measure realized forecast accuracy.</p>
-        <ul>{market?.length ? market.map((model, index) => <MarketResult key={model.method ?? index} model={model} />) : <li>No market model results yet.</li>}</ul>
-      </section>
-    </div> : null}
-  </details>
+  return <>
+    <button ref={trigger} type="button" className="model-comparison-trigger" onClick={() => setOpen(true)}>Compare models</button>
+    {open ? createPortal(<dialog ref={dialog} className="model-comparison-dialog" aria-labelledby={titleId} onClose={() => { setOpen(false); trigger.current?.focus() }}>
+      <div className="model-comparison-header"><div><h2 id={titleId}>Compare models</h2><p>Different methods can disagree. Their spread is not an accuracy or confidence score.</p></div><button type="button" className="model-comparison-close" onClick={() => dialog.current?.close()} aria-label="Close model comparison">Close</button></div>
+      <div className="model-comparison-body">
+        <section aria-label="Physical forecast models"><h3>Stock-close forecasts <span>Real-world expiry-close odds</span></h3><p>Your selection sets the compact odds and hypothetical risk.</p>
+          <p className="model-spread">Model spread: {disagreement == null ? "N/A (fewer than two comparable estimates)" : `${disagreement} percentage points across ${comparable.length} completed-close models`}</p>
+          <ul>{physical?.length ? physical.map((model, index) => <PhysicalResult key={model.method ?? index} model={model} selected={selected} evidenceIndex={evidenceIndex} />) : <li>No physical model results yet.</li>}</ul>
+        </section>
+        <section aria-label="Risk-neutral market models"><h3>Option-price estimates <span>Risk-neutral odds</span></h3><p>Quote fit does not measure realized forecast accuracy.</p>
+          <ul>{market?.length ? market.map((model, index) => <MarketResult key={model.method ?? index} model={model} />) : <li>No market model results yet.</li>}</ul>
+        </section>
+      </div>
+    </dialog>, document.body) : null}
+  </>
 }

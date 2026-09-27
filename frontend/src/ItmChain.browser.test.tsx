@@ -292,11 +292,10 @@ describe("chain interactions", () => {
     expect(first.textContent).toContain("70.0% ITM")
     expect(first.textContent).toContain("Student-t EWMA")
     const trigger = first.querySelector(".mobile-row-summary")!
-    const compare = first.querySelector(".mobile-model-compare details")!
+    const compare = first.querySelector(".mobile-model-compare button")!
     expect(trigger.contains(compare)).toBe(false)
-    fireEvent.click(compare.querySelector("summary")!)
-    expect((compare as HTMLDetailsElement).open).toBe(true)
-    expect(compare.textContent).toContain("quotes_pending")
+    fireEvent.click(compare)
+    expect(screen.getByRole("dialog", { name: "Compare models" }).textContent).toContain("quotes_pending")
   })
 
   it("includes odds in the mobile contract summary before expanding details", async () => {
