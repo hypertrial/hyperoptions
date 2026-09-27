@@ -65,7 +65,7 @@ def test_chain_serializes_predictive_fallback_and_coherent_payoff(
             "lookup",
             lambda *_identity: MarketOddsView(
                 status="unavailable",
-                reason="Quoted prices do not bound these odds narrowly enough",
+                reason="Reliable call quotes do not bracket this strike",
                 source="nasdaq", session_date=today,
             ),
         )

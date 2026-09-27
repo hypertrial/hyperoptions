@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button"
 import { dateTime, moneyCents, percentTenths, unsignedPercentTenths } from "../format"
-import { oddsAvailable, oddsProvenance, predictiveProvenance, preferredOddsKind } from "../marketOdds"
+import { oddsAvailable, oddsProvenance, predictiveProvenance, preferredOddsKind, quoteSupportLabel } from "../marketOdds"
 import OddsValues from "../OddsValues"
 import type { WatchItem, WatchOutcome } from "./types"
 
@@ -19,6 +19,7 @@ function OddsSection({ item }: { item: WatchItem }) {
         <details className="watch-prior-odds">
           <summary>Previous market-implied estimate · {prior.session_date ?? "dated quote"}</summary>
           <p>{unsignedPercentTenths(prior.itm_pct_tenths)} ITM · {unsignedPercentTenths(prior.otm_pct_tenths)} OTM</p>
+          <p>{quoteSupportLabel(prior) ?? "Quote tightness was not recorded for this earlier estimate."}</p>
           <p>{oddsProvenance(prior)}</p>
         </details>
       ) : null}

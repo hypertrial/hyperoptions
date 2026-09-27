@@ -60,7 +60,10 @@ export const zMarketOddsView = z.object({
     source: z.enum(['nasdaq', 'yahoo']).nullish(),
     fetched_at: z.iso.datetime().nullish(),
     session_date: z.iso.date().nullish(),
-    model_version: z.string().nullish()
+    model_version: z.string().nullish(),
+    bound_low_pct_tenths: z.int().nullish(),
+    bound_high_pct_tenths: z.int().nullish(),
+    quote_support_score: z.int().nullish()
 });
 
 /**

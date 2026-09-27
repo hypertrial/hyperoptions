@@ -36,6 +36,8 @@ def _pages(assemble) -> dict[str, object]:
                     "status": "pending", "itm_pct_tenths": None, "otm_pct_tenths": None,
                     "reason": None, "source": None, "fetched_at": None,
                     "session_date": None, "model_version": None,
+                    "bound_low_pct_tenths": None, "bound_high_pct_tenths": None,
+                    "quote_support_score": None,
                 }
                 assert contract.pop("predictive_odds")["status"] == "pending"
                 assert contract.pop("hypothetical_risk")["status"] == "unavailable"

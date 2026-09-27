@@ -37,7 +37,7 @@ def _distribution(
 class _Market:
     def __init__(
         self, quote: EntryQuote | None,
-        reason: str = "Quoted prices do not bound these odds narrowly enough",
+        reason: str = "Reliable call quotes do not bracket this strike",
     ) -> None:
         self.quote = quote
         self.reason = reason
@@ -96,7 +96,7 @@ def _quote(
     )
 
 
-def test_wide_market_bound_still_publishes_labeled_predictive_and_coherent_risk() -> None:
+def test_missing_market_bracket_still_publishes_labeled_predictive_and_coherent_risk() -> None:
     market = _Market(_quote())
     predictive = _Predictive(_distribution())
 
@@ -110,7 +110,7 @@ def test_wide_market_bound_still_publishes_labeled_predictive_and_coherent_risk(
     )
 
     assert call.market.status == "unavailable"
-    assert "bound" in (call.market.reason or "")
+    assert "bracket" in (call.market.reason or "")
     assert call.predictive.status == "available"
     assert call.predictive.method == "empirical_scaled"
     assert call.last_available_market is not None

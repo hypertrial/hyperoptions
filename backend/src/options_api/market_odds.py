@@ -38,6 +38,7 @@ _MAX_PRICING_SECONDS = 60.0
 class OddsEstimate:
     call_itm_probability: float | None
     reason: str | None = None
+    bounds: tuple[float, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -348,8 +349,6 @@ def _vertical_bounds_with_reason(
         return None, "quote_bracket_missing"
     if lower > upper:
         return None, "quote_bounds_inconsistent"
-    if upper - lower > 0.10:
-        return None, "quote_bounds_wide"
     return (lower, upper), None
 
 
@@ -476,10 +475,10 @@ def calculate_market_odds(
             probability = digital * math.exp(quote.rate * quote.years)
             if not math.isfinite(probability) or not 0 <= probability <= 1:
                 result[key] = OddsEstimate(None, "numerical_unstable")
-            elif not bounds[0] - 0.015 <= probability <= bounds[1] + 0.015:
+            elif not bounds[0] <= probability <= bounds[1]:
                 result[key] = OddsEstimate(None, "quote_bounds_mismatch")
             else:
-                result[key] = OddsEstimate(probability)
+                result[key] = OddsEstimate(probability, bounds=bounds)
 
         # A numerical or quote contradiction in one expiry invalidates its
         # published sequence, since a single risk-neutral CDF must be monotone.

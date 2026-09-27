@@ -13,7 +13,7 @@ from options_api.contract_identity import make_watch_key
 from options_api.market_calendar import session_close
 from options_api.market_odds import OddsEstimate
 from options_api.market_sources import DividendStatus, TreasuryCurve
-from options_api.market_watch import MarketWatchOdds
+from options_api.market_watch import MarketWatchOdds, _MODEL_VERSION
 from options_api.service import OptionChainService
 from options_api.watchlist import WatchStore
 from options_api.models import (
@@ -23,6 +23,7 @@ from options_api.models import (
     OptionQuote,
     StockInfoResponse,
 )
+from stocksweeper.storage.db import connect
 
 
 NOW = datetime(2026, 9, 11, 14, tzinfo=UTC)
@@ -66,6 +67,7 @@ def _curve(as_of: date = date(2026, 9, 11)) -> TreasuryCurve:
 def _install_inputs(
     monkeypatch: pytest.MonkeyPatch, *, dividends: DividendStatus | None = None,
     curve: TreasuryCurve | None = None, probability: float = 0.4,
+    bounds: tuple[float, float] | None = None,
     spots: list[Decimal] | None = None,
     valuation_times: list[datetime] | None = None,
 ) -> list[int]:
@@ -83,7 +85,10 @@ def _install_inputs(
             spots.append(spot)
         if valuation_times is not None:
             valuation_times.append(as_of)
-        return {(row.expiration, row.strike): OddsEstimate(probability) for row in rows}
+        return {
+            (row.expiration, row.strike): OddsEstimate(probability, bounds=bounds)
+            for row in rows
+        }
 
     monkeypatch.setattr("options_api.market_watch.fetch_treasury_curve", treasury)
     monkeypatch.setattr("options_api.market_watch.fetch_dividend_status", dividend)
@@ -122,6 +127,36 @@ async def test_one_ticker_refresh_is_shared_by_calls_puts_and_concurrent_request
         assert retained.status == "pending"
         moment[0] = datetime(2026, 9, 14, 14, tzinfo=UTC)
         assert odds.lookup("TEST", "call", EXPIRY, Decimal("100")).status == "pending"
+        await odds.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("bounds", "call_bounds", "put_bounds", "score"),
+    [
+        ((0.2, 0.7), (200, 700), (300, 800), 50),
+        ((0.4, 0.4), (400, 400), (600, 600), 100),
+        ((0.0, 1.0), (0, 1000), (0, 1000), 0),
+    ],
+)
+async def test_quote_support_bounds_follow_call_and_put_event(
+    monkeypatch: pytest.MonkeyPatch,
+    bounds: tuple[float, float],
+    call_bounds: tuple[int, int],
+    put_bounds: tuple[int, int],
+    score: int,
+) -> None:
+    _install_inputs(monkeypatch, bounds=bounds)
+    async with httpx.AsyncClient() as client:
+        odds = MarketWatchOdds(FakeService(), client, lambda: NOW)
+        odds.schedule(["TEST"])
+        await asyncio.gather(*odds._tasks.values())
+        call = odds.lookup("TEST", "call", EXPIRY, Decimal("100"))
+        put = odds.lookup("TEST", "put", EXPIRY, Decimal("100"))
+        assert (call.bound_low_pct_tenths, call.bound_high_pct_tenths) == call_bounds
+        assert (put.bound_low_pct_tenths, put.bound_high_pct_tenths) == put_bounds
+        assert call.quote_support_score == put.quote_support_score == score
+        assert (call.itm_pct_tenths, put.itm_pct_tenths) == (400, 600)
         await odds.close()
 
 
@@ -239,7 +274,7 @@ def _watch_store(data_dir: Path, side: str = "call") -> WatchStore:
 async def test_last_good_survives_refresh_failure_and_restart_but_expires_with_session(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    _install_inputs(monkeypatch)
+    _install_inputs(monkeypatch, bounds=(0.2, 0.7))
     store = _watch_store(tmp_path)
     service = FakeService()
     moment = [NOW]
@@ -259,6 +294,8 @@ async def test_last_good_survives_refresh_failure_and_restart_but_expires_with_s
         prior = odds.lookup_last_good("TEST", "call", EXPIRY, Decimal("100"), "TEST")
         assert prior is not None and prior.status == "available"
         assert prior.itm_pct_tenths == 400
+        assert (prior.bound_low_pct_tenths, prior.bound_high_pct_tenths,
+                prior.quote_support_score) == (200, 700, 50)
         assert prior.fetched_at == NOW and prior.session_date == NOW.date()
         await odds.close()
 
@@ -280,6 +317,36 @@ async def test_last_good_survives_refresh_failure_and_restart_but_expires_with_s
         assert restarted.lookup_last_good("TEST", "call", EXPIRY, Decimal("100")) is None
         restarted.schedule([])
         await restarted.close()
+
+
+@pytest.mark.asyncio
+async def test_existing_last_good_table_gains_nullable_support_columns(tmp_path: Path) -> None:
+    store = _watch_store(tmp_path)
+    record = store.list()[0]
+    with connect(tmp_path / "results.duckdb") as connection:
+        connection.execute(
+            """CREATE TABLE market_odds_last_good (
+                 watch_key VARCHAR NOT NULL, watch_created_at TIMESTAMPTZ NOT NULL,
+                 model_version VARCHAR NOT NULL, session_date DATE NOT NULL,
+                 fetched_at TIMESTAMPTZ NOT NULL, source VARCHAR NOT NULL,
+                 call_itm_pct_tenths INTEGER NOT NULL,
+                 PRIMARY KEY (watch_key, model_version))"""
+        )
+        connection.execute(
+            "INSERT INTO market_odds_last_good VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [record.watch_key, record.created_at, _MODEL_VERSION, NOW.date(), NOW,
+             "nasdaq", 400],
+        )
+    async with httpx.AsyncClient() as client:
+        odds = MarketWatchOdds(
+            FakeService(), client, lambda: datetime(2026, 9, 11, 21, tzinfo=UTC),
+            data_dir=tmp_path,
+            watched_contracts=lambda: [(record.watch_key, record.created_at)],
+        )
+        prior = odds.lookup_last_good("TEST", "call", EXPIRY, Decimal("100"))
+        assert prior is not None and prior.itm_pct_tenths == 400
+        assert prior.quote_support_score is None
+        await odds.close()
 
 
 @pytest.mark.asyncio

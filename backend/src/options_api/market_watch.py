@@ -57,7 +57,6 @@ _REASONS = {
     "calibration_failed": "Market model did not fit quoted prices",
     "quote_bracket_missing": "Reliable call quotes do not bracket this strike",
     "quote_bounds_inconsistent": "Nearby call quotes imply contradictory odds bounds",
-    "quote_bounds_wide": "Quoted prices do not bound these odds narrowly enough",
     "quote_bounds_mismatch": "Model odds conflict with nearby option quotes",
     "quote_fit_failed": "Model price differs from the quoted market",
     "numerical_unstable": "Pricing calculation did not converge",
@@ -109,6 +108,9 @@ class _LastGood:
     fetched_at: datetime
     source: str
     call_itm_pct_tenths: int
+    call_bound_low_pct_tenths: int | None
+    call_bound_high_pct_tenths: int | None
+    quote_support_score: int | None
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -176,11 +178,26 @@ def _probability_tenths(estimate: OddsEstimate | None) -> int | None:
         or not 0 <= estimate.call_itm_probability <= 1
     ):
         return None
-    return int(
-        (Decimal(str(estimate.call_itm_probability)) * 1000).quantize(
+    return _to_tenths(estimate.call_itm_probability)
+
+
+def _to_tenths(value: float) -> int:
+    return int((Decimal(str(value)) * 1000).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def _quote_support(estimate: OddsEstimate, side: str) -> tuple[int | None, int | None, int | None]:
+    if estimate.bounds is None:
+        return None, None, None
+    lower, upper = estimate.bounds
+    if not (math.isfinite(lower) and math.isfinite(upper) and 0 <= lower <= upper <= 1):
+        return None, None, None
+    low, high = (1 - upper, 1 - lower) if side == "put" else (lower, upper)
+    score = int(
+        (Decimal(str(1 - (upper - lower))) * 100).quantize(
             Decimal("1"), rounding=ROUND_HALF_UP
         )
     )
+    return _to_tenths(low), _to_tenths(high), score
 
 
 def _entry_bid_ask(
@@ -240,9 +257,21 @@ class MarketWatchOdds:
                          source VARCHAR NOT NULL,
                          call_itm_pct_tenths INTEGER NOT NULL
                              CHECK (call_itm_pct_tenths BETWEEN 0 AND 1000),
+                         call_bound_low_pct_tenths INTEGER,
+                         call_bound_high_pct_tenths INTEGER,
+                         quote_support_score INTEGER,
                          PRIMARY KEY (watch_key, model_version)
                        )"""
                 )
+                for column in (
+                    "call_bound_low_pct_tenths",
+                    "call_bound_high_pct_tenths",
+                    "quote_support_score",
+                ):
+                    connection.execute(
+                        "ALTER TABLE market_odds_last_good "
+                        f"ADD COLUMN IF NOT EXISTS {column} INTEGER"
+                    )
             self._sync_watches(_as_utc(self.clock()))
 
     def _sync_watches(self, now: datetime) -> set[str]:
@@ -274,7 +303,8 @@ class MarketWatchOdds:
             saved = rows(
                 connection,
                 """SELECT watch_key, watch_created_at, session_date, fetched_at,
-                          source, call_itm_pct_tenths
+                          source, call_itm_pct_tenths, call_bound_low_pct_tenths,
+                          call_bound_high_pct_tenths, quote_support_score
                    FROM market_odds_last_good WHERE model_version = ?""",
                 [_MODEL_VERSION],
             )
@@ -292,6 +322,14 @@ class MarketWatchOdds:
                 or not 0 <= probability <= 1000
             ):
                 continue
+            low = row["call_bound_low_pct_tenths"]
+            high = row["call_bound_high_pct_tenths"]
+            score = row["quote_support_score"]
+            if not (
+                isinstance(low, int) and isinstance(high, int) and isinstance(score, int)
+                and 0 <= low <= high <= 1000 and 0 <= score <= 100
+            ):
+                low = high = score = None
             self._last_good[key] = _LastGood(
                 key,
                 _as_utc(created),
@@ -299,6 +337,9 @@ class MarketWatchOdds:
                 _as_utc(row["fetched_at"]),
                 row["source"],
                 probability,
+                low,
+                high,
+                score,
             )
         return changed
 
@@ -316,9 +357,11 @@ class MarketWatchOdds:
                 or (expiry, strike) not in snapshot.valid_contracts
             ):
                 continue
-            call_itm = _probability_tenths(snapshot.odds.get((expiry, strike)))
+            estimate = snapshot.odds.get((expiry, strike))
+            call_itm = _probability_tenths(estimate)
             if call_itm is None:
                 continue
+            bound_low, bound_high, score = _quote_support(estimate, "call")
             existing = self._last_good.get(key)
             if (
                 existing is not None
@@ -330,6 +373,7 @@ class MarketWatchOdds:
             values.append((
                 key, created, _MODEL_VERSION, snapshot.session_date,
                 snapshot.fetched_at, snapshot.source, call_itm,
+                bound_low, bound_high, score,
             ))
         if not values:
             return
@@ -338,22 +382,27 @@ class MarketWatchOdds:
                 connection.executemany(
                     """INSERT INTO market_odds_last_good
                        (watch_key, watch_created_at, model_version, session_date,
-                        fetched_at, source, call_itm_pct_tenths)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)
+                        fetched_at, source, call_itm_pct_tenths,
+                        call_bound_low_pct_tenths, call_bound_high_pct_tenths,
+                        quote_support_score)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                        ON CONFLICT (watch_key, model_version) DO UPDATE SET
                          watch_created_at = excluded.watch_created_at,
                          session_date = excluded.session_date,
                          fetched_at = excluded.fetched_at,
                          source = excluded.source,
-                         call_itm_pct_tenths = excluded.call_itm_pct_tenths
+                         call_itm_pct_tenths = excluded.call_itm_pct_tenths,
+                         call_bound_low_pct_tenths = excluded.call_bound_low_pct_tenths,
+                         call_bound_high_pct_tenths = excluded.call_bound_high_pct_tenths,
+                         quote_support_score = excluded.quote_support_score
                        WHERE market_odds_last_good.session_date < excluded.session_date
                           OR (market_odds_last_good.session_date = excluded.session_date
                               AND market_odds_last_good.fetched_at <= excluded.fetched_at)""",
                     values,
                 )
-            for key, created, _, session, fetched, source, call_itm in values:
+            for key, created, _, session, fetched, source, call_itm, low, high, score in values:
                 self._last_good[key] = _LastGood(
-                    key, created, session, fetched, source, call_itm
+                    key, created, session, fetched, source, call_itm, low, high, score
                 )
         except Exception:
             LOG.exception("failed to persist last available market odds for %s", ticker)
@@ -415,8 +464,11 @@ class MarketWatchOdds:
                 **common,
             )
         itm = call_itm if side == "call" else 1000 - call_itm
+        bound_low, bound_high, support = _quote_support(estimate, side)
         return MarketOddsView(
-            status="available", itm_pct_tenths=itm, otm_pct_tenths=1000 - itm, **common
+            status="available", itm_pct_tenths=itm, otm_pct_tenths=1000 - itm,
+            bound_low_pct_tenths=bound_low, bound_high_pct_tenths=bound_high,
+            quote_support_score=support, **common
         )
 
     def lookup_last_good(
@@ -450,6 +502,9 @@ class MarketWatchOdds:
             saved.call_itm_pct_tenths if side == "call"
             else 1000 - saved.call_itm_pct_tenths
         )
+        low, high = saved.call_bound_low_pct_tenths, saved.call_bound_high_pct_tenths
+        if low is not None and high is not None and side == "put":
+            low, high = 1000 - high, 1000 - low
         return MarketOddsView(
             status="available",
             itm_pct_tenths=itm,
@@ -458,6 +513,9 @@ class MarketWatchOdds:
             fetched_at=saved.fetched_at,
             session_date=saved.session_date,
             model_version=_MODEL_VERSION,
+            bound_low_pct_tenths=low,
+            bound_high_pct_tenths=high,
+            quote_support_score=saved.quote_support_score,
         )
 
     def rate_for(self, ticker: str, expiry: str) -> tuple[Decimal, datetime] | None:

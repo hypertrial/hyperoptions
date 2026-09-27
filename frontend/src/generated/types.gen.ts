@@ -674,6 +674,18 @@ export type MarketOddsView = {
      * Model Version
      */
     model_version?: string | null;
+    /**
+     * Bound Low Pct Tenths
+     */
+    bound_low_pct_tenths?: number | null;
+    /**
+     * Bound High Pct Tenths
+     */
+    bound_high_pct_tenths?: number | null;
+    /**
+     * Quote Support Score
+     */
+    quote_support_score?: number | null;
 };
 
 /**
