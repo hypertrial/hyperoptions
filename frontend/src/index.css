@@ -222,7 +222,7 @@
   .watch-odds .odds-physical,
   .watch-odds .odds-market { display: grid; min-width: 0; gap: 5px; }
   .watch-odds .odds-method { color: var(--muted-foreground); font-size: .8rem; font-weight: 700; }
-  .watch-odds .odds-numbers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .watch-odds .odds-numbers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .watch-odds .odds-numbers > span { display: grid; min-width: 0; gap: 3px; color: var(--muted-foreground); font-size: .8rem; }
   .watch-odds .odds-numbers strong { color: var(--foreground); font-size: clamp(1.1rem, 3vw, 1.8rem); font-variant-numeric: tabular-nums; }
   .watch-odds .odds-basis,
@@ -237,6 +237,9 @@
   .watch-unavailable { margin: 0 0 9px; color: var(--muted-foreground); font-size: .82rem; line-height: 1.5; }
   .watch-unavailable strong { color: var(--foreground); }
   .watch-provenance { overflow-wrap: break-word; }
+  .watch-provenance summary { width: fit-content; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+  .watch-provenance summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  .watch-provenance p { margin: 3px 0 0; }
   .watch-prior-odds { margin-top: 12px; color: var(--muted-foreground); font-size: .78rem; line-height: 1.5; }
   .watch-prior-odds summary { width: fit-content; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
   .watch-prior-odds p { margin: 3px 0 0; }

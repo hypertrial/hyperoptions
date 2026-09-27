@@ -175,7 +175,7 @@ test("keeps unavailable odds reasons accessible without filling every compact ro
   const oddsCell = page.locator(".odds-cell").first()
   await expect(oddsCell).toContainText("Forecast unavailable")
   await expect(oddsCell.locator(".odds-reason p").first()).not.toBeVisible()
-  await oddsCell.getByText("Why real-world forecast unavailable?").click()
+  await oddsCell.getByText("Why forecast unavailable?").click()
   await expect(oddsCell).toContainText("Insufficient completed history")
   await oddsCell.getByText("Why market odds unavailable?").click()
   await expect(oddsCell).toContainText("A coherent underlying bid and ask is unavailable")

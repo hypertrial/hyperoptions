@@ -13,6 +13,9 @@ const oddsTime = new Intl.DateTimeFormat("en-US", {
   hour: "numeric",
   minute: "2-digit",
 })
+const oddsDate = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York", year: "numeric", month: "short", day: "numeric",
+})
 
 export function oddsAvailable(odds: MarketOdds | null | undefined): boolean {
   return odds?.status === "available"
@@ -43,13 +46,14 @@ export function quoteSupportLabel(odds: MarketOdds | null | undefined): string |
 
 export function predictiveBasisLabel(odds: PredictiveOdds | null | undefined): string | null {
   if (!predictiveAvailable(odds)) return null
-  const basis = odds!.price_basis === "validated_underlying_quote"
-    ? "Validated underlying quote"
-    : "Completed stock close"
+  if (odds!.price_basis !== "validated_underlying_quote" && odds!.as_of_session) {
+    const session = new Date(`${odds!.as_of_session}T12:00:00Z`)
+    if (!Number.isNaN(session.valueOf())) return `Stock close · ${oddsDate.format(session)}`
+  }
   const time = odds!.price_as_of && !Number.isNaN(new Date(odds!.price_as_of).valueOf())
     ? oddsTime.format(new Date(odds!.price_as_of))
     : odds!.as_of_session ?? "date unavailable"
-  return `${basis} · ${time}`
+  return `${odds!.price_basis === "validated_underlying_quote" ? "Stock quote" : "Stock close"} · ${time}`
 }
 
 export function predictiveReliabilityLabel(odds: PredictiveOdds | null | undefined): string {
@@ -74,9 +78,10 @@ export function oddsMessage(odds: MarketOdds | null | undefined): string {
 }
 
 export function oddsLabel(market: MarketOdds | null | undefined, predictive?: PredictiveOdds | null): string {
+  const reliability = predictiveReliabilityLabel(predictive)
   const physical = predictiveAvailable(predictive)
-    ? `Real-world forecast ${unsignedPercentTenths(predictive!.itm_pct_tenths)} ITM, ${unsignedPercentTenths(predictive!.otm_pct_tenths)} OTM, ${unsignedPercentTenths(predictive!.atm_pct_tenths)} ATM, ${predictiveBasisLabel(predictive)}, ${predictiveReliabilityLabel(predictive)}`
-    : `Real-world forecast ${predictive?.status === "pending" ? "pending" : `unavailable: ${predictive?.reason || "no validated forecast"}`}`
+    ? `Stock forecast ${unsignedPercentTenths(predictive!.itm_pct_tenths)} ITM, ${unsignedPercentTenths(predictive!.otm_pct_tenths)} OTM, ${predictiveBasisLabel(predictive)}${reliability === "Reliability not yet established" ? "" : `, ${reliability}`}`
+    : `Stock forecast ${predictive?.status === "pending" ? "pending" : `unavailable: ${predictive?.reason || "no validated forecast"}`}`
   if (oddsAvailable(market)) return `${physical}. Market-implied risk-neutral ${unsignedPercentTenths(market!.itm_pct_tenths)} ITM, ${unsignedPercentTenths(market!.otm_pct_tenths)} OTM${quoteSupportLabel(market) ? `, ${quoteSupportLabel(market)}` : ""}`
   return `${physical}. ${oddsMessage(market)}`
 }

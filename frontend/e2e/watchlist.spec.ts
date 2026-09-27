@@ -195,7 +195,7 @@ test("shows a separate forecast, prior market context, and dated hypothetical ri
   })
   await page.goto("/watchlist")
   const odds = page.getByRole("region", { name: "Odds estimates" })
-  await expect(odds).toContainText("Real-world forecast")
+  await expect(odds).toContainText("Stock forecast")
   await expect(odds).toContainText("52.0% ITM")
   await expect(odds.getByText(/Previous market-implied estimate/)).toBeVisible()
   const risk = page.getByRole("region", { name: "Hypothetical expiry risk" })
