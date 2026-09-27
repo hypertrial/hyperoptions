@@ -24,6 +24,7 @@ from options_api.models import (
     Side,
 )
 from options_api.money import to_pct_tenths
+from options_api.outcomes import TERMS_NOTE
 from options_api.predictive_watch import PredictiveWatchOdds
 from stocksweeper.forecast.ledger import ForecastIssuance
 from stocksweeper.forecast.predictive import PredictiveDistribution
@@ -120,7 +121,7 @@ def quant_for_contract(
     watched: bool = False,
     displayed_chain_fetched_at: datetime | None = None,
     displayed_chain_source: MarketSource | None = None,
-    terms_note: str = "Assuming standard 100-share terms.",
+    terms_note: str = TERMS_NOTE,
 ) -> LiveQuant:
     expiry_text = expiry.isoformat()
     market = market_odds.lookup(ticker, side, expiry_text, strike, root)
@@ -130,6 +131,7 @@ def quant_for_contract(
         expiry,
         strike,
         contract_since=contract_since,
+        standard_terms=root == ticker and terms_note == TERMS_NOTE,
     )
     issuance = None
     if isinstance(predictive_odds, PredictiveWatchOdds):

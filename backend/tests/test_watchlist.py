@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from dataclasses import dataclass, replace
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from threading import Event
@@ -31,6 +31,7 @@ from options_api.outcomes import (
 from options_api.parser import parse_option_chain
 from options_api.watchlist import WatchStore, WatchlistService
 from stocksweeper.config import Settings
+from stocksweeper.forecast.predictive import PredictiveDistribution
 from stocksweeper.pipeline.jobs import JobBusy, JobManager
 from stocksweeper.storage.db import connect
 
@@ -38,6 +39,131 @@ from .conftest import load_fixture
 from .synthetic import synthetic_context
 
 D = Decimal
+
+
+def test_saved_adjusted_root_cannot_suppress_standard_watch_forecast(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = datetime(2026, 9, 25, 21, tzinfo=UTC)
+    expiry = date(2026, 10, 2)
+    distribution = PredictiveDistribution(
+        ticker="IREN",
+        status="available",
+        reason=None,
+        method="empirical_scaled",
+        as_of=date(2026, 9, 25),
+        expiry_session=expiry,
+        horizon_sessions=5,
+        spot=100.0,
+        daily_volatility=0.02,
+        model_version="test-v1",
+        support=3,
+        data_hash="test",
+        terminal_prices=(80.0, 100.0, 120.0),
+        weights=(0.2, 0.5, 0.3),
+    )
+    app = create_app(
+        clock=lambda: now,
+        prefetch_universe=False,
+        predictive_refresh=False,
+        research_settings=Settings(data_dir=tmp_path),
+    )
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        store = app.state.watchlist.store
+        for root in ("IREN", "IREN1"):
+            store.add(
+                make_watch_key("IREN", root, "call", expiry.isoformat(), D("100")),
+                "IREN",
+                root,
+                "call",
+                expiry,
+                D("100"),
+                datetime(2026, 9, 24, 18, tzinfo=UTC),
+            )
+        market = app.state.market_odds
+        monkeypatch.setattr(market, "schedule", lambda _tickers: None)
+        monkeypatch.setattr(market, "lookup", lambda *_args: MarketOddsView(status="unavailable"))
+        monkeypatch.setattr(market, "lookup_last_good", lambda *_args: None)
+        monkeypatch.setattr(market, "entry_quote", lambda *_args: None)
+        predictive = app.state.predictive_odds
+        monkeypatch.setattr(predictive, "schedule", lambda _tickers: None)
+        monkeypatch.setattr(
+            predictive,
+            "cache_retrieved_at",
+            lambda *_args: datetime.now(UTC) - timedelta(seconds=1),
+        )
+        terms_seen: list[bool] = []
+
+        def prepared(_ticker, _expiry, *, contract_since, standard_terms):
+            terms_seen.append(standard_terms)
+            return (
+                distribution
+                if standard_terms
+                else replace(
+                    distribution,
+                    status="unavailable",
+                    reason="contract_terms_ambiguous",
+                    method=None,
+                    spot=None,
+                    daily_volatility=None,
+                    terminal_prices=(),
+                    weights=(),
+                )
+            )
+
+        monkeypatch.setattr(predictive, "distribution", prepared)
+        monkeypatch.setattr(app.state.physical_shadow, "submit", lambda _entries: None)
+        response = client.get("/api/watchlist")
+        assert response.status_code == 200
+        by_root = {item["root"]: item for item in response.json()["items"]}
+        assert by_root["IREN"]["predictive_odds"]["status"] == "available"
+        assert by_root["IREN1"]["predictive_odds"]["status"] == "unavailable"
+        assert by_root["IREN1"]["predictive_odds"]["reason"] == "contract_terms_ambiguous"
+        assert sorted(terms_seen) == [False, True]
+        issued = app.state.predictive_odds.ledger.evaluation_rows()
+        assert {row["root"]: row["status"] for row in issued} == {
+            "IREN": "available",
+            "IREN1": "unavailable",
+        }
+        predictive._pending["IREN"] = None
+        refreshing = client.get("/api/watchlist")
+        assert refreshing.status_code == 200
+        by_root = {item["root"]: item for item in refreshing.json()["items"]}
+        assert by_root["IREN"]["predictive_odds"]["status"] == "available"
+        assert by_root["IREN1"]["predictive_odds"]["status"] == "unavailable"
+        assert by_root["IREN1"]["predictive_odds"]["reason"] == "contract_terms_ambiguous"
+
+
+def test_noncanonical_terms_are_not_forecast_as_standard() -> None:
+    from types import SimpleNamespace
+
+    from options_api.live_quant import quant_for_contract
+
+    captured: list[bool] = []
+
+    class Predictive:
+        def lookup(self, *_args, **kwargs):
+            captured.append(kwargs["standard_terms"])
+            return SimpleNamespace(status="unavailable", reason="contract_terms_ambiguous"), None
+
+    class Market:
+        def lookup(self, *_args):
+            return MarketOddsView(status="unavailable")
+
+        def entry_quote(self, *_args):
+            return None
+
+    quant_for_contract(
+        Market(),
+        Predictive(),
+        ticker="IREN",
+        root="IREN",
+        side="call",
+        expiry=date(2026, 10, 2),
+        strike=D("100"),
+        terms_note="Unverified terms",
+    )
+    assert captured == [False]
 
 
 @dataclass

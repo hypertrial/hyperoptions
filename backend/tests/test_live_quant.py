@@ -13,6 +13,7 @@ from options_api.live_quant import quant_for_contract
 from options_api.market_calendar import session_close
 from options_api.market_watch import EntryQuote
 from options_api.models import MarketOddsView, PredictiveOddsView
+from options_api.outcomes import TERMS_NOTE
 from options_api.predictive_watch import PredictiveWatchOdds
 from options_api.watchlist import OutcomeView, WatchItem, get_watchlist
 from stocksweeper.forecast.calendar import SessionCalendar
@@ -160,8 +161,8 @@ def test_missing_market_bracket_still_publishes_labeled_predictive_and_coherent_
     assert put.risk.assumed_spot_cents == 10_000  # Put has no stock purchase.
     assert call.risk.quote_session == put.risk.quote_session == date(2026, 9, 25)
     assert predictive.calls == [
-        {"side": "call", "contract_since": date(2026, 9, 25)},
-        {"side": "put", "contract_since": None},
+        {"side": "call", "contract_since": date(2026, 9, 25), "standard_terms": True},
+        {"side": "put", "contract_since": None, "standard_terms": True},
     ]
 
 
@@ -400,7 +401,7 @@ async def test_watchlist_api_keeps_all_three_quant_views_separate(
         side="call",
         expiration=EXPIRY,
         strike_exact="100.000",
-        terms_note="Standard terms assumed",
+        terms_note=TERMS_NOTE,
         created_at=watched_at,
         outcome=OutcomeView(status="pending"),
     )
@@ -421,4 +422,6 @@ async def test_watchlist_api_keeps_all_three_quant_views_separate(
     assert serialized["predictive_odds"]["as_of_session"] == "2026-09-25"
     assert serialized["hypothetical_risk"]["status"] == "available"
     assert serialized["hypothetical_risk"]["quote_session"] == "2026-09-25"
-    assert predictive.calls == [{"side": "call", "contract_since": contract_since}]
+    assert predictive.calls == [
+        {"side": "call", "contract_since": contract_since, "standard_terms": True}
+    ]
