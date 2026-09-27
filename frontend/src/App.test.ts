@@ -205,6 +205,14 @@ describe("row filters", () => {
     expect(parseThreshold("NaN")).toBeNull()
   })
 
+  it("rejects formatting that changes the meaning of a threshold", () => {
+    for (const value of ["10%5", "1,2", "1,,000", "1 0", "40$", "%%40"]) {
+      expect(parseThreshold(value)).toBeNull()
+    }
+    expect(parseThreshold("$-40.5")).toEqual({ value: -405n, scale: 1 })
+    expect(parseThreshold("1,000.50%")).toEqual({ value: 100050n, scale: 2 })
+  })
+
   it("fails only the matching active filter for null and non-finite metrics", () => {
     const missing = { called_pnl_cents: null, simple_apr_pct_tenths: null, drop_to_breakeven_pct_tenths: 192, dte: 7 }
     const nonFinite = { called_pnl_cents: Number.NaN, simple_apr_pct_tenths: Number.POSITIVE_INFINITY, drop_to_breakeven_pct_tenths: 102, dte: 7 }

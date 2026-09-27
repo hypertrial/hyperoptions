@@ -2,7 +2,10 @@ import { meetsScaledMaximum, meetsScaledMinimum, parseExactToken, type ExactDeci
 import { STRATEGIES } from "./strategy"
 import type { Side } from "./types"
 
+const THRESHOLD_TOKEN = /^\s*(?:[+-]?\s*\$?|\$\s*[+-]?)\s*(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?\s*%?\s*$/
+
 export function parseThreshold(raw: string): ExactDecimal | null {
+  if (!THRESHOLD_TOKEN.test(raw)) return null
   return parseExactToken(raw, /[$%,\s]/g)
 }
 

@@ -774,6 +774,11 @@ describe("chain interactions", () => {
     expect(screen.getByRole("button", { name: /Filters/ }).textContent).toContain("Fix 1")
     expect(screen.getByRole("button", { name: "Clear all" })).toBeTruthy()
 
+    fireEvent.change(screen.getByLabelText("Min APR net (%)"), { target: { value: "10%5" } })
+    expect(screen.getByLabelText("Min APR net (%)").getAttribute("aria-invalid")).toBe("true")
+    expect(screen.getByRole("button", { name: "Clear invalid input APR net (%) 10%5" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: /Filters/ }).textContent).toContain("Fix 1")
+
     fireEvent.change(screen.getByLabelText("Min Called P&L ($)"), { target: { value: "0" } })
     expect(screen.getAllByText("$50.00")[0]).toBeTruthy()
     expect(screen.queryByText("$40.50")).toBeNull()

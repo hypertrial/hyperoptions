@@ -16,7 +16,7 @@ from options_api.contract_identity import make_watch_key
 from options_api.outcomes import TERMS_NOTE
 from options_api.physical_shadow_capture import MODEL_VERSIONS, PhysicalShadowCapture
 from stocksweeper.forecast.ledger import ForecastIssuance, ForecastLabel, ForecastLedger
-from stocksweeper.forecast.physical_contest import ShadowForecast
+from stocksweeper.forecast.physical_contest import PhysicalShadowForecaster, ShadowForecast
 from stocksweeper.forecast.calendar import SessionCalendar
 from stocksweeper.forecast.evidence_reports import ledger_band_rows
 from stocksweeper.forecast.physical_evaluation import evaluate_band
@@ -191,6 +191,39 @@ def test_one_challenger_rejection_does_not_erase_available_baseline(tmp_path) ->
     assert rows["student_t_ewma"]["status"] == "available"
     assert rows["gjr_garch_t"]["status"] == "unavailable"
     assert rows["gjr_garch_t"]["unavailable_reason"] == "gjr_nonconverged"
+
+
+def test_long_horizon_capture_does_not_record_false_baseline_outage(tmp_path) -> None:
+    expiry = date(2026, 11, 20)
+    distribution = replace(
+        _distribution("lognormal_ewma"), expiry_session=expiry, horizon_sessions=40
+    )
+    issue = replace(
+        _issue(),
+        contract_key=make_watch_key("IREN", "IREN", "call", expiry.isoformat(), Decimal(100)),
+        expiration=expiry,
+        expiry_session=expiry,
+        method="lognormal_ewma",
+        model_version=MODEL_VERSIONS["lognormal_ewma"],
+        itm_probability=0.5,
+        otm_probability=0.5,
+        atm_probability=0.0,
+    )
+    capture = _capture(tmp_path)
+    capture.predictive.ledger.record_batch([(issue, distribution)])
+    capture.forecaster = PhysicalShadowForecaster(
+        SimpleNamespace(forecast=lambda *_args, **_kwargs: distribution)
+    )
+    capture._capture_sync([(issue, distribution)])
+
+    coverage = ForecastLedger(tmp_path).coverage()
+    baseline = [row for row in coverage if row["model_version"] == distribution.model_version]
+    assert baseline and all(row["status"] == "available" for row in baseline)
+    assert {
+        row["unavailable_reason"]
+        for row in coverage
+        if row["model_version"] != distribution.model_version
+    } == {"shadow_horizon_unsupported"}
 
 
 def test_shadow_failure_cannot_mask_valid_live_method(tmp_path) -> None:

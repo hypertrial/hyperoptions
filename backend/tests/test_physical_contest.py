@@ -106,6 +106,26 @@ def test_gjr_requires_long_split_safe_history_and_scenarios_are_seeded():
     )
 
 
+@pytest.mark.parametrize("horizon", (25, 26, 40))
+def test_baseline_remains_available_beyond_challenger_horizon(tmp_path, horizon):
+    session = date(2026, 9, 25)
+    forecaster = PredictiveForecaster(tmp_path, _Prices(_bars(90, session)))
+    forecaster.prepare("AAPL", session)
+    expiry = SessionCalendar().sessions(date(2026, 9, 28), date(2026, 12, 31))[horizon - 1]
+    now = datetime(2026, 9, 26, 12, tzinfo=UTC)
+    assert forecaster.forecast("AAPL", now, expiry).status == "available"
+
+    forecasts = PhysicalShadowForecaster(forecaster).forecast_candidates("AAPL", now, expiry)
+    assert forecasts["lognormal_ewma"].distribution is not None
+    assert forecasts["lognormal_ewma"].reason is None
+    if horizon > 25:
+        assert all(
+            forecasts[name].distribution is None
+            and forecasts[name].reason == "shadow_horizon_unsupported"
+            for name in ("empirical_scaled", "student_t_ewma", "gjr_garch_t")
+        )
+
+
 def test_invalid_candidate_scenarios_leave_baseline_available(tmp_path, monkeypatch):
     session = date(2026, 9, 25)
     forecaster = PredictiveForecaster(tmp_path, _Prices(_bars(220, session)))
