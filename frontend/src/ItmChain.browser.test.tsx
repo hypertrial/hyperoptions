@@ -726,11 +726,16 @@ describe("chain interactions", () => {
     expect(screen.getAllByText("$50.00")[0]).toBeTruthy()
     expect(screen.getByText("$40.50")).toBeTruthy()
     expect(screen.getByLabelText("Min APR net (%)").getAttribute("aria-invalid")).toBe("true")
+    expect(screen.getByRole("button", { name: "Clear invalid input APR net (%) abc" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Remove filter APR net (%) abc" })).toBeNull()
+    expect(screen.getByRole("button", { name: /Filters/ }).textContent).toContain("Fix 1")
     expect(screen.getByRole("button", { name: "Clear all" })).toBeTruthy()
 
     fireEvent.change(screen.getByLabelText("Min Called P&L ($)"), { target: { value: "0" } })
     expect(screen.getAllByText("$50.00")[0]).toBeTruthy()
     expect(screen.queryByText("$40.50")).toBeNull()
+    expect(screen.getByRole("button", { name: "Remove filter Called P&L ($) 0" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: /Filters/ }).textContent).toContain("Fix 1")
   })
 
   it("shows removable active-filter chips and clears filters independently", async () => {
@@ -853,6 +858,8 @@ describe("chain interactions", () => {
     expect(screen.getByText("No rows match the current filters.")).toBeTruthy()
     expect(screen.getByLabelText("Min DTE").getAttribute("aria-invalid")).toBe("true")
     expect(screen.getByLabelText("Max DTE").getAttribute("aria-invalid")).toBe("true")
+    expect(screen.getByRole("button", { name: "Clear invalid input DTE ≥ 40" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Clear invalid input DTE ≤ 10" })).toBeTruthy()
   })
 
   it("copies displayed row values with headers and context, including contract scaling", async () => {

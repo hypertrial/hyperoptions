@@ -99,9 +99,12 @@ export default function FilterControls({
       key: spec.chipKey,
       label: spec.chipLabel,
       value: texts[spec.id],
+      valid: parsedById[spec.id] !== null && !(spec.rowKey === "dte" && invertedDte),
       clear: () => onTextChange(spec.id, ""),
     }))
     .filter((chip) => chip.value.trim() !== "")
+  const activeCount = chips.filter((chip) => chip.valid).length
+  const invalidCount = chips.length - activeCount
 
   return (
     <Collapsible defaultOpen={false} className="results-controls">
@@ -115,7 +118,8 @@ export default function FilterControls({
           <CollapsibleTrigger className="secondary-button toolbar-button">
             <Filter aria-hidden="true" />
             Filters
-            {chips.length > 0 ? <Badge variant="secondary">{chips.length}</Badge> : null}
+            {activeCount > 0 ? <Badge variant="secondary">{activeCount}</Badge> : null}
+            {invalidCount > 0 ? <Badge variant="destructive">Fix {invalidCount}</Badge> : null}
             <ChevronDown className="chevron" aria-hidden="true" />
           </CollapsibleTrigger>
           <ColumnPicker side={side} selected={selectedColumns} onChange={onChangeColumns} />
@@ -141,10 +145,10 @@ export default function FilterControls({
       </div>
 
       {chips.length > 0 ? (
-        <div className="filter-chips" aria-label="Active filters">
+        <div className="filter-chips" aria-label="Filter entries">
           {chips.map((chip) => (
-            <button key={chip.key} type="button" className="filter-chip" onClick={chip.clear} aria-label={`Remove filter ${chip.label} ${chip.value}`}>
-              <span>{chip.label} {chip.value}</span>
+            <button key={chip.key} type="button" className="filter-chip" aria-invalid={!chip.valid || undefined} onClick={chip.clear} aria-label={`${chip.valid ? "Remove filter" : "Clear invalid input"} ${chip.label} ${chip.value}`}>
+              <span>{chip.valid ? "" : "Invalid: "}{chip.label} {chip.value}</span>
               <X aria-hidden="true" />
             </button>
           ))}

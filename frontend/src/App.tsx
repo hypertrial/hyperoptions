@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react"
+import { lazy, Suspense, useEffect, useState } from "react"
 import { BrowserRouter, Link, MemoryRouter, Navigate, Route, Routes, useLocation } from "react-router-dom"
 
 import ItmChain from "./ItmChain"
@@ -10,6 +10,10 @@ function Workspace() {
   const location = useLocation()
   const [lastChainUrl, setLastChainUrl] = useState("/")
   const watchlist = location.pathname === "/watchlist"
+  useEffect(() => {
+    const page = location.pathname === "/" ? "Option chain" : watchlist ? "Watchlist" : "Page not found"
+    document.title = `${page} · HyperOptions`
+  }, [location.pathname, watchlist])
   const liveChainUrl = location.pathname === "/" ? `${location.pathname}${location.search}` : null
   if (liveChainUrl !== null && liveChainUrl !== lastChainUrl) setLastChainUrl(liveChainUrl)
   const chainUrl = liveChainUrl ?? lastChainUrl

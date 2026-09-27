@@ -752,6 +752,7 @@
     font-size: .72rem;
   }
   .filter-chip svg { width: 13px; height: 13px; }
+  .filter-chip[aria-invalid="true"] { border-color: var(--destructive); color: var(--destructive); }
   .filter-panel { padding: 4px 0 12px; }
   .filter-cluster {
     display: grid;
