@@ -326,9 +326,6 @@ class PhysicalShadowForecaster:
             return {name: ShadowForecast(None, current.reason, 0, 0) for name in names}
         assert current.spot is not None and current.daily_volatility is not None
         horizon = current.horizon_sessions
-        if horizon > MAX_HORIZON:
-            reason = "shadow_horizon_unsupported"
-            return {name: ShadowForecast(None, reason, 0, 0) for name in names}
         started = perf_counter()
         baseline_prices = tuple(
             sorted(
@@ -347,6 +344,12 @@ class PhysicalShadowForecaster:
         results = {
             "lognormal_ewma": ShadowForecast(baseline, None, 0, (perf_counter() - started) * 1000)
         }
+        if horizon > MAX_HORIZON:
+            results.update({
+                name: ShadowForecast(None, "shadow_horizon_unsupported", 0, 0)
+                for name in names[1:]
+            })
+            return results
         try:
             frame = self.forecaster.prices.read(ticker)
             assert frame is not None
