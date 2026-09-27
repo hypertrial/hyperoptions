@@ -309,7 +309,7 @@ export default function ItmChain() {
           ) : null}
           {!loading && view.filterMiss ? (
             <div className="empty-state" role="status">
-              <p>No rows match the current filters.</p>
+              <p>{view.invertedDte ? "Minimum DTE must not exceed maximum DTE. Fix the range to see results." : "No rows match the current filters."}</p>
             </div>
           ) : null}
 
