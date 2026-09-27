@@ -104,6 +104,9 @@ class _Predictive:
     def schedule(self, tickers: object) -> None:
         self.scheduled = list(tickers)
 
+    def evidence_index(self) -> dict[str, object]:
+        return {}
+
 
 def _quote(
     *,

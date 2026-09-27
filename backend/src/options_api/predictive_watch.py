@@ -17,6 +17,7 @@ from options_api.models import (
     normalize_ticker,
 )
 from stocksweeper.forecast.calibration import build_calibration, horizon_band, moneyness_band
+from stocksweeper.forecast.evidence_reports import build_model_evidence
 from stocksweeper.forecast.ledger import ForecastLedger
 from stocksweeper.forecast.predictive import PredictiveDistribution, PredictiveForecaster
 
@@ -54,8 +55,10 @@ class PredictiveWatchOdds:
         self._semaphore = asyncio.Semaphore(2)
         self._refresh_locks: dict[str, asyncio.Lock] = {}
         self._champion_attempts: dict[tuple[str, date, str], datetime] = {}
-        self._calibration: dict[tuple[str, str, str, str], dict[str, object]] = {}
+        self._calibration: dict[tuple[str, str, str, str, Side], dict[str, object]] = {}
         self._calibration_day: date | None = None
+        self._model_evidence: dict[tuple[str, str], dict[str, object]] = {}
+        self._model_evidence_day: date | None = None
         self._calibration_task: asyncio.Task[None] | None = None
         self._closed = False
 
@@ -121,7 +124,10 @@ class PredictiveWatchOdds:
         """Refresh displayed reliability once per UTC day without blocking pages."""
         if (
             self._closed
-            or self._now().date() == self._calibration_day
+            or (
+                self._now().date() == self._calibration_day
+                and self._now().date() == self._model_evidence_day
+            )
             or (self._calibration_task is not None and not self._calibration_task.done())
         ):
             return
@@ -129,15 +135,38 @@ class PredictiveWatchOdds:
 
     async def _refresh_calibration(self) -> None:
         now = self._now()
-        try:
-            summary = await asyncio.to_thread(build_calibration, self.ledger, now)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            LOG.warning("forecast calibration refresh failed", exc_info=True)
-        else:
-            self._calibration = summary
-            self._calibration_day = now.date()
+        if self._calibration_day != now.date():
+            try:
+                summary = await asyncio.to_thread(build_calibration, self.ledger, now)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOG.warning("forecast calibration refresh failed", exc_info=True)
+            else:
+                self._calibration = summary
+                self._calibration_day = now.date()
+        if self._model_evidence_day != now.date():
+            try:
+                reports = await asyncio.to_thread(
+                    build_model_evidence, self.data_dir, self.ledger, now
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOG.warning("model evidence refresh failed", exc_info=True)
+            else:
+                self._model_evidence = reports
+                self._model_evidence_day = now.date()
+
+    def evidence_for(self, method: str, horizon_sessions: int) -> dict[str, object] | None:
+        band = horizon_band(horizon_sessions)
+        return self._model_evidence.get((method, band)) if band else None
+
+    def evidence_index(self) -> dict[str, object]:
+        return {
+            f"{method}:{band}": report
+            for (method, band), report in self._model_evidence.items()
+        }
 
     async def _refresh(self, ticker: str) -> None:
         lock = self._refresh_locks.setdefault(ticker, asyncio.Lock())
@@ -231,7 +260,7 @@ class PredictiveWatchOdds:
             ):
                 self._schedule_champion(ticker, completed, champion)
             return cached
-        result = self.forecaster.forecast(
+        result = getattr(self.forecaster, "forecast_baseline", self.forecaster.forecast)(
             ticker,
             now,
             expiry,
@@ -264,6 +293,22 @@ class PredictiveWatchOdds:
             contract_since=contract_since,
             standard_terms=standard_terms,
         )
+        return self.view_for_distribution(
+            distribution, side, strike, standard_terms=standard_terms, ticker=ticker
+        ), distribution
+
+    def view_for_distribution(
+        self,
+        distribution: PredictiveDistribution,
+        side: Side,
+        strike: Decimal,
+        *,
+        standard_terms: bool = True,
+        ticker: str | None = None,
+        price_basis: str = "completed_close",
+        price_as_of: datetime | None = None,
+    ) -> PredictiveOddsView:
+        ticker = ticker or distribution.ticker
         common = {
             "method": distribution.method,
             "as_of_session": distribution.as_of,
@@ -271,10 +316,15 @@ class PredictiveWatchOdds:
             "model_version": distribution.model_version,
             "support": distribution.support or None,
             "data_hash": distribution.data_hash,
-            "price_basis": "completed_close" if distribution.status == "available" else None,
+            "price_basis": price_basis if distribution.status == "available" else None,
             "price_as_of": (
-                session_close(distribution.as_of)
+                price_as_of or session_close(distribution.as_of)
                 if distribution.status == "available" else None
+            ),
+            "evidence_key": (
+                f"{distribution.method}:{band}"
+                if distribution.method and (band := horizon_band(distribution.horizon_sessions))
+                else None
             ),
         }
         if distribution.status != "available":
@@ -285,17 +335,17 @@ class PredictiveWatchOdds:
                     "Refreshing completed price history" if refreshing else distribution.reason
                 ),
                 **common,
-            ), distribution
+            )
         call = distribution.probability("call", strike)
         put = distribution.probability("put", strike)
         if call is None or put is None:
             return PredictiveOddsView(
                 status="unavailable", reason="model_probability_invalid", **common
-            ), distribution
+            )
         if not 0 <= call <= 1 or not 0 <= put <= 1 or call + put > 1 + 1e-9:
             return PredictiveOddsView(
                 status="unavailable", reason="model_probability_invalid", **common
-            ), distribution
+            )
         call_tenths = int(
             (Decimal(str(call)) * 1000).to_integral_value(rounding=ROUND_HALF_UP)
         )
@@ -316,7 +366,7 @@ class PredictiveWatchOdds:
         )
         evidence = (
             self._calibration.get(
-                (distribution.model_version, "completed_close", band, money)
+                (distribution.model_version, price_basis, band, money, side)
             )
             if distribution.model_version and band and money
             else None
@@ -330,7 +380,7 @@ class PredictiveWatchOdds:
                 PredictiveValidationEvidence.model_validate(evidence) if evidence else None
             ),
             **common,
-        ), distribution
+        )
 
     async def close(self) -> None:
         self._closed = True

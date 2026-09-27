@@ -1,10 +1,12 @@
 import { Button } from "@/components/ui/button"
+import { DEFAULT_FORECAST_MODEL, physicalModelName, type PhysicalModel } from "../forecastModels"
 import { dateTime, moneyCents, percentTenths, unsignedPercentTenths } from "../format"
 import { oddsAvailable, oddsProvenance, predictiveProvenance, quoteSupportLabel } from "../marketOdds"
 import OddsValues from "../OddsValues"
+import ModelComparison from "../ModelComparison"
 import type { WatchItem, WatchOutcome } from "./types"
 
-function OddsSection({ item }: { item: WatchItem }) {
+function OddsSection({ item, forecastModel, modelEvidence }: { item: WatchItem; forecastModel: PhysicalModel; modelEvidence?: Record<string, unknown> | null }) {
   const predictiveSource = predictiveProvenance(item.predictive_odds)
   const marketSource = oddsProvenance(item.market_odds)
   const prior = item.last_available_market_odds
@@ -12,6 +14,7 @@ function OddsSection({ item }: { item: WatchItem }) {
     <section className="watch-card-section" aria-label="Odds estimates">
       <h3>Expiry-close odds</h3>
       <p className="watch-odds"><OddsValues odds={item.market_odds} predictiveOdds={item.predictive_odds} /></p>
+      <ModelComparison physical={item.physical_models} market={item.market_models} selected={forecastModel} evidenceIndex={modelEvidence} />
       {predictiveSource ? <details className="watch-provenance"><summary>Forecast method</summary><p>{predictiveSource}</p></details> : null}
       {marketSource ? <p className="watch-provenance">Market odds: {marketSource}</p> : null}
       {!oddsAvailable(item.market_odds) && prior && oddsAvailable(prior) ? (
@@ -26,17 +29,17 @@ function OddsSection({ item }: { item: WatchItem }) {
   )
 }
 
-function HypotheticalRiskSection({ risk, side }: { risk: WatchItem["hypothetical_risk"]; side: WatchItem["side"] }) {
+function HypotheticalRiskSection({ risk, side, forecastModel }: { risk: WatchItem["hypothetical_risk"]; side: WatchItem["side"]; forecastModel: PhysicalModel }) {
   const available = risk?.status === "available"
     && risk.assumed_spot_cents != null && risk.assumed_bid_cents != null
     && risk.expected_pnl_cents != null && risk.expected_return_pct_tenths != null
     && risk.loss_pct_tenths != null && risk.p05_pnl_cents != null && risk.quote_session != null
   return (
     <section className="watch-card-section watch-risk-section" aria-label="Hypothetical expiry risk">
-      <h3>Hypothetical hold-to-expiry risk</h3>
+      <h3>Hypothetical hold-to-expiry risk · {physicalModelName(forecastModel)}</h3>
       {available ? (
         <>
-          <p className="watch-muted">One 100-share contract · {risk.forecast_price_basis === "intraday_quote" ? "validated intraday quote" : "completed-close forecast"}. Hypothetical hold-to-expiry; excludes dividends, fees, assignment. No trade or position is recorded.</p>
+          <p className="watch-muted">{forecastModel === DEFAULT_FORECAST_MODEL ? "Baseline" : "User-selected experimental model"} · one 100-share contract · {risk.forecast_price_basis === "intraday_quote" ? "validated intraday quote" : "completed-close forecast"}. Hypothetical hold-to-expiry; excludes dividends, fees, assignment. No trade or position is recorded.</p>
           <dl className="watch-facts">
             <div><dt>{side === "call" ? "Assumed stock entry" : "Underlying quote used"}</dt><dd>{moneyCents(risk.assumed_spot_cents)} per share</dd></div>
             <div><dt>Assumed option bid</dt><dd>{moneyCents(risk.assumed_bid_cents)} per share</dd></div>
@@ -83,8 +86,10 @@ function Outcome({ outcome, expiration }: { outcome: WatchOutcome; expiration: s
   )
 }
 
-export default function WatchCard({ item, deleting, deleteError, onDelete }: {
+export default function WatchCard({ item, forecastModel = DEFAULT_FORECAST_MODEL, modelEvidence, deleting, deleteError, onDelete }: {
   item: WatchItem
+  forecastModel?: PhysicalModel
+  modelEvidence?: Record<string, unknown> | null
   deleting: boolean
   deleteError: string | null
   onDelete: (id: string) => void
@@ -103,9 +108,9 @@ export default function WatchCard({ item, deleting, deleteError, onDelete }: {
       </div>
       {deleteError ? <p role="alert" className="watch-error">{deleteError}</p> : null}
       <div className="watch-card-grid">
-        <OddsSection item={item} />
+        <OddsSection item={item} forecastModel={forecastModel} modelEvidence={modelEvidence} />
         <Outcome outcome={item.outcome} expiration={item.expiration} />
-        <HypotheticalRiskSection risk={item.hypothetical_risk} side={item.side} />
+        <HypotheticalRiskSection risk={item.hypothetical_risk} side={item.side} forecastModel={forecastModel} />
       </div>
     </article>
   )

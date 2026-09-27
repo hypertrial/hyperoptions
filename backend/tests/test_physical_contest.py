@@ -13,6 +13,7 @@ import polars as pl
 import pytest
 
 from stocksweeper.forecast.calendar import SessionCalendar
+from stocksweeper.forecast.evidence_reports import ledger_contest
 from stocksweeper.forecast.audit import AuditCohort, AuditMember
 from stocksweeper.forecast.physical_contest import (
     PhysicalShadowForecaster,
@@ -213,6 +214,12 @@ def test_paired_band_gate_uses_ticker_origin_units_and_as_issued_evidence():
     assert report["brier"]["bootstrap_95"][1] < 0
     assert report["crps"]["scored_units"] == 500
     assert report["promotion_eligible"] is True
+    call_bins = report["calibration_by_side"]["call"]
+    put_bins = report["calibration_by_side"]["put"]
+    assert sum(item["count"] for item in call_bins) == 500
+    assert sum(item["count"] for item in put_bins) == 500
+    assert next(item for item in call_bins if item["count"])["observed_rate"] == 1
+    assert next(item for item in put_bins if item["count"])["observed_rate"] == 0
     replay = evaluate_band(
         _paired_rows("immutable_replay"),
         "student_t_ewma",
@@ -319,11 +326,6 @@ def test_frozen_cohort_replay_is_screening_only(tmp_path, monkeypatch):
 
 
 def test_ledger_contest_uses_exact_joined_label_and_counts_failed_attempts():
-    script = Path(__file__).parents[1] / "scripts" / "evaluate_predictive.py"
-    spec = spec_from_file_location("evaluate_predictive_ledger_script", script)
-    assert spec is not None and spec.loader is not None
-    evaluator = module_from_spec(spec)
-    spec.loader.exec_module(evaluator)
     issued = datetime(2026, 9, 25, 22, tzinfo=UTC)
     common = {
         "ticker": "AAPL",
@@ -380,7 +382,7 @@ def test_ledger_contest_uses_exact_joined_label_and_counts_failed_attempts():
         def evaluation_skipped_attempts(self, provenance):
             return {}
 
-    report = evaluator._ledger_contest(
+    report = ledger_contest(
         Ledger(), SessionCalendar(), "as_issued", "student_t_ewma", None, "all"
     )
     first = report["bands"]["1"]
@@ -410,7 +412,7 @@ def test_ledger_contest_uses_exact_joined_label_and_counts_failed_attempts():
                 },
             ]
 
-    late_report = evaluator._ledger_contest(
+    late_report = ledger_contest(
         LateLedger(), SessionCalendar(), "as_issued", "student_t_ewma", None, "all"
     )
     assert late_report["bands"]["1"]["ticker_origin_horizon_units"] == 0

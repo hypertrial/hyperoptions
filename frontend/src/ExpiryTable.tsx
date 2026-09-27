@@ -11,6 +11,8 @@ import { integer, moneyStrike } from "./format"
 import { heatmapHue, heatmapStop, type MetricRange } from "./heatmap"
 import { oddsAvailable, oddsLabel, oddsMessage, predictiveAvailable } from "./marketOdds"
 import OddsValues from "./OddsValues"
+import ModelComparison from "./ModelComparison"
+import { physicalModelName, type PhysicalModel } from "./forecastModels"
 import type { Side } from "./types"
 import { useMediaQuery } from "./useMediaQuery"
 import { PREDICTIVE_ODDS_SORT_ID, type SortState, type VisibleGroup } from "./viewModel"
@@ -52,6 +54,8 @@ type Props = {
   copiedKey: string | null
   sort: SortState
   density: Density
+  forecastModel: PhysicalModel
+  modelEvidence?: Record<string, unknown> | null
   onToggleExpiration: (expiration: string) => void
   onSort: (id: string) => void
   onCopy: (row: SizedContract, group: VisibleGroup["group"]) => void
@@ -68,6 +72,8 @@ function DesktopResults({
   copiedKey,
   sort,
   density,
+  forecastModel,
+  modelEvidence,
   onSort,
   onCopy,
   watchStates,
@@ -81,6 +87,8 @@ function DesktopResults({
   copiedKey: string | null
   sort: SortState
   density: Density
+  forecastModel: PhysicalModel
+  modelEvidence?: Record<string, unknown> | null
   onSort: (id: string) => void
   onCopy: (row: SizedContract, group: VisibleGroup["group"]) => void
   watchStates: Readonly<Record<string, WatchActionState>>
@@ -123,9 +131,9 @@ function DesktopResults({
                       {active ? (sort.dir === "asc" ? <ArrowUp aria-hidden="true" /> : <ArrowDown aria-hidden="true" />) : null}
                     </button>
                   </th>
-                  {index === 0 ? <th scope="col" title="Sort by the stock forecast's ITM probability. Market odds are shown separately." aria-sort={sort.id === PREDICTIVE_ODDS_SORT_ID ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
+                  {index === 0 ? <th scope="col" title={`Sort by ${physicalModelName(forecastModel)} ITM probability. Market odds are shown separately.`} aria-sort={sort.id === PREDICTIVE_ODDS_SORT_ID ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
                     <button type="button" onClick={() => onSort(PREDICTIVE_ODDS_SORT_ID)}>
-                      Expiry odds
+                      Expiry odds · {physicalModelName(forecastModel)}
                       {sort.id === PREDICTIVE_ODDS_SORT_ID ? (sort.dir === "asc" ? <ArrowUp aria-hidden="true" /> : <ArrowDown aria-hidden="true" />) : null}
                     </button>
                   </th> : null}
@@ -153,6 +161,7 @@ function DesktopResults({
                     </HeatCell>
                     {index === 0 ? <td className="odds-cell">
                       <OddsValues odds={row.market_odds} predictiveOdds={row.predictive_odds} compact />
+                      <ModelComparison physical={row.physical_models} market={row.market_models} selected={forecastModel} evidenceIndex={modelEvidence} />
                       {!predictiveAvailable(row.predictive_odds) && row.predictive_odds?.status !== "pending" ? (
                         <details className="odds-reason"><summary>Why forecast unavailable?</summary><p>{row.predictive_odds?.reason || "No validated forecast is available for this contract."}</p></details>
                       ) : null}
@@ -203,6 +212,8 @@ function MobileResults({
   ranges,
   copiedKey,
   sort,
+  forecastModel,
+  modelEvidence,
   onSort,
   onCopy,
   watchStates,
@@ -218,7 +229,7 @@ function MobileResults({
         <label>
           <span>Sort by</span>
           <select value={sortId} onChange={(event) => onSort(event.target.value)}>
-            <option value={PREDICTIVE_ODDS_SORT_ID}>Stock forecast ITM odds</option>
+            <option value={PREDICTIVE_ODDS_SORT_ID}>{physicalModelName(forecastModel)} ITM odds</option>
             {columns.map((column) => <option key={column.id} value={column.id}>{column.label}</option>)}
           </select>
         </label>
@@ -251,6 +262,7 @@ function MobileResults({
                 </span>
                 <ChevronRight className="row-chevron" aria-hidden="true" />
               </CollapsibleTrigger>
+              <div className="mobile-model-compare"><ModelComparison physical={row.physical_models} market={row.market_models} selected={forecastModel} evidenceIndex={modelEvidence} /></div>
               <CollapsibleContent className="mobile-row-details">
                 {!predictiveAvailable(predictive) && predictive?.status !== "pending" ? <p className="mobile-odds-reason"><strong>Forecast unavailable:</strong> {predictive?.reason || "No validated forecast is available for this contract."}</p> : null}
                 {!oddsAvailable(odds) && odds?.status !== "pending" ? <p className="mobile-odds-reason"><strong>Market odds unavailable:</strong> {oddsMessage(odds)}</p> : null}
@@ -302,6 +314,8 @@ export default function ExpiryTables({
   copiedKey,
   sort,
   density,
+  forecastModel,
+  modelEvidence,
   onToggleExpiration,
   onSort,
   onCopy,
@@ -349,6 +363,8 @@ export default function ExpiryTables({
                   ranges={ranges}
                   copiedKey={copiedKey}
                   sort={sort}
+                  forecastModel={forecastModel}
+                  modelEvidence={modelEvidence}
                   onSort={onSort}
                   onCopy={onCopy}
                   watchStates={watchStates}
@@ -364,6 +380,8 @@ export default function ExpiryTables({
                   copiedKey={copiedKey}
                   sort={sort}
                   density={density}
+                  forecastModel={forecastModel}
+                  modelEvidence={modelEvidence}
                   onSort={onSort}
                   onCopy={onCopy}
                   watchStates={watchStates}

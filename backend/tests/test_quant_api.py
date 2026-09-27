@@ -89,14 +89,23 @@ def test_chain_serializes_predictive_fallback_and_coherent_payoff(
                 distribution,
             ),
         )
-        response = client.get("/api/covered-calls/IREN?moneyness=all")
+        response = client.get(
+            "/api/covered-calls/IREN?moneyness=all&forecast_model=empirical_scaled"
+        )
+        default_response = client.get("/api/covered-calls/IREN?moneyness=all")
+        invalid_response = client.get("/api/covered-calls/IREN?forecast_model=unknown")
         page = assemble_covered_calls(chain, info, history, today, now, "all")
 
         def failed_evidence(_entries):
             raise OSError("evidence disk unavailable")
 
         monkeypatch.setattr(app.state.predictive_odds.ledger, "record_batch", failed_evidence)
-        degraded = client.get("/api/covered-calls/IREN?moneyness=all")
+        degraded = client.get(
+            "/api/covered-calls/IREN?moneyness=all&forecast_model=empirical_scaled"
+        )
+        selected_unavailable = client.get(
+            "/api/covered-calls/IREN?moneyness=all&forecast_model=intraday_shadow"
+        )
 
     assert response.status_code == 200
     body = response.json()
@@ -108,12 +117,29 @@ def test_chain_serializes_predictive_fallback_and_coherent_payoff(
     )
     assert row["market_odds"]["status"] == "unavailable"
     assert row["predictive_odds"]["status"] == "available"
+    assert row["predictive_odds"]["method"] == "empirical_scaled"
+    assert [view["method"] for view in row["physical_models"]] == [
+        "lognormal_ewma", "empirical_scaled", "student_t_ewma",
+        "gjr_garch_t", "intraday_shadow",
+    ]
+    assert [view["method"] for view in row["market_models"]] == [
+        "regimelib", "constrained_call_curve",
+    ]
+    assert row["hypothetical_risk"]["forecast_method"] == "empirical_scaled"
     assert row["predictive_odds"]["model_version"] == "test-v1"
     assert row["hypothetical_risk"]["status"] == "available"
     assert row["hypothetical_risk"]["assumed_spot_cents"] == 5010
     assert row["hypothetical_risk"]["assumed_bid_cents"] == int(quoted.call_bid * 100)
     assert row["hypothetical_risk"]["quote_session"] == today.isoformat()
     assert body["chain_fetched_at"] == now.isoformat().replace("+00:00", "Z")
+    default_row = next(
+        contract for group in default_response.json()["expirations"]
+        for contract in group["contracts"] if contract["watch_key"] is not None
+    )
+    assert default_row["predictive_odds"]["method"] == "lognormal_ewma"
+    assert default_row["predictive_odds"]["status"] == "pending"
+    assert default_row["hypothetical_risk"]["status"] == "unavailable"
+    assert invalid_response.status_code == 422
     assert degraded.status_code == 200
     degraded_row = next(
         contract
@@ -125,3 +151,11 @@ def test_chain_serializes_predictive_fallback_and_coherent_payoff(
     assert degraded_row["predictive_odds"]["status"] == "unavailable"
     assert degraded_row["predictive_odds"]["reason"] == "Forecast evidence unavailable"
     assert degraded_row["hypothetical_risk"]["status"] == "unavailable"
+    unavailable_row = next(
+        contract for group in selected_unavailable.json()["expirations"]
+        for contract in group["contracts"] if contract["watch_key"] is not None
+    )
+    assert unavailable_row["predictive_odds"]["status"] == "unavailable"
+    assert all(
+        view["status"] == "unavailable" for view in unavailable_row["physical_models"]
+    )

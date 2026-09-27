@@ -112,6 +112,23 @@
               ],
               "title": "Moneyness"
             }
+          },
+          {
+            "name": "forecast_model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "lognormal_ewma",
+                "empirical_scaled",
+                "student_t_ewma",
+                "gjr_garch_t",
+                "intraday_shadow"
+              ],
+              "type": "string",
+              "default": "lognormal_ewma",
+              "title": "Forecast Model"
+            }
           }
         ],
         "responses": {
@@ -174,6 +191,23 @@
               ],
               "title": "Moneyness"
             }
+          },
+          {
+            "name": "forecast_model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "lognormal_ewma",
+                "empirical_scaled",
+                "student_t_ewma",
+                "gjr_garch_t",
+                "intraday_shadow"
+              ],
+              "type": "string",
+              "default": "lognormal_ewma",
+              "title": "Forecast Model"
+            }
           }
         ],
         "responses": {
@@ -183,6 +217,53 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CashSecuredPutPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/version": {
+      "get": {
+        "summary": "Version",
+        "operationId": "version_api_version_get",
+        "parameters": [
+          {
+            "name": "frontend_sha",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Frontend Sha"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionStatus"
                 }
               }
             }
@@ -243,6 +324,25 @@
       "get": {
         "summary": "Get Watchlist",
         "operationId": "get_watchlist_api_watchlist_get",
+        "parameters": [
+          {
+            "name": "forecast_model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "lognormal_ewma",
+                "empirical_scaled",
+                "student_t_ewma",
+                "gjr_garch_t",
+                "intraday_shadow"
+              ],
+              "type": "string",
+              "default": "lognormal_ewma",
+              "title": "Forecast Model"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -253,21 +353,50 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
         }
       },
       "post": {
         "summary": "Add Watch",
         "operationId": "add_watch_api_watchlist_post",
+        "parameters": [
+          {
+            "name": "forecast_model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "lognormal_ewma",
+                "empirical_scaled",
+                "student_t_ewma",
+                "gjr_garch_t",
+                "intraday_shadow"
+              ],
+              "type": "string",
+              "default": "lognormal_ewma",
+              "title": "Forecast Model"
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/WatchCreate"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -697,6 +826,20 @@
           "predictive_odds": {
             "$ref": "#/components/schemas/PredictiveOddsView"
           },
+          "physical_models": {
+            "items": {
+              "$ref": "#/components/schemas/PredictiveOddsView"
+            },
+            "type": "array",
+            "title": "Physical Models"
+          },
+          "market_models": {
+            "items": {
+              "$ref": "#/components/schemas/MarketOddsView"
+            },
+            "type": "array",
+            "title": "Market Models"
+          },
           "hypothetical_risk": {
             "$ref": "#/components/schemas/HypotheticalRiskView"
           }
@@ -929,6 +1072,11 @@
           },
           "lows": {
             "$ref": "#/components/schemas/PeriodLows"
+          },
+          "model_evidence": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Model Evidence"
           },
           "expirations": {
             "items": {
@@ -1337,6 +1485,20 @@
           "predictive_odds": {
             "$ref": "#/components/schemas/PredictiveOddsView"
           },
+          "physical_models": {
+            "items": {
+              "$ref": "#/components/schemas/PredictiveOddsView"
+            },
+            "type": "array",
+            "title": "Physical Models"
+          },
+          "market_models": {
+            "items": {
+              "$ref": "#/components/schemas/MarketOddsView"
+            },
+            "type": "array",
+            "title": "Market Models"
+          },
           "hypothetical_risk": {
             "$ref": "#/components/schemas/HypotheticalRiskView"
           }
@@ -1572,6 +1734,11 @@
           "lows": {
             "$ref": "#/components/schemas/PeriodLows"
           },
+          "model_evidence": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Model Evidence"
+          },
           "expirations": {
             "items": {
               "$ref": "#/components/schemas/CoveredCallExpiration"
@@ -1640,6 +1807,24 @@
             ],
             "title": "Status",
             "default": "unavailable"
+          },
+          "forecast_method": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "lognormal_ewma",
+                  "empirical_scaled",
+                  "student_t_ewma",
+                  "gjr_garch_t",
+                  "intraday_shadow"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast Method"
           },
           "reason": {
             "anyOf": [
@@ -1828,6 +2013,21 @@
       },
       "MarketOddsView": {
         "properties": {
+          "method": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "regimelib",
+                  "constrained_call_curve"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -1953,6 +2153,18 @@
               }
             ],
             "title": "Quote Support Score"
+          },
+          "model_evidence": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Evidence"
           }
         },
         "type": "object",
@@ -2130,7 +2342,14 @@
           "method": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "enum": [
+                  "lognormal_ewma",
+                  "empirical_scaled",
+                  "student_t_ewma",
+                  "gjr_garch_t",
+                  "intraday_shadow"
+                ]
               },
               {
                 "type": "null"
@@ -2275,6 +2494,29 @@
                 "type": "null"
               }
             ]
+          },
+          "evidence_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Key"
+          },
+          "model_evidence": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Evidence"
           }
         },
         "type": "object",
@@ -2287,6 +2529,14 @@
             "type": "string",
             "const": "prospective_as_issued",
             "title": "Source"
+          },
+          "option_side": {
+            "type": "string",
+            "enum": [
+              "call",
+              "put"
+            ],
+            "title": "Option Side"
           },
           "model_version": {
             "type": "string",
@@ -2326,6 +2576,7 @@
         "type": "object",
         "required": [
           "source",
+          "option_side",
           "model_version",
           "horizon_band",
           "moneyness_band",
@@ -2444,6 +2695,79 @@
         ],
         "title": "ValidationError"
       },
+      "VersionStatus": {
+        "properties": {
+          "running_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Running Sha"
+          },
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch"
+          },
+          "remote_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remote Sha"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "update_available",
+              "offline",
+              "unverified_checkout"
+            ],
+            "title": "Status"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Checked At"
+          },
+          "frontend_matches": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frontend Matches"
+          }
+        },
+        "type": "object",
+        "required": [
+          "running_sha",
+          "branch",
+          "remote_sha",
+          "status",
+          "checked_at",
+          "frontend_matches"
+        ],
+        "title": "VersionStatus"
+      },
       "WatchCreate": {
         "properties": {
           "watch_key": {
@@ -2478,6 +2802,11 @@
                 "type": "null"
               }
             ]
+          },
+          "model_evidence": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Model Evidence"
           }
         },
         "type": "object",
@@ -2544,6 +2873,20 @@
           "predictive_odds": {
             "$ref": "#/components/schemas/PredictiveOddsView"
           },
+          "physical_models": {
+            "items": {
+              "$ref": "#/components/schemas/PredictiveOddsView"
+            },
+            "type": "array",
+            "title": "Physical Models"
+          },
+          "market_models": {
+            "items": {
+              "$ref": "#/components/schemas/MarketOddsView"
+            },
+            "type": "array",
+            "title": "Market Models"
+          },
           "hypothetical_risk": {
             "$ref": "#/components/schemas/HypotheticalRiskView"
           },
@@ -2583,6 +2926,11 @@
                 "type": "null"
               }
             ]
+          },
+          "model_evidence": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Model Evidence"
           }
         },
         "type": "object",

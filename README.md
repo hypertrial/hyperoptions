@@ -18,19 +18,26 @@ From the directory containing `backend/`, `frontend/`, and `scripts/` (run `cd h
 ./scripts/dev
 ```
 
-Open [http://127.0.0.1:5173](http://127.0.0.1:5173). Ctrl+C stops both processes.
+`./scripts/dev` requires a clean `main` checkout with `origin` pointing to
+`hypertrial/hyperoptions`. It checks `origin/main` before installing locked
+dependencies, fast-forwards a clean checkout, and then starts both services.
+If the remote cannot be reached, it warns that the version is unverified and
+starts the clean local checkout. A feature branch, local changes, or divergent
+history stops startup with a repair message. While running, the UI checks for
+a newer remote revision; restart `./scripts/dev` to apply it. Open
+[http://127.0.0.1:5173](http://127.0.0.1:5173). Ctrl+C stops both processes.
 
 For separate terminals:
 
 ```bash
 cd backend
-uv sync --group dev --group research
+uv sync --frozen --group dev --group research
 uv run --group research uvicorn options_api.main:app --reload --no-access-log --host 127.0.0.1 --port 8000
 ```
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run generate:api
 npm run dev
 ```
@@ -104,6 +111,11 @@ After the expiry session completes, the separate **Expiry · close-based result*
 ## API
 
 `GET /api/health`, `GET /api/tickers?q=&limit=`, `GET /api/covered-calls/{ticker}?moneyness=`, and `GET /api/cash-secured-puts/{ticker}?moneyness=` serve the chain. Eligible chain rows include a backend-generated `watch_key`; ineligible rows include `watchability_reason`. The watchlist uses `POST /api/watchlist` with that key, `GET /api/watchlist`, `DELETE /api/watchlist/{id}`, and `POST /api/watchlist/refresh`; job progress is available from `GET /api/jobs/{id}`. The manual `/api/research/*` routes have been removed. Tickers must match `^[A-Z]{1,5}$` and belong to the Nasdaq-listed universe. The universe fails closed: if it cannot be loaded, ticker search and chain routes return 503. Unknown symbols return 404. Host validation admits loopback hosts only, including IPv6 `::1`. CORS allows the local Vite origin. API writes require that origin and JSON, and write bodies are capped at 16 KiB.
+
+`GET /api/version?frontend_sha=` reports the frozen running revision, branch,
+remote revision or offline status, check time, and optional frontend/backend
+revision match. Its remote check is cached for 60 seconds and never changes
+the running checkout.
 
 The checked-in `frontend/openapi.json` is generated from FastAPI. `npm run generate:api` regenerates TypeScript types and Zod page validators under `frontend/src/generated/`. `npm run check:api` fails if that output drifts.
 

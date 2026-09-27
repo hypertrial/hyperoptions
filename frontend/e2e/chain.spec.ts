@@ -9,7 +9,7 @@ function watchNasdaq(page: import("@playwright/test").Page) {
 }
 
 async function chooseTicker(page: import("@playwright/test").Page, symbol: string) {
-  const picker = page.getByRole("combobox")
+  const picker = page.getByRole("combobox", { name: "Ticker" })
   await picker.click()
   await picker.fill(symbol)
   const option = page.getByRole("option", { name: new RegExp(symbol) })
@@ -186,6 +186,39 @@ test("keeps unavailable odds reasons accessible without filling every compact ro
   await expect(row.locator(".mobile-row-summary")).not.toContainText("A coherent underlying bid and ask is unavailable")
   await row.getByRole("button", { name: /Show details for IREN/ }).click()
   await expect(row.locator(".mobile-row-details")).toContainText("A coherent underlying bid and ask is unavailable")
+})
+
+test("compares every model on a narrow screen without nesting the disclosure trigger", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.route("**/api/covered-calls/IREN**", async (route) => {
+    const response = await route.fetch()
+    const chain = await response.json()
+    const contract = chain.expirations[0].contracts[0]
+    contract.predictive_odds = { status: "available", method: "student_t_ewma", itm_pct_tenths: 611, otm_pct_tenths: 389, atm_pct_tenths: 0, evidence_key: "student_t_ewma:2-5" }
+    contract.physical_models = [
+      { status: "available", method: "lognormal_ewma", itm_pct_tenths: 600, otm_pct_tenths: 400, atm_pct_tenths: 0 },
+      { status: "available", method: "empirical_scaled", itm_pct_tenths: 620, otm_pct_tenths: 380, atm_pct_tenths: 0 },
+      { status: "available", method: "student_t_ewma", itm_pct_tenths: 611, otm_pct_tenths: 389, atm_pct_tenths: 0, evidence_key: "student_t_ewma:2-5" },
+      { status: "pending", method: "gjr_garch_t", reason: "candidate_not_prepared" },
+      { status: "unavailable", method: "intraday_shadow", reason: "stale_quote" },
+    ]
+    contract.market_models = [
+      { status: "available", method: "regimelib", itm_pct_tenths: 580, otm_pct_tenths: 420 },
+      { status: "unavailable", method: "constrained_call_curve", reason: "sparse_strikes" },
+    ]
+    chain.model_evidence = { "student_t_ewma:2-5": { prospective: { generated_at: "2026-09-27T12:00:00Z", model_version: "student-v1", input_version: "forecast-ledger-v1", tickers: 0, independent_date_blocks: 0, ticker_origin_horizon_units: 0, contract_forecasts_available: 0, contract_cells_attempted: 0, brier: { baseline: null, candidate: null }, log_loss: { baseline: null, candidate: null }, calibration_by_side: { call: [], put: [] }, latency_ms: {} }, retrospective: null } }
+    await route.fulfill({ response, json: chain })
+  })
+  await page.goto("/")
+  await page.getByRole("combobox", { name: "Stock forecast model" }).selectOption("student_t_ewma")
+  const first = page.locator(".mobile-option-row").first()
+  await expect(first.locator(".odds-physical")).toContainText("Student-t EWMA")
+  expect(await first.evaluate((row) => row.querySelector(".mobile-row-summary")!.contains(row.querySelector(".mobile-model-compare details")))).toBe(false)
+  await first.getByText("Compare models").click()
+  await expect(first).toContainText("GJR-GARCH Student-t")
+  await expect(first).toContainText("N=0")
+  await expect(first).toContainText("sparse_strikes")
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 })
 
 for (const viewport of [

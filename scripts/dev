@@ -103,9 +103,22 @@ need npm
 need python3
 need curl
 need lsof
+need git
 
 [ -d "$ROOT/backend" ] || die "backend/ not found"
 [ -d "$ROOT/frontend" ] || die "frontend/ not found"
+
+printf 'checking origin/main...\n'
+VERSION_CHECK_STATUS=$(python3 "$ROOT/scripts/dev_update.py" "$ROOT") || exit 1
+case "$VERSION_CHECK_STATUS" in
+  updated) printf 'updated main to origin/main\n' ;;
+  current) printf 'main is current\n' ;;
+  offline) printf 'warning: remote version unverified; starting the clean local main offline\n' >&2 ;;
+  *) die "unexpected update status" ;;
+esac
+OPTIONS_APP_SHA=$(git -C "$ROOT" rev-parse HEAD)
+VITE_APP_SHA=$OPTIONS_APP_SHA
+export OPTIONS_APP_SHA VITE_APP_SHA
 
 if port_in_use "$BACKEND_PORT"; then
   die "port $BACKEND_PORT is already in use (backend)"
@@ -115,10 +128,10 @@ if port_in_use "$FRONTEND_PORT"; then
 fi
 
 printf 'syncing backend deps...\n'
-(cd "$ROOT/backend" && uv sync --group dev --group research)
+(cd "$ROOT/backend" && uv sync --frozen --group dev --group research)
 
 printf 'installing frontend deps...\n'
-(cd "$ROOT/frontend" && npm install)
+(cd "$ROOT/frontend" && npm ci)
 
 printf 'starting backend on 127.0.0.1:%s\n' "$BACKEND_PORT"
 (

@@ -4,11 +4,13 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, expect, it, vi } from "vitest"
 
 import App from "./App"
+import { samplePage } from "./testFixtures"
 
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
   window.sessionStorage.clear()
+  window.localStorage.clear()
 })
 
 it("keeps the live chain query on the option chain link", () => {
@@ -72,4 +74,24 @@ it("offers navigation when a route does not exist", () => {
   expect(main.querySelector('a[href="/"]')?.textContent).toContain("option chain")
   expect(main.querySelector('a[href="/watchlist"]')?.textContent).toContain("watchlist")
   expect(document.title).toBe("Page not found · HyperOptions")
+})
+
+it("persists one model choice across chain and watchlist reads", async () => {
+  window.history.replaceState(null, "", "/")
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(
+    String(input).startsWith("/api/watchlist") ? { items: [] } : samplePage(),
+  )))
+  vi.stubGlobal("fetch", fetchMock)
+  const mounted = render(<App />)
+  const picker = screen.getByRole("combobox", { name: "Stock forecast model" }) as HTMLSelectElement
+  expect(picker.value).toBe("lognormal_ewma")
+  fireEvent.change(picker, { target: { value: "student_t_ewma" } })
+  await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("forecast_model=student_t_ewma"))).toBe(true))
+  expect(localStorage.getItem("hyperoptions.forecastModel")).toBe("student_t_ewma")
+  fireEvent.click(screen.getByRole("link", { name: "Watchlist" }))
+  await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url) === "/api/watchlist?forecast_model=student_t_ewma")).toBe(true))
+  expect((screen.getByRole("combobox", { name: "Stock forecast model" }) as HTMLSelectElement).value).toBe("student_t_ewma")
+  mounted.unmount()
+  render(<App />)
+  expect((screen.getByRole("combobox", { name: "Stock forecast model" }) as HTMLSelectElement).value).toBe("student_t_ewma")
 })

@@ -123,6 +123,21 @@ def test_live_empirical_still_captures_baseline_and_all_predeclared_challengers(
     assert empirical["atm_probability"] == pytest.approx(0.5)
 
 
+def test_failed_shadow_issuance_cannot_enter_live_cache(tmp_path) -> None:
+    capture = _capture(tmp_path)
+    capture.forecaster = SimpleNamespace(
+        forecast_candidates=lambda *_args, **_kwargs: _candidates()
+    )
+
+    def failed_record(_entries):
+        raise OSError("ledger unavailable")
+
+    capture.predictive.ledger.record_batch = failed_record
+    with pytest.raises(OSError, match="ledger unavailable"):
+        capture._capture_sync([(_issue(), _distribution())])
+    assert not capture._live
+
+
 def test_as_issued_report_includes_persisted_preparation_and_lookup_latency(tmp_path) -> None:
     capture = _capture(tmp_path)
     candidates = _candidates()
@@ -213,6 +228,9 @@ def test_manifest_mismatch_records_four_unavailable_attempts_without_fitting(tmp
     assert all(row["status"] == "unavailable" for row in rows)
     assert all(row["unavailable_reason"] == "input_provenance_unverified" for row in rows)
     assert all(row["itm_probability"] is None and row["distribution_hash"] is None for row in rows)
+    assert capture.candidate(
+        _distribution("lognormal_ewma"), "student_t_ewma", EXPIRY, INPUT
+    ).reason == "input_provenance_unverified"
 
 
 def test_changed_input_vintage_is_rejected_even_if_fit_succeeds(tmp_path) -> None:
@@ -241,6 +259,16 @@ def test_candidate_fit_error_is_recorded_as_fit_failure_not_bad_provenance(tmp_p
     assert {row["method"] for row in rows} == METHODS
     assert all(row["status"] == "unavailable" for row in rows)
     assert all(row["unavailable_reason"] == "shadow_fit_failed" for row in rows)
+    assert capture.candidate(
+        _distribution("lognormal_ewma"), "student_t_ewma", EXPIRY, INPUT
+    ).reason == "shadow_fit_failed"
+    capture.forecaster = SimpleNamespace(
+        forecast_candidates=lambda *_args, **_kwargs: _candidates()
+    )
+    capture._capture_sync([(_issue(), _distribution())])
+    assert capture.candidate(
+        _distribution("lognormal_ewma"), "student_t_ewma", EXPIRY, INPUT
+    ).distribution is not None
 
 
 def test_restart_does_not_duplicate_the_same_shadow_issuances(tmp_path) -> None:
@@ -265,12 +293,11 @@ def test_contracts_over_fit_capacity_leave_recorded_unavailable_attempts(
     capture.forecaster = SimpleNamespace(
         forecast_candidates=lambda *_args, **_kwargs: _candidates()
     )
-    capture._capture_sync(
-        [
-            (_issue("100.000"), _distribution()),
-            (_issue("110.000"), _distribution()),
-        ]
-    )
+    contracts = [
+        (_issue("100.000"), _distribution()),
+        (replace(_issue("110.000"), contract_since=date(2026, 9, 24)), _distribution()),
+    ]
+    capture._capture_sync(contracts)
 
     rows = ForecastLedger(tmp_path).evaluation_rows()
     assert len(rows) == 8
@@ -282,6 +309,13 @@ def test_contracts_over_fit_capacity_leave_recorded_unavailable_attempts(
     assert (
         len([row for row in rows if row["unavailable_reason"] == "shadow_capacity_exceeded"]) == 4
     )
+    skipped = max(
+        (issue for issue, _ in contracts),
+        key=lambda issue: hashlib.sha256(issue.contract_key.encode()).digest(),
+    )
+    assert capture.candidate(
+        _distribution("lognormal_ewma"), "student_t_ewma", EXPIRY, skipped.contract_since
+    ).reason == "shadow_capacity_exceeded"
 
 
 @pytest.mark.asyncio
@@ -292,7 +326,7 @@ async def test_full_pending_queue_retains_failed_candidate_attempts(
     capture = _capture(tmp_path)
     gate = asyncio.Event()
 
-    async def blocked(_entries):
+    async def blocked(_entries, _quotes):
         await gate.wait()
 
     capture._capture = blocked
@@ -320,3 +354,80 @@ async def test_full_pending_queue_retains_failed_candidate_attempts(
     assert {row["method"] for row in rejected} == METHODS
     assert all(row["status"] == "unavailable" for row in rejected)
     assert all(row["unavailable_reason"] == "shadow_capacity_exceeded" for row in rejected)
+    assert capture.candidate(
+        _distribution("lognormal_ewma"), "student_t_ewma", EXPIRY, INPUT
+    ).reason == "shadow_capacity_exceeded"
+
+
+@pytest.mark.asyncio
+async def test_capacity_rejection_can_refit_same_snapshot_after_bounded_retry(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("options_api.physical_shadow_capture._MAX_PENDING_BATCHES", 1)
+    clock = [0.0]
+    monkeypatch.setattr("options_api.physical_shadow_capture.monotonic", lambda: clock[0])
+    capture = _capture(tmp_path)
+    calls: list[str] = []
+
+    async def record_capacity(_entries, _quotes):
+        calls.append("capacity")
+
+    async def fit(_entries, _quotes):
+        calls.append("fit")
+
+    capture._record_capacity_async = record_capacity
+    capture._capture = fit
+    placeholder = asyncio.create_task(asyncio.sleep(0))
+    capture._fit_tasks.add(placeholder)
+    entries = [(_issue(), _distribution())]
+    capture.submit(entries)
+    await asyncio.sleep(0)
+    capture._fit_tasks.discard(placeholder)
+    capture.submit(entries)
+    await asyncio.sleep(0)
+    assert calls == ["capacity"]
+    clock[0] = 31.0
+    capture.submit(entries)
+    await capture.close()
+    assert calls == ["capacity", "fit"]
+
+
+@pytest.mark.asyncio
+async def test_failed_submit_retries_then_success_dedupes_same_snapshot(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock = [0.0]
+    monkeypatch.setattr("options_api.physical_shadow_capture.monotonic", lambda: clock[0])
+    capture = _capture(tmp_path)
+    calls = [0]
+
+    def fit(*_args, **_kwargs):
+        calls[0] += 1
+        if calls[0] == 1:
+            raise RuntimeError("temporary optimizer failure")
+        return _candidates()
+
+    capture.forecaster = SimpleNamespace(forecast_candidates=fit)
+    entries = [(_issue(), _distribution("lognormal_ewma"))]
+    capture.submit(entries)
+    await asyncio.gather(*capture._tasks)
+    await asyncio.sleep(0)
+    assert calls[0] == 1
+    assert capture.candidate(
+        _distribution("lognormal_ewma"), "student_t_ewma", EXPIRY, INPUT
+    ).reason == "shadow_fit_failed"
+
+    clock[0] = 31.0
+    capture.submit(entries)
+    await asyncio.gather(*capture._tasks)
+    await asyncio.sleep(0)
+    assert calls[0] == 2
+    assert capture.candidate(
+        _distribution("lognormal_ewma"), "student_t_ewma", EXPIRY, INPUT
+    ).distribution is not None
+
+    clock[0] = 62.0
+    capture.submit(entries)
+    await asyncio.sleep(0)
+    assert calls[0] == 2
+    await capture.close()

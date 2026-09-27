@@ -72,6 +72,7 @@ def test_shadow_curve_rejects_sparse_or_inconsistent_strip() -> None:
     assert sparse.odds.get((EXPIRY.isoformat(), Decimal(100)), None) is None or (
         sparse.odds[(EXPIRY.isoformat(), Decimal(100))].call_itm_probability is None
     )
+    assert sparse.expiry_reasons[EXPIRY.isoformat()] == "sparse_or_large_strip"
     rows = _quotes(range(93, 108))
     rows[7] = rows[7].model_copy(update={"call_bid": Decimal("50"), "call_ask": Decimal("50.04")})
     contradictory = calculate_curve_shadow(

@@ -30,9 +30,11 @@ def _pages(assemble) -> dict[str, object]:
     for page in pages.values():
         assert page.pop("chain_source") == "nasdaq"
         assert page.pop("chain_fetched_at") == page["fetched_at"]
+        assert page.pop("model_evidence") == {}
         for group in page["expirations"]:
             for contract in group["contracts"]:
                 assert contract.pop("market_odds") == {
+                    "method": None, "model_evidence": None,
                     "status": "pending", "itm_pct_tenths": None, "otm_pct_tenths": None,
                     "reason": None, "source": None, "fetched_at": None,
                     "session_date": None, "model_version": None,
@@ -40,6 +42,8 @@ def _pages(assemble) -> dict[str, object]:
                     "quote_support_score": None,
                 }
                 assert contract.pop("predictive_odds")["status"] == "pending"
+                assert contract.pop("physical_models") == []
+                assert contract.pop("market_models") == []
                 assert contract.pop("hypothetical_risk")["status"] == "unavailable"
                 assert contract.pop("greeks_rate_pct_tenths") is None
                 assert contract.pop("greeks_rate_as_of_session") is None

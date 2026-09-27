@@ -16,7 +16,7 @@ from options_api.outcomes import TERMS_NOTE, classify
 from stocksweeper.forecast.calendar import SessionCalendar
 from stocksweeper.forecast.ledger import ForecastLedger
 
-CalibrationKey = tuple[str, str, str, str]
+CalibrationKey = tuple[str, str, str, str, str]
 _BANDS = {"1": (1, 1), "2-5": (2, 5), "6-25": (6, 25), "26-252": (26, 252)}
 _LOOKBACK = timedelta(days=4 * 366)
 
@@ -164,7 +164,9 @@ def build_calibration(
         )
         if row["data_hash"] != vintage[unit][2]:
             continue
-        key = (row["model_version"], row["price_basis"], band, moneyness)
+        # Calls and puts at the same strike have complementary labels. Mixing
+        # them can make a poorly calibrated model appear perfectly calibrated.
+        key = (row["model_version"], row["price_basis"], band, moneyness, row["side"])
         grouped[key][row["input_session"]][unit[:3]].append(
             (
                 float(row["itm_probability"]),
@@ -194,6 +196,7 @@ def build_calibration(
             "model_version": key[0],
             "horizon_band": key[2],
             "moneyness_band": key[3],
+            "option_side": key[4],
             "independent_units": len(units),
             "predicted_itm_pct_tenths": _tenths(mean(unit[1] for unit in units)),
             "observed_itm_pct_tenths": _tenths(mean(unit[2] for unit in units)),

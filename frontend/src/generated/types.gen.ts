@@ -150,6 +150,14 @@ export type CashSecuredPutContract = {
     greeks_rate_as_of_session?: string | null;
     market_odds?: MarketOddsView;
     predictive_odds?: PredictiveOddsView;
+    /**
+     * Physical Models
+     */
+    physical_models?: Array<PredictiveOddsView>;
+    /**
+     * Market Models
+     */
+    market_models?: Array<MarketOddsView>;
     hypothetical_risk?: HypotheticalRiskView;
 };
 
@@ -260,6 +268,12 @@ export type CashSecuredPutPage = {
      */
     risk_free_rate_pct_tenths: number | null;
     lows: PeriodLows;
+    /**
+     * Model Evidence
+     */
+    model_evidence?: {
+        [key: string]: unknown;
+    };
     /**
      * Expirations
      */
@@ -420,6 +434,14 @@ export type CoveredCallContract = {
     greeks_rate_as_of_session?: string | null;
     market_odds?: MarketOddsView;
     predictive_odds?: PredictiveOddsView;
+    /**
+     * Physical Models
+     */
+    physical_models?: Array<PredictiveOddsView>;
+    /**
+     * Market Models
+     */
+    market_models?: Array<MarketOddsView>;
     hypothetical_risk?: HypotheticalRiskView;
 };
 
@@ -531,6 +553,12 @@ export type CoveredCallPage = {
     risk_free_rate_pct_tenths: number | null;
     lows: PeriodLows;
     /**
+     * Model Evidence
+     */
+    model_evidence?: {
+        [key: string]: unknown;
+    };
+    /**
      * Expirations
      */
     expirations: Array<CoveredCallExpiration>;
@@ -566,6 +594,10 @@ export type HypotheticalRiskView = {
      * Status
      */
     status?: 'available' | 'unavailable';
+    /**
+     * Forecast Method
+     */
+    forecast_method?: 'lognormal_ewma' | 'empirical_scaled' | 'student_t_ewma' | 'gjr_garch_t' | 'intraday_shadow' | null;
     /**
      * Reason
      */
@@ -647,6 +679,10 @@ export type Job = {
  */
 export type MarketOddsView = {
     /**
+     * Method
+     */
+    method?: 'regimelib' | 'constrained_call_curve' | null;
+    /**
      * Status
      */
     status?: 'pending' | 'available' | 'unavailable';
@@ -690,6 +726,12 @@ export type MarketOddsView = {
      * Quote Support Score
      */
     quote_support_score?: number | null;
+    /**
+     * Model Evidence
+     */
+    model_evidence?: {
+        [key: string]: unknown;
+    } | null;
 };
 
 /**
@@ -769,7 +811,7 @@ export type PredictiveOddsView = {
     /**
      * Method
      */
-    method?: string | null;
+    method?: 'lognormal_ewma' | 'empirical_scaled' | 'student_t_ewma' | 'gjr_garch_t' | 'intraday_shadow' | null;
     /**
      * Reason
      */
@@ -815,6 +857,16 @@ export type PredictiveOddsView = {
      */
     price_as_of?: string | null;
     validation_evidence?: PredictiveValidationEvidence | null;
+    /**
+     * Evidence Key
+     */
+    evidence_key?: string | null;
+    /**
+     * Model Evidence
+     */
+    model_evidence?: {
+        [key: string]: unknown;
+    } | null;
 };
 
 /**
@@ -827,6 +879,10 @@ export type PredictiveValidationEvidence = {
      * Source
      */
     source: 'prospective_as_issued';
+    /**
+     * Option Side
+     */
+    option_side: 'call' | 'put';
     /**
      * Model Version
      */
@@ -926,6 +982,36 @@ export type ValidationError = {
 };
 
 /**
+ * VersionStatus
+ */
+export type VersionStatus = {
+    /**
+     * Running Sha
+     */
+    running_sha: string | null;
+    /**
+     * Branch
+     */
+    branch: string | null;
+    /**
+     * Remote Sha
+     */
+    remote_sha: string | null;
+    /**
+     * Status
+     */
+    status: 'current' | 'update_available' | 'offline' | 'unverified_checkout';
+    /**
+     * Checked At
+     */
+    checked_at: string;
+    /**
+     * Frontend Matches
+     */
+    frontend_matches: boolean | null;
+};
+
+/**
  * WatchCreate
  */
 export type WatchCreate = {
@@ -945,6 +1031,12 @@ export type WatchCreateResponse = {
      */
     created: boolean;
     job: Job | null;
+    /**
+     * Model Evidence
+     */
+    model_evidence?: {
+        [key: string]: unknown;
+    };
 };
 
 /**
@@ -986,6 +1078,14 @@ export type WatchItem = {
     market_odds?: MarketOddsView;
     last_available_market_odds?: MarketOddsView | null;
     predictive_odds?: PredictiveOddsView;
+    /**
+     * Physical Models
+     */
+    physical_models?: Array<PredictiveOddsView>;
+    /**
+     * Market Models
+     */
+    market_models?: Array<MarketOddsView>;
     hypothetical_risk?: HypotheticalRiskView;
     outcome: OutcomeView;
 };
@@ -999,6 +1099,12 @@ export type WatchListResponse = {
      */
     items: Array<WatchItem>;
     active_job?: Job | null;
+    /**
+     * Model Evidence
+     */
+    model_evidence?: {
+        [key: string]: unknown;
+    };
 };
 
 /**
@@ -1071,6 +1177,10 @@ export type GetCoveredCallsApiCoveredCallsTickerGetData = {
          * Moneyness
          */
         moneyness?: 'itm' | 'otm' | 'all' | null;
+        /**
+         * Forecast Model
+         */
+        forecast_model?: 'lognormal_ewma' | 'empirical_scaled' | 'student_t_ewma' | 'gjr_garch_t' | 'intraday_shadow';
     };
     url: '/api/covered-calls/{ticker}';
 };
@@ -1106,6 +1216,10 @@ export type GetCashSecuredPutsApiCashSecuredPutsTickerGetData = {
          * Moneyness
          */
         moneyness?: 'itm' | 'otm' | 'all' | null;
+        /**
+         * Forecast Model
+         */
+        forecast_model?: 'lognormal_ewma' | 'empirical_scaled' | 'student_t_ewma' | 'gjr_garch_t' | 'intraday_shadow';
     };
     url: '/api/cash-secured-puts/{ticker}';
 };
@@ -1127,6 +1241,36 @@ export type GetCashSecuredPutsApiCashSecuredPutsTickerGetResponses = {
 };
 
 export type GetCashSecuredPutsApiCashSecuredPutsTickerGetResponse = GetCashSecuredPutsApiCashSecuredPutsTickerGetResponses[keyof GetCashSecuredPutsApiCashSecuredPutsTickerGetResponses];
+
+export type VersionApiVersionGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Frontend Sha
+         */
+        frontend_sha?: string | null;
+    };
+    url: '/api/version';
+};
+
+export type VersionApiVersionGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type VersionApiVersionGetError = VersionApiVersionGetErrors[keyof VersionApiVersionGetErrors];
+
+export type VersionApiVersionGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: VersionStatus;
+};
+
+export type VersionApiVersionGetResponse = VersionApiVersionGetResponses[keyof VersionApiVersionGetResponses];
 
 export type GetJobApiJobsJobIdGetData = {
     body?: never;
@@ -1161,9 +1305,23 @@ export type GetJobApiJobsJobIdGetResponse = GetJobApiJobsJobIdGetResponses[keyof
 export type GetWatchlistApiWatchlistGetData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Forecast Model
+         */
+        forecast_model?: 'lognormal_ewma' | 'empirical_scaled' | 'student_t_ewma' | 'gjr_garch_t' | 'intraday_shadow';
+    };
     url: '/api/watchlist';
 };
+
+export type GetWatchlistApiWatchlistGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetWatchlistApiWatchlistGetError = GetWatchlistApiWatchlistGetErrors[keyof GetWatchlistApiWatchlistGetErrors];
 
 export type GetWatchlistApiWatchlistGetResponses = {
     /**
@@ -1177,7 +1335,12 @@ export type GetWatchlistApiWatchlistGetResponse = GetWatchlistApiWatchlistGetRes
 export type AddWatchApiWatchlistPostData = {
     body: WatchCreate;
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Forecast Model
+         */
+        forecast_model?: 'lognormal_ewma' | 'empirical_scaled' | 'student_t_ewma' | 'gjr_garch_t' | 'intraday_shadow';
+    };
     url: '/api/watchlist';
 };
 

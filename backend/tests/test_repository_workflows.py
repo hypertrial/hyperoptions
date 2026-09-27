@@ -27,12 +27,30 @@ def _executable(path: Path, content: str) -> None:
     path.chmod(0o755)
 
 
+def _fake_dev_git(fake_bin: Path) -> None:
+    _executable(
+        fake_bin / "git",
+        "#!/bin/sh\n"
+        '[ "$1" != -C ] || shift 2\n'
+        'case "$1 $2" in\n'
+        '  "rev-parse --show-toplevel") pwd ;;\n'
+        '  "rev-parse HEAD"|"rev-parse refs/remotes/origin/main") '
+        'printf "%040d\\n" 1 ;;\n'
+        '  "symbolic-ref --short") printf "main\\n" ;;\n'
+        '  "remote get-url") printf "https://github.com/hypertrial/hyperoptions.git\\n" ;;\n'
+        '  "status --porcelain"|"fetch --no-tags"|"merge-base --is-ancestor") exit 0 ;;\n'
+        '  *) exit 1 ;;\n'
+        'esac\n',
+    )
+
+
 def test_dev_repairs_an_existing_incomplete_node_modules(tmp_path: Path) -> None:
     shutil.copytree(ROOT / "scripts", tmp_path / "scripts")
     (tmp_path / "backend").mkdir()
     (tmp_path / "frontend" / "node_modules").mkdir(parents=True)
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
+    _fake_dev_git(fake_bin)
     log = tmp_path / "calls.log"
     _executable(
         fake_bin / "npm",
@@ -61,8 +79,8 @@ def test_dev_repairs_an_existing_incomplete_node_modules(tmp_path: Path) -> None
     )
 
     calls = log.read_text().splitlines()
-    install = f"{tmp_path / 'frontend'}|npm install"
-    backend_sync = f"{tmp_path / 'backend'}|uv sync --group dev --group research"
+    install = f"{tmp_path / 'frontend'}|npm ci"
+    backend_sync = f"{tmp_path / 'backend'}|uv sync --frozen --group dev --group research"
     backend_start = (
         f"{tmp_path / 'backend'}|uv run --group research uvicorn options_api.main:app "
         "--reload --no-access-log --host 127.0.0.1 --port 8000"
@@ -78,6 +96,7 @@ def test_dev_cleanup_does_not_kill_a_later_port_owner(tmp_path: Path) -> None:
     (tmp_path / "frontend").mkdir()
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
+    _fake_dev_git(fake_bin)
     lsof_count = tmp_path / "lsof-count"
     unrelated = subprocess.Popen(["sleep", "30"])
     try:
@@ -126,6 +145,7 @@ def test_dev_cleanup_signals_owned_descendants(tmp_path: Path) -> None:
     (tmp_path / "frontend").mkdir()
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
+    _fake_dev_git(fake_bin)
     term_log = tmp_path / "terminated.log"
     child = tmp_path / "child.py"
     child.write_text(
@@ -156,7 +176,7 @@ def test_dev_cleanup_signals_owned_descendants(tmp_path: Path) -> None:
     )
     _executable(
         fake_bin / "npm",
-        '#!/bin/sh\n[ "${1:-}" = install ] && exit 0\nexec "$TEST_SERVICE" frontend\n',
+        '#!/bin/sh\n[ "${1:-}" = ci ] && exit 0\nexec "$TEST_SERVICE" frontend\n',
     )
     _executable(fake_bin / "curl", "#!/bin/sh\nexit 0\n")
     _executable(fake_bin / "lsof", "#!/bin/sh\nexit 1\n")
@@ -209,6 +229,7 @@ def test_dev_cleanup_stops_a_launcher_before_its_process_group_exists_even_if_te
     (tmp_path / "frontend").mkdir()
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
+    _fake_dev_git(fake_bin)
     launcher_pid = tmp_path / "launcher.pid"
     term_log = tmp_path / "terminated.log"
     launcher = tmp_path / "launcher.py"
@@ -231,6 +252,7 @@ def test_dev_cleanup_stops_a_launcher_before_its_process_group_exists_even_if_te
     _executable(
         fake_bin / "python3",
         "#!/bin/sh\n"
+        '[ "$1" != "$TEST_DEV_UPDATE" ] || exec "$TEST_REAL_PYTHON" "$@"\n'
         'exec "$TEST_REAL_PYTHON" "$TEST_LAUNCHER" '
         '"$TEST_LAUNCHER_PID" "$TEST_TERM_LOG"\n',
     )
@@ -239,6 +261,7 @@ def test_dev_cleanup_stops_a_launcher_before_its_process_group_exists_even_if_te
         "PATH": f"{fake_bin}:{os.environ['PATH']}",
         "TEST_LAUNCHER": str(launcher),
         "TEST_LAUNCHER_PID": str(launcher_pid),
+        "TEST_DEV_UPDATE": str(tmp_path / "scripts" / "dev_update.py"),
         "TEST_REAL_PYTHON": sys.executable,
         "TEST_TERM_LOG": str(term_log),
     }

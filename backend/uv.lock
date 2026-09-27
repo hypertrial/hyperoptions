@@ -492,6 +492,7 @@ name = "options-api"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "arch" },
     { name = "duckdb" },
     { name = "exchange-calendars" },
     { name = "fastapi" },
@@ -514,12 +515,11 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "ruff" },
 ]
-research = [
-    { name = "arch" },
-]
+research = []
 
 [package.metadata]
 requires-dist = [
+    { name = "arch", specifier = ">=8,<9" },
     { name = "duckdb", specifier = ">=1.2" },
     { name = "exchange-calendars", specifier = ">=4.11,<5" },
     { name = "fastapi", specifier = ">=0.115" },
@@ -542,7 +542,7 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=0.25" },
     { name = "ruff", specifier = ">=0.15" },
 ]
-research = [{ name = "arch", specifier = ">=8,<9" }]
+research = []
 
 [[package]]
 name = "packaging"

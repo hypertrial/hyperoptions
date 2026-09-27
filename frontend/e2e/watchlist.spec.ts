@@ -84,7 +84,7 @@ test("watches a desktop chain contract and restores its URL after visiting the w
 
   await page.goto("/?t=IREN&side=call&m=itm&cols=strike_cents")
   await expect(page.getByRole("columnheader", { name: "Watch" })).toBeVisible()
-  await expect(page.getByRole("columnheader", { name: "Expiry odds" })).toBeVisible()
+  await expect(page.getByRole("columnheader", { name: /Expiry odds · EWMA lognormal/ })).toBeVisible()
   await expect(page.locator(".odds-market").first()).toContainText("62.0% ITM")
   await expect(page.locator(".odds-market").first()).toContainText("38.0% OTM")
   const watch = page.getByRole("button", { name: /Watch IREN 2026-09-18 .* strike/ }).first()
@@ -203,6 +203,23 @@ test("shows a separate forecast, prior market context, and dated hypothetical ri
   await expect(risk).toContainText("$7.65")
   await expect(risk).toContainText("2026-09-11")
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
+
+test("shows shared model evidence in the mobile watchlist comparison", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 })
+  await page.route("**/api/watchlist", async (route) => {
+    const forecast = { status: "available", method: "lognormal_ewma", itm_pct_tenths: 520, otm_pct_tenths: 480, atm_pct_tenths: 0, evidence_key: "lognormal_ewma:2-5" }
+    await route.fulfill({ json: {
+      items: [{ ...item, predictive_odds: forecast, physical_models: [forecast, { status: "pending", method: "student_t_ewma", reason: "candidate_not_prepared" }], market_models: [{ status: "unavailable", method: "constrained_call_curve", reason: "sparse_strikes" }] }],
+      model_evidence: { "lognormal_ewma:2-5": { prospective: { generated_at: "2026-09-27T12:00:00Z", model_version: "ewma-v1", input_version: "forecast-ledger-v1", tickers: 0, independent_date_blocks: 0, ticker_origin_horizon_units: 0, contract_forecasts_available: 0, contract_cells_attempted: 0, brier: { baseline: null, candidate: null }, log_loss: { baseline: null, candidate: null }, calibration_by_side: { call: [], put: [] }, latency_ms: {} }, retrospective: null } },
+    } })
+  })
+  await page.goto("/watchlist")
+  const odds = page.getByRole("region", { name: "Odds estimates" })
+  await odds.getByText("Compare models").click()
+  await expect(odds).toContainText("N=0")
+  await expect(odds).toContainText("sparse_strikes")
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320)
 })
 
 test("shows a complete populated watch card at 100% desktop zoom", async ({ page }) => {

@@ -635,6 +635,7 @@ class PredictiveForecaster:
         *,
         contract_since: date | None = None,
         standard_terms: bool = True,
+        force_baseline: bool = False,
     ) -> PredictiveDistribution:
         if as_of.tzinfo is None:
             raise ValueError("as_of must have a timezone")
@@ -715,7 +716,7 @@ class PredictiveForecaster:
             clean, spot, volatility, digest = inputs
             evidence = SelectionEvidence(rejection_reason="horizon_above_empirical_limit")
             empirical = None
-            if horizon <= _EMPIRICAL_MAX_HORIZON:
+            if horizon <= _EMPIRICAL_MAX_HORIZON and not force_baseline:
                 candidate_key = (ticker, completed, horizon)
                 candidate = self._candidates.get(candidate_key)
                 if candidate is None:
@@ -759,9 +760,23 @@ class PredictiveForecaster:
                 weights=weights,
                 selection=evidence,
             )
-            return self._select_promoted(result)
+            return result if force_baseline else self._select_promoted(result)
         except (OSError, ValueError, OverflowError, pl.exceptions.PolarsError):
             return unavailable("market_data_invalid")
+
+    def forecast_baseline(
+        self,
+        ticker: str,
+        as_of: datetime,
+        expiry: date,
+        *,
+        contract_since: date | None = None,
+        standard_terms: bool = True,
+    ) -> PredictiveDistribution:
+        return self.forecast(
+            ticker, as_of, expiry, contract_since=contract_since,
+            standard_terms=standard_terms, force_baseline=True,
+        )
 
     def _select_promoted(
         self,

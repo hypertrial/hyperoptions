@@ -14,6 +14,9 @@ Moneyness = Literal["itm", "otm", "all"]
 Side = Literal["call", "put"]
 GreeksSource = Literal["bid", "mid"]
 MarketSource = Literal["nasdaq", "yahoo"]
+PhysicalModel = Literal[
+    "lognormal_ewma", "empirical_scaled", "student_t_ewma", "gjr_garch_t", "intraday_shadow"
+]
 
 
 def normalize_ticker(raw: str) -> str | None:
@@ -108,6 +111,7 @@ class TickerSearchResponse(BaseModel):
 
 
 class MarketOddsView(BaseModel):
+    method: Literal["regimelib", "constrained_call_curve"] | None = None
     status: Literal["pending", "available", "unavailable"] = "pending"
     itm_pct_tenths: int | None = None
     otm_pct_tenths: int | None = None
@@ -119,12 +123,14 @@ class MarketOddsView(BaseModel):
     bound_low_pct_tenths: int | None = None
     bound_high_pct_tenths: int | None = None
     quote_support_score: int | None = None
+    model_evidence: dict[str, object] | None = None
 
 
 class PredictiveValidationEvidence(BaseModel):
     """Comparable calibration from independent, prospective as-issued forecasts."""
 
     source: Literal["prospective_as_issued"]
+    option_side: Side
     model_version: str
     horizon_band: str
     moneyness_band: str
@@ -138,7 +144,7 @@ class PredictiveOddsView(BaseModel):
     """Physical expiry-close forecast, distinct from risk-neutral option odds."""
 
     status: Literal["pending", "available", "unavailable"] = "pending"
-    method: str | None = None
+    method: PhysicalModel | None = None
     reason: str | None = None
     itm_pct_tenths: int | None = None
     otm_pct_tenths: int | None = None
@@ -151,12 +157,15 @@ class PredictiveOddsView(BaseModel):
     price_basis: Literal["completed_close", "validated_underlying_quote"] | None = None
     price_as_of: datetime | None = None
     validation_evidence: PredictiveValidationEvidence | None = None
+    evidence_key: str | None = None
+    model_evidence: dict[str, object] | None = None
 
 
 class HypotheticalRiskView(BaseModel):
     """One-contract hold-to-expiry payoff from a dated, coherent entry quote."""
 
     status: Literal["available", "unavailable"] = "unavailable"
+    forecast_method: PhysicalModel | None = None
     reason: str | None = None
     assumed_spot_cents: int | None = None
     assumed_bid_cents: int | None = None
@@ -209,6 +218,8 @@ class CoveredCallContract(BaseModel):
     greeks_rate_as_of_session: date | None = None
     market_odds: MarketOddsView = Field(default_factory=MarketOddsView)
     predictive_odds: PredictiveOddsView = Field(default_factory=PredictiveOddsView)
+    physical_models: list[PredictiveOddsView] = Field(default_factory=list)
+    market_models: list[MarketOddsView] = Field(default_factory=list)
     hypothetical_risk: HypotheticalRiskView = Field(default_factory=HypotheticalRiskView)
 
 
@@ -241,6 +252,7 @@ class _ChainPageBase(BaseModel):
     history_from_cache: bool
     risk_free_rate_pct_tenths: int | None
     lows: PeriodLows
+    model_evidence: dict[str, object] = Field(default_factory=dict)
 
 
 class CoveredCallPage(_ChainPageBase):
@@ -285,6 +297,8 @@ class CashSecuredPutContract(BaseModel):
     greeks_rate_as_of_session: date | None = None
     market_odds: MarketOddsView = Field(default_factory=MarketOddsView)
     predictive_odds: PredictiveOddsView = Field(default_factory=PredictiveOddsView)
+    physical_models: list[PredictiveOddsView] = Field(default_factory=list)
+    market_models: list[MarketOddsView] = Field(default_factory=list)
     hypothetical_risk: HypotheticalRiskView = Field(default_factory=HypotheticalRiskView)
 
 

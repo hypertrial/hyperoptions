@@ -139,7 +139,7 @@ describe("chain interactions", () => {
     const headers = within(first!).getAllByRole("columnheader")
     expect(headers.map((header) => header.textContent)).toEqual([
       "Strike",
-      "Expiry odds",
+      "Expiry odds · EWMA lognormal",
       "Bid",
       "Sprd %",
       "OI",
@@ -232,7 +232,7 @@ describe("chain interactions", () => {
     expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("Stock close · Sep 18, 2026")
     expect(rows[1].querySelector(".odds-cell")?.textContent).not.toContain("ATM")
     expect(rows[1].querySelector(".odds-cell")?.textContent).not.toContain("Reliability not yet established")
-    expect(screen.getByText(/Reliability is not yet established unless shown/)).toBeTruthy()
+    expect(screen.getByText(/Selected forecast: EWMA lognormal baseline/)).toBeTruthy()
     expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("Why market odds unavailable?")
     expect(screen.getByRole("columnheader", { name: "Est P&L" })).toBeTruthy()
     expect(screen.getByRole("columnheader", { name: "Loss odds" })).toBeTruthy()
@@ -259,13 +259,44 @@ describe("chain interactions", () => {
     }))
     fetchMock.mockResolvedValue(oddsPage)
     render(<ItmChain />)
-    await screen.findByRole("button", { name: "Expiry odds" })
-    fireEvent.click(screen.getByRole("button", { name: "Expiry odds" }))
+    await screen.findByRole("button", { name: "Expiry odds · EWMA lognormal" })
+    fireEvent.click(screen.getByRole("button", { name: "Expiry odds · EWMA lognormal" }))
     const rows = screen.getAllByRole("row")
     expect(rows[1].firstChild?.textContent).toBe("$40.50")
     expect(rows[1].querySelector(".odds-physical")?.textContent).toContain("70.0% ITM")
     expect(rows[1].querySelector(".odds-market")?.textContent).toContain("10.0% ITM")
-    expect(screen.getByRole("columnheader", { name: "Expiry odds" }).getAttribute("aria-sort")).toBe("descending")
+    expect(screen.getByRole("columnheader", { name: "Expiry odds · EWMA lognormal" }).getAttribute("aria-sort")).toBe("descending")
+  })
+
+  it("sorts the selected experimental forecast and keeps mobile model comparison outside the row trigger", async () => {
+    setDesktopViewport(false)
+    const oddsPage = page()
+    oddsPage.expirations[0].contracts.forEach((row, index) => Object.assign(row, {
+      predictive_odds: {
+        method: "student_t_ewma", status: "available",
+        itm_pct_tenths: index === 0 ? 200 : 700, otm_pct_tenths: index === 0 ? 800 : 300,
+        atm_pct_tenths: 0, as_of_session: "2026-09-17", expiry_session: "2026-09-18",
+      },
+      physical_models: [
+        { method: "lognormal_ewma", status: "available", itm_pct_tenths: 500, otm_pct_tenths: 500, atm_pct_tenths: 0 },
+        { method: "student_t_ewma", status: "available", itm_pct_tenths: index === 0 ? 200 : 700, otm_pct_tenths: index === 0 ? 800 : 300, atm_pct_tenths: 0 },
+      ],
+      market_models: [{ method: "regimelib", status: "pending", reason: "quotes_pending" }],
+    }))
+    fetchMock.mockResolvedValue(oddsPage)
+    render(<ItmChain forecastModel="student_t_ewma" />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "call", "itm", "student_t_ewma"))
+    const sort = screen.getByRole("combobox", { name: "Sort by" })
+    fireEvent.change(sort, { target: { value: "predictive_itm_pct_tenths" } })
+    const first = document.querySelector(".mobile-option-row")!
+    expect(first.textContent).toContain("70.0% ITM")
+    expect(first.textContent).toContain("Student-t EWMA")
+    const trigger = first.querySelector(".mobile-row-summary")!
+    const compare = first.querySelector(".mobile-model-compare details")!
+    expect(trigger.contains(compare)).toBe(false)
+    fireEvent.click(compare.querySelector("summary")!)
+    expect((compare as HTMLDetailsElement).open).toBe(true)
+    expect(compare.textContent).toContain("quotes_pending")
   })
 
   it("includes odds in the mobile contract summary before expanding details", async () => {
@@ -313,6 +344,16 @@ describe("chain interactions", () => {
     expect(await screen.findByRole("button", { name: "Already watching IREN 2026-09-18 $50.00 strike" })).toBeTruthy()
     const disabled = screen.getByRole("button", { name: /Watch IREN 2026-09-18 \$40\.50 strike: Adjusted option root/ })
     expect(disabled.hasAttribute("disabled")).toBe(true)
+  })
+
+  it("sends the selected model when creating a watch", async () => {
+    const watchPage = page()
+    Object.assign(watchPage.expirations[0].contracts[0], { watch_key: "opaque-contract-key", watchability_reason: null })
+    fetchMock.mockResolvedValue(watchPage)
+    addWatchMock.mockResolvedValue({ created: true, item: {} as never, job: null })
+    render(<ItmChain forecastModel="gjr_garch_t" />)
+    fireEvent.click(await screen.findByRole("button", { name: "Watch IREN 2026-09-18 $50.00 strike" }))
+    expect(addWatchMock).toHaveBeenCalledWith("opaque-contract-key", "gjr_garch_t")
   })
 
   it("shows a mobile Watch action and per-contract request errors", async () => {
@@ -990,12 +1031,12 @@ describe("chain interactions", () => {
     render(<ItmChain />)
 
     await waitFor(() => expect(screen.getByRole("columnheader", { name: "IV" })).toBeTruthy())
-    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["Strike", "Expiry odds", "IV", "Watch", "Copy"])
+    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["Strike", "Expiry odds · EWMA lognormal", "IV", "Watch", "Copy"])
     fireEvent.click(screen.getByRole("radio", { name: "Cash-secured puts" }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "put", "otm"))
     expect(screen.queryByRole("columnheader", { name: "IV" })).toBeNull()
     expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
-      "Strike", "Expiry odds", "Bid", "Sprd %", "OI", "Premium", "Breakeven", "APR (net)", "Cushion (BE)", "Watch", "Copy",
+      "Strike", "Expiry odds · EWMA lognormal", "Bid", "Sprd %", "OI", "Premium", "Breakeven", "APR (net)", "Cushion (BE)", "Watch", "Copy",
     ])
     expect(window.location.search).not.toContain("cols=")
   })
@@ -1020,7 +1061,7 @@ describe("chain interactions", () => {
 
     await screen.findByRole("columnheader", { name: "IV" })
     expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
-      "Strike", "Expiry odds", "IV", "Watch", "Copy",
+      "Strike", "Expiry odds · EWMA lognormal", "IV", "Watch", "Copy",
     ])
     expect(screen.getByRole("button", { name: "Columns2" })).toBeTruthy()
     expect(window.location.search).toContain("cols=strike_cents%2Civ_pct_tenths")

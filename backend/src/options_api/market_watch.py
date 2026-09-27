@@ -249,6 +249,7 @@ class MarketWatchOdds:
         self._last_good_session: date | None = None
         self._cache: dict[str, _Snapshot] = {}
         self._curve_shadow: dict[str, dict[str, object]] = {}
+        self._curve_results: dict[str, tuple[_Snapshot, CurveShadowResult]] = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._shadow_tasks: set[asyncio.Task[None]] = set()
         self._pending: dict[str, None] = {}
@@ -437,11 +438,13 @@ class MarketWatchOdds:
             snapshot.refreshed_at = _as_utc(self.clock())
         self._cache.pop(ticker, None)
         self._curve_shadow.pop(ticker, None)
+        self._curve_results.pop(ticker, None)
         self._cache[ticker] = snapshot
         while len(self._cache) > _MAX_CACHED_TICKERS:
             oldest = next(iter(self._cache))
             self._cache.pop(oldest)
             self._chain_refresh_attempts.pop(oldest, None)
+            self._curve_results.pop(oldest, None)
         self._persist_current_watches(ticker, snapshot)
 
     def curve_shadow_report(self, ticker: str) -> dict[str, object] | None:
@@ -498,6 +501,7 @@ class MarketWatchOdds:
             "by_expiry_moneyness": bands,
         }
         self._curve_shadow[ticker] = report
+        self._curve_results[ticker] = snapshot, shadow
         if self._data_path is not None and snapshot.source is not None:
             with connect(self._data_path) as connection:
                 connection.execute(
@@ -570,6 +574,77 @@ class MarketWatchOdds:
             bound_high_pct_tenths=bound_high,
             quote_support_score=support,
             **common,
+        )
+
+    def lookup_curve(
+        self, ticker: str, side: str, expiry: str, strike: Decimal, root: str | None = None
+    ) -> MarketOddsView:
+        """Read only the result of the bounded background curve fit."""
+        common = {"method": "constrained_call_curve", "model_version": _CURVE_VERSION}
+        if root is not None and root != ticker:
+            return MarketOddsView(
+                status="unavailable", reason="Contract terms cannot be verified", **common
+            )
+        snapshot = self._cache.get(ticker)
+        if snapshot is None or not self._valid(snapshot, _as_utc(self.clock())):
+            return MarketOddsView(
+                status="pending", reason="Refreshing option quote snapshot", **common
+            )
+        common.update(
+            source=snapshot.source,
+            fetched_at=snapshot.fetched_at,
+            session_date=snapshot.session_date,
+        )
+        if snapshot.error or expiry in snapshot.reasons:
+            return MarketOddsView(
+                status="unavailable", reason=snapshot.error or snapshot.reasons[expiry], **common
+            )
+        if (expiry, strike) not in snapshot.valid_contracts:
+            return MarketOddsView(
+                status="unavailable", reason="Contract terms cannot be verified", **common
+            )
+        saved = self._curve_results.get(ticker)
+        if saved is None or saved[0] is not snapshot:
+            return MarketOddsView(status="pending", reason="Fitting option quote curve", **common)
+        result = saved[1]
+        report = self._curve_shadow.get(ticker)
+        evidence = (
+            {
+                "held_out_inside": result.held_out_inside,
+                "held_out_count": result.held_out_count,
+                "paired_held_out_count": result.paired_held_out_count,
+                "paired_shadow_inside": result.paired_shadow_inside,
+                "paired_benchmark_inside": result.paired_benchmark_inside,
+                "one_tick_stable": None,
+                "bid_ask_fit": None,
+                "refresh_ms": report.get("live_refresh_ms") if report else None,
+                "fit_ms": result.elapsed_ms,
+                "rejection_reasons": result.rejection_reasons,
+            }
+        )
+        common["model_evidence"] = evidence
+        estimate = result.odds.get((expiry, strike))
+        call_itm = _probability_tenths(estimate)
+        if call_itm is None:
+            reason = (
+                estimate.reason if estimate is not None else
+                result.contract_reasons.get((expiry, strike))
+                or result.expiry_reasons.get(expiry)
+                or next((name for name in ("curve_fit_failed", "invalid_spot")
+                         if result.rejection_reasons.get(name)), None)
+                or "curve_strike_not_supported"
+            )
+            evidence["one_tick_stable"] = False if reason == "one_tick_unstable" else None
+            evidence["bid_ask_fit"] = False if reason == "infeasible_curve" else None
+            return MarketOddsView(status="unavailable", reason=reason, **common)
+        low, high, support = _quote_support(estimate, side)
+        itm = call_itm if side == "call" else 1000 - call_itm
+        evidence["one_tick_stable"] = True
+        evidence["bid_ask_fit"] = True
+        return MarketOddsView(
+            status="available", itm_pct_tenths=itm, otm_pct_tenths=1000 - itm,
+            bound_low_pct_tenths=low, bound_high_pct_tenths=high,
+            quote_support_score=support, **common,
         )
 
     def lookup_last_good(
@@ -795,6 +870,12 @@ class MarketWatchOdds:
                 self._record_curve_shadow(ticker, snapshot, shadow, benchmark_ms, live_refresh_ms)
         except Exception:
             LOG.exception("market curve shadow failed for %s", ticker)
+            if self._cache.get(ticker) is snapshot:
+                self._record_curve_shadow(
+                    ticker, snapshot,
+                    CurveShadowResult({}, 0, 0, 0, {"curve_fit_failed": 1}),
+                    benchmark_ms, live_refresh_ms,
+                )
 
     async def _completed_session_close(self, ticker: str, now: datetime) -> Decimal | None:
         session = latest_completed_session(now)

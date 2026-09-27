@@ -8,6 +8,7 @@ import pytest
 
 from scripts.evaluate_intraday_prospective import evaluate
 from options_api.market_calendar import session_on_or_before
+from stocksweeper.forecast.calendar import SessionCalendar
 
 _NY = ZoneInfo("America/New_York")
 _DAY = date(2026, 9, 28)
@@ -121,6 +122,8 @@ def test_scores_exact_triplets_once_and_averages_correlated_contracts() -> None:
     assert overall["paired_shadow_minus_reference"]["brier"]["dated_close"] == pytest.approx(-0.12)
     assert overall["paired_calendar_date_bootstrap_95"] is None
     assert overall["latency_ms"]["intraday_shadow"] == {"p50": 18.0, "p95": 18.0}
+    assert overall["calibration_by_side"]["call"][8]["observed_rate"] == 1
+    assert overall["calibration_by_side"]["put"][2]["observed_rate"] == 0
     assert report["by_window"]["10:00"]["scored_contract_windows"] == 2
     assert report["by_window"]["13:00"]["recorded_contract_windows"] == 0
 
@@ -160,6 +163,29 @@ def test_idempotent_close_forecast_issued_before_window_still_pairs() -> None:
     report = evaluate(rows, as_of=_as_of(_EXPIRY))
     assert report["overall"]["scored_contract_windows"] == 1
     assert report["overall"]["rejection_reasons"] == {}
+
+
+def test_intraday_dated_close_comparator_is_ewma_even_with_other_physical_issues() -> None:
+    rows = _rows("MIXED")
+    other_model = rows[0].copy()
+    other_model.update(
+        idempotency_key="MIXED-gjr", method="gjr_garch_t", itm_probability=0.1,
+        issued_at=rows[0]["issued_at"] + timedelta(milliseconds=500),
+    )
+    report = evaluate([*rows, other_model], as_of=_as_of(_EXPIRY))
+    assert report["overall"]["mean"]["brier"]["dated_close"] == pytest.approx(0.16)
+
+
+def test_repeated_forecasts_of_one_expiry_do_not_create_independent_date_blocks() -> None:
+    expiry = date(2026, 10, 30)
+    days = SessionCalendar().sessions(date(2026, 9, 28), date(2026, 10, 27))[:20]
+    rows = [item for day in days for item in _rows(day=day, expiry=expiry)]
+    report = evaluate(rows, as_of=_as_of(expiry))["overall"]
+    assert report["scored_contract_windows"] == 20
+    assert report["scored_dates_before_overlap_purge"] == 20
+    assert report["scored_date_blocks"] == 1
+    assert report["scored_ticker_date_window_expiry_units"] == 1
+    assert report["paired_calendar_date_bootstrap_95"] is None
 
 
 def test_same_day_early_close_and_holiday_strata_do_not_invent_scores() -> None:

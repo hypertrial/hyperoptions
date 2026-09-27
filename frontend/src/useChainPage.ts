@@ -1,19 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 
 import { fetchChain } from "./api"
+import { DEFAULT_FORECAST_MODEL, type PhysicalModel } from "./forecastModels"
 import { isRegularMarketHours } from "./marketHours"
 import type { ChainPage, Moneyness, Side, Ticker } from "./types"
 
 const REFRESH_MS = 5 * 60_000
 const PENDING_MS = 15_000
+const MAX_EVIDENCE_POLLS = 8
 
-export function useChainPage(ticker: Ticker, side: Side, moneyness: Moneyness) {
+export function useChainPage(ticker: Ticker, side: Side, moneyness: Moneyness, forecastModel: PhysicalModel = "lognormal_ewma") {
   const [page, setPage] = useState<ChainPage | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const requestId = useRef(0)
   const lastRequestedAt = useRef(0)
-  const requestKey = `${ticker}|${side}|${moneyness}`
+  const requestKey = `${ticker}|${side}|${moneyness}|${forecastModel}`
+  const [evidencePolls, setEvidencePolls] = useState({ key: requestKey, count: 0 })
   const [activeKey, setActiveKey] = useState(requestKey)
   if (activeKey !== requestKey) {
     setActiveKey(requestKey)
@@ -27,12 +30,15 @@ export function useChainPage(ticker: Ticker, side: Side, moneyness: Moneyness) {
     selected: Ticker,
     nextSide: Side,
     nextMoneyness: Moneyness,
+    nextModel: PhysicalModel,
     preservePage = false,
   ) => {
     const id = ++requestId.current
     lastRequestedAt.current = Date.now()
     try {
-      const result = await fetchChain(selected, nextSide, nextMoneyness)
+      const result = nextModel === DEFAULT_FORECAST_MODEL
+        ? await fetchChain(selected, nextSide, nextMoneyness)
+        : await fetchChain(selected, nextSide, nextMoneyness, nextModel)
       if (id !== requestId.current) return
       setPage(result)
       setError(null)
@@ -46,23 +52,34 @@ export function useChainPage(ticker: Ticker, side: Side, moneyness: Moneyness) {
   }, [])
 
   useEffect(() => {
-    void load(ticker, side, moneyness)
-  }, [load, ticker, side, moneyness])
+    void load(ticker, side, moneyness, forecastModel)
+  }, [load, ticker, side, moneyness, forecastModel])
 
   const pending = page?.expirations.some((group) => group.contracts.some(
-    (row) => row.market_odds?.status === "pending" || row.predictive_odds?.status === "pending",
+    (row) => row.market_odds?.status === "pending"
+      || row.predictive_odds?.status === "pending"
+      || row.physical_models?.some((model) => model.status === "pending")
+      || row.market_models?.some((model) => model.status === "pending"),
   )) ?? false
   const retryableForecast = page?.expirations.some((group) => group.contracts.some(
     (row) => row.predictive_odds?.status === "unavailable"
       && (row.predictive_odds.reason === "market_data_missing" || row.predictive_odds.reason === "market_data_invalid"),
   )) ?? false
+  const missingEvidence = page?.expirations.some((group) => group.contracts.some(
+    (row) => row.physical_models?.some((model) => model.evidence_key && !page.model_evidence?.[model.evidence_key]),
+  )) ?? false
+  const evidencePending = missingEvidence && (evidencePolls.key !== requestKey || evidencePolls.count < MAX_EVIDENCE_POLLS)
 
   useEffect(() => {
-    const interval = pending ? PENDING_MS : REFRESH_MS
+    const interval = pending || evidencePending ? PENDING_MS : REFRESH_MS
     const refresh = () => {
-      if (document.hidden || loading || (!pending && !retryableForecast && !isRegularMarketHours())) return
+      if (document.hidden || loading || (!pending && !evidencePending && !retryableForecast && !isRegularMarketHours())) return
       if (Date.now() - lastRequestedAt.current < interval) return
-      void load(ticker, side, moneyness, true)
+      if (evidencePending && !pending) setEvidencePolls((current) => ({
+        key: requestKey,
+        count: (current.key === requestKey ? current.count : 0) + 1,
+      }))
+      void load(ticker, side, moneyness, forecastModel, true)
     }
     const timer = window.setInterval(refresh, interval)
     document.addEventListener("visibilitychange", refresh)
@@ -70,7 +87,7 @@ export function useChainPage(ticker: Ticker, side: Side, moneyness: Moneyness) {
       window.clearInterval(timer)
       document.removeEventListener("visibilitychange", refresh)
     }
-  }, [load, loading, moneyness, pending, retryableForecast, side, ticker])
+  }, [load, loading, moneyness, pending, evidencePending, retryableForecast, side, ticker, forecastModel, requestKey])
 
   const beginTickerChange = () => {
     setPage(null)
@@ -79,9 +96,10 @@ export function useChainPage(ticker: Ticker, side: Side, moneyness: Moneyness) {
   }
 
   const beginRefresh = () => {
+    setEvidencePolls({ key: requestKey, count: 0 })
     setLoading(true)
     setError(null)
-    void load(ticker, side, moneyness, true)
+    void load(ticker, side, moneyness, forecastModel, true)
   }
 
   return { page, error, loading, beginTickerChange, beginRefresh }

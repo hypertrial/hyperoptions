@@ -6,7 +6,7 @@ import math
 import time
 from collections import Counter, defaultdict
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -44,6 +44,8 @@ class CurveShadowResult:
     paired_shadow_inside: int = 0
     paired_benchmark_inside: int = 0
     held_out_cohort: str = "curve_only"
+    expiry_reasons: dict[str, str] = field(default_factory=dict)
+    contract_reasons: dict[tuple[str, Decimal], str] = field(default_factory=dict)
 
 
 def _fit(
@@ -148,6 +150,8 @@ def calculate_curve_shadow(
         return CurveShadowResult({}, 0, 0, 0, {"invalid_spot": 1})
     by_expiry: dict[str, list[_Quote]] = defaultdict(list)
     rejected: Counter[str] = Counter()
+    expiry_reasons: dict[str, str] = {}
+    contract_reasons: dict[tuple[str, Decimal], str] = {}
     for row in rows:
         if time.monotonic() >= deadline:
             rejected["shadow_budget_exceeded"] += 1
@@ -160,13 +164,16 @@ def calculate_curve_shadow(
             rate = rate_for_expiry(expiry)
         except (ArithmeticError, TypeError, ValueError):
             rejected["invalid_expiration_or_rate"] += 1
+            contract_reasons[(row.expiration, row.strike)] = "invalid_expiration_or_rate"
             continue
         if years <= 0 or rate is None or not math.isfinite(rate) or not 0 <= rate <= 0.25:
             rejected["invalid_expiration_or_rate"] += 1
+            contract_reasons[(row.expiration, row.strike)] = "invalid_expiration_or_rate"
             continue
         quote = _valid_quote(row, years, rate, spot_float)
         if quote is None:
             rejected["invalid_quote_or_terms"] += 1
+            contract_reasons[(row.expiration, row.strike)] = "invalid_quote_or_terms"
             continue
         by_expiry[row.expiration].append(quote)
     odds: dict[tuple[str, Decimal], OddsEstimate] = {}
@@ -190,13 +197,16 @@ def calculate_curve_shadow(
     for expiry, quotes in by_expiry.items():
         if time.monotonic() >= deadline:
             rejected["shadow_budget_exceeded"] += len(quotes)
-            break
+            expiry_reasons[expiry] = "shadow_budget_exceeded"
+            continue
         quotes.sort(key=lambda q: q.strike)
         if len({q.strike for q in quotes}) != len(quotes):
             rejected["duplicate_strike"] += len(quotes)
+            expiry_reasons[expiry] = "duplicate_strike"
             continue
         if len(quotes) < 5 or len(quotes) > _MAX_STRIKES:
             rejected["sparse_or_large_strip"] += len(quotes)
+            expiry_reasons[expiry] = "sparse_or_large_strip"
             continue
         fitted = _fit(quotes, deadline=deadline)
         # The published benchmark already held these keys out of its fit.
@@ -237,6 +247,7 @@ def calculate_curve_shadow(
             held_shadow[key] = target.bid <= estimate <= target.ask
         if fitted is None:
             rejected["infeasible_curve"] += len(quotes)
+            expiry_reasons[expiry] = "infeasible_curve"
             continue
         perturbed_fits: dict[tuple[int, int], np.ndarray | None] = {}
         for index in range(1, len(quotes) - 1):
@@ -309,4 +320,6 @@ def calculate_curve_shadow(
         paired_shadow_inside=sum(held_shadow[key] for key in paired),
         paired_benchmark_inside=sum(held_benchmark[key] for key in paired),
         held_out_cohort=cohort,
+        expiry_reasons=expiry_reasons,
+        contract_reasons=contract_reasons,
     )

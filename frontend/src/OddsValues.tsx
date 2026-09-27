@@ -1,4 +1,5 @@
 import { unsignedPercentTenths } from "./format"
+import { DEFAULT_FORECAST_MODEL, physicalModelName } from "./forecastModels"
 import { oddsAvailable, oddsMessage, predictiveAvailable, predictiveBasisLabel, predictiveReliabilityLabel, quoteSupportLabel, type MarketOdds, type PredictiveOdds } from "./marketOdds"
 
 export default function OddsValues({ odds, predictiveOdds, compact = false }: {
@@ -13,7 +14,7 @@ export default function OddsValues({ odds, predictiveOdds, compact = false }: {
   return (
     <span className={compact ? "odds-values compact" : "odds-values"}>
       <span className="odds-physical">
-        <span className="odds-method">Stock forecast</span>
+        <span className="odds-method">Stock forecast{predictiveOdds?.method ? ` · ${physicalModelName(predictiveOdds.method)}` : ""}{predictiveOdds?.method && predictiveOdds.method !== DEFAULT_FORECAST_MODEL ? " · user-selected" : ""}</span>
         {predictive ? (
           <>
             <span className="odds-numbers">
