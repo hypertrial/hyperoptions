@@ -12,7 +12,7 @@ function OddsSection({ item }: { item: WatchItem }) {
     <section className="watch-card-section" aria-label="Odds estimates">
       <h3>Expiry-close odds</h3>
       <p className="watch-odds"><OddsValues odds={item.market_odds} predictiveOdds={item.predictive_odds} /></p>
-      {predictiveSource ? <p className="watch-provenance">Forecast: {predictiveSource}</p> : null}
+      {predictiveSource ? <details className="watch-provenance"><summary>Forecast method</summary><p>{predictiveSource}</p></details> : null}
       {marketSource ? <p className="watch-provenance">Market odds: {marketSource}</p> : null}
       {!oddsAvailable(item.market_odds) && prior && oddsAvailable(prior) ? (
         <details className="watch-prior-odds">

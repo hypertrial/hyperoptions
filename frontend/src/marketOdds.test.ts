@@ -6,10 +6,11 @@ import type { MarketOddsView, PredictiveOddsView } from "./generated/types.gen"
 it("keeps real-world odds primary and accepts predictive odds only as a complete partition", () => {
   const market: MarketOddsView = { status: "available", itm_pct_tenths: 638, otm_pct_tenths: 362 }
   const predictive: PredictiveOddsView = { status: "available", itm_pct_tenths: 520, otm_pct_tenths: 470, atm_pct_tenths: 10 }
-  expect(oddsLabel(market, predictive)).toMatch(/^Real-world forecast 52\.0% ITM/)
+  expect(oddsLabel(market, predictive)).toMatch(/^Stock forecast 52\.0% ITM, 47\.0% OTM/)
+  expect(oddsLabel(market, predictive)).not.toContain("ATM")
   expect(oddsLabel(market, predictive)).toContain("Market-implied risk-neutral 63.8% ITM")
   expect(predictiveAvailable({ ...predictive, atm_pct_tenths: 11 })).toBe(false)
-  expect(oddsLabel({ status: "unavailable" }, { ...predictive, atm_pct_tenths: 11 })).toContain("Real-world forecast unavailable")
+  expect(oddsLabel({ status: "unavailable" }, { ...predictive, atm_pct_tenths: 11 })).toContain("Stock forecast unavailable")
 })
 
 it("labels quote tightness without treating malformed scores as evidence", () => {
@@ -26,7 +27,7 @@ it("includes both unavailable methods in a compact accessible odds label", () =>
   expect(oddsLabel(
     { status: "unavailable", reason: "Quote bounds inconsistent" },
     { status: "unavailable", reason: "Insufficient completed history" },
-  )).toContain("Real-world forecast unavailable: Insufficient completed history")
+  )).toContain("Stock forecast unavailable: Insufficient completed history")
 })
 
 it("shows calibration only for supported matching prospective evidence", () => {

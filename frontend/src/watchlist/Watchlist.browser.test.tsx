@@ -79,6 +79,13 @@ it("puts the real-world forecast before separate market-implied odds", async () 
   expect(values.querySelector(".odds-physical")?.textContent).toContain("52.0% ITM")
   expect(values.querySelector(".odds-market")?.textContent).toContain("63.8% ITM")
   expect(values.textContent).toContain("Reliability not yet established")
+  expect(values.querySelector(".odds-physical")?.textContent).toContain("Stock forecast")
+  expect(values.querySelector(".odds-physical")?.textContent).not.toContain("ATM")
+  const method = screen.getByText("Forecast method").closest("details")!
+  expect(method.open).toBe(false)
+  fireEvent.click(screen.getByText("Forecast method"))
+  expect(method.open).toBe(true)
+  expect(method.textContent).toContain("EWMA lognormal model")
   expect(values.textContent).not.toContain("support 60")
 })
 
@@ -219,10 +226,10 @@ it("uses a dated historical forecast when market bounds conflict and keeps prior
 
   render(<App />)
   const odds = await screen.findByRole("region", { name: "Odds estimates" })
-  expect(odds.querySelector(".watch-odds")?.textContent).toContain("Real-world forecast")
+  expect(odds.querySelector(".watch-odds")?.textContent).toContain("Stock forecast")
   expect(odds.querySelector(".watch-odds")?.textContent).toContain("52.0% ITM")
   expect(odds.querySelector(".watch-odds")?.textContent).not.toContain("63.8%")
-  expect(odds.textContent).toContain("Completed stock close · 2026-09-18")
+  expect(odds.textContent).toContain("Stock close · Sep 18, 2026")
   expect(odds.textContent).toContain("Reliability not yet established")
   expect(odds.textContent).toContain("Quote bounds inconsistent")
   const prior = odds.querySelector(".watch-prior-odds") as HTMLDetailsElement

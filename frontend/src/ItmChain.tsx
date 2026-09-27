@@ -236,7 +236,7 @@ export default function ItmChain() {
               </>
             )}
           </p>
-          {page ? <p className="odds-context">Real-world expiry-close forecasts use completed stock closes. Option-price-implied odds are separate risk-neutral estimates. {oddsStamp ? `Market quote: ${oddsStamp}.` : ""}</p> : null}
+          {page ? <p className="odds-context">Stock forecasts use past closes. Reliability is not yet established unless shown. Market odds use option prices (risk-neutral). {oddsStamp ? `Market quote: ${oddsStamp}.` : ""}</p> : null}
           {page && columns.some((column) => column.greek) ? <p className="odds-context">Greeks use the dated quote midpoint, Treasury rate, and time to the expiry-session close. European Black-Scholes estimates omit dividends and only approximate American equity options.</p> : null}
         </header>
 
