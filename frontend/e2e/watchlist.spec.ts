@@ -117,6 +117,46 @@ test("watches a contract from a mobile disclosure and reports deduplication", as
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })
 
+test("compares all models in a bounded dialog on desktop and mobile", async ({ page }, testInfo) => {
+  const comparisonItem = {
+    ...item,
+    physical_models: [
+      { method: "lognormal_ewma", status: "available", itm_pct_tenths: 612, otm_pct_tenths: 388, atm_pct_tenths: 0, price_basis: "completed_close", support: 60 },
+      { method: "student_t_ewma", status: "pending", reason: "candidate_not_prepared" },
+      { method: "gjr_garch_t", status: "unavailable", reason: "gjr_parameters_invalid" },
+    ],
+    market_models: [
+      { method: "regimelib", status: "available", itm_pct_tenths: 583, otm_pct_tenths: 417, bound_low_pct_tenths: 452, bound_high_pct_tenths: 753 },
+      { method: "constrained_call_curve", status: "unavailable", reason: "clean_strikes_do_not_bracket_contract" },
+    ],
+  }
+  await page.route("**/api/watchlist**", (route) => route.fulfill({ json: { items: [comparisonItem] } }))
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 800 })
+    await page.goto("/watchlist")
+    await page.getByRole("button", { name: "Compare models" }).click()
+    const dialog = page.getByRole("dialog", { name: "Compare models" })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.locator(".model-result")).toHaveCount(5)
+    await expect(dialog.locator(".model-result details[open]")).toHaveCount(0)
+    await expect(dialog).toContainText("gjr parameters invalid")
+    const bounds = await dialog.evaluate((element) => {
+      const rect = element.getBoundingClientRect()
+      return { width: rect.width, height: rect.height, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth }
+    })
+    expect(bounds.width).toBeLessThanOrEqual(width - 16)
+    expect(bounds.height).toBeLessThanOrEqual(800)
+    expect(bounds.scrollWidth).toBeLessThanOrEqual(bounds.clientWidth + 1)
+    await page.screenshot({ path: testInfo.outputPath(`model-comparison-${width}.png`) })
+    await dialog.getByText("EWMA lognormal").click()
+    await expect(dialog.getByText("60 completed returns")).toBeVisible()
+    if (width === 390) await page.keyboard.press("Escape")
+    else await dialog.getByRole("button", { name: "Close model comparison" }).click()
+    await expect(dialog).toBeHidden()
+    await expect(page.getByRole("button", { name: "Compare models" })).toBeFocused()
+  }
+})
+
 test("shows dated market odds and close-based outcomes, then tracks the result check", async ({ page }) => {
   let completeJob = false
   await page.route("**/api/watchlist", async (route) => {
@@ -217,8 +257,10 @@ test("shows shared model evidence in the mobile watchlist comparison", async ({ 
   await page.goto("/watchlist")
   const odds = page.getByRole("region", { name: "Odds estimates" })
   await odds.getByText("Compare models").click()
-  await expect(odds).toContainText("N=0")
-  await expect(odds).toContainText("sparse_strikes")
+  const comparison = page.getByRole("dialog", { name: "Compare models" })
+  await comparison.locator(".model-result").first().locator("summary.model-result-heading").click()
+  await expect(comparison).toContainText("N=0")
+  await expect(comparison).toContainText("sparse strikes")
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320)
 })
 

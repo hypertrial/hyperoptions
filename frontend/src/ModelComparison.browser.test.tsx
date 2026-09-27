@@ -19,19 +19,26 @@ it("shows all physical and market methods, including pending and unavailable res
     { method: "regimelib", status: "available", itm_pct_tenths: 520, otm_pct_tenths: 480, bound_low_pct_tenths: 400, bound_high_pct_tenths: 600 },
     { method: "constrained_call_curve", status: "unavailable", reason: "clean_strikes_do_not_bracket_contract" },
   ]
-  const { container } = render(<ModelComparison physical={physical} market={market} selected="student_t_ewma" />)
-  const disclosure = container.querySelector("details")!
-  expect(disclosure.open).toBe(false)
-  fireEvent.click(screen.getByText("Compare models"))
-  expect(disclosure.open).toBe(true)
-  expect(screen.getByRole("region", { name: "Physical forecast models" }).textContent).toContain("Student-t EWMA")
-  expect(screen.getByRole("region", { name: "Physical forecast models" }).textContent).toContain("Student-t EWMASelected")
+  render(<ModelComparison physical={physical} market={market} selected="student_t_ewma" />)
+  const trigger = screen.getByRole("button", { name: "Compare models" })
+  expect(screen.queryByRole("dialog")).toBeNull()
+  fireEvent.click(trigger)
+  expect(screen.getByRole("dialog", { name: "Compare models" })).toBeTruthy()
+  const physicalSection = screen.getByRole("region", { name: "Physical forecast models" })
+  expect(physicalSection.textContent).toContain("Student-t EWMA")
+  expect(physicalSection.textContent).toContain("Student-t EWMASelected")
   expect(screen.getByRole("region", { name: "Physical forecast models" }).textContent).toContain("Model spread: 3.0 percentage points across 2 completed-close models")
+  expect(physicalSection.querySelectorAll(".model-result details[open]")).toHaveLength(0)
+  fireEvent.click(screen.getByText("Scaled empirical"))
   expect(screen.getByRole("region", { name: "Physical forecast models" }).textContent).toContain("Independent history blocks 35 (minimum 30)")
   expect(screen.getByRole("region", { name: "Physical forecast models" }).textContent).toContain("needs_500_sessions")
   expect(screen.getByRole("region", { name: "Risk-neutral market models" }).textContent).toContain("Regimelib")
   expect(screen.getByRole("region", { name: "Risk-neutral market models" }).textContent).toContain("clean_strikes_do_not_bracket_contract")
-  expect(disclosure.textContent).toContain("Quote bounds")
+  fireEvent.click(screen.getByText("Regimelib"))
+  expect(screen.getByRole("dialog").textContent).toContain("Quote bounds")
+  fireEvent.click(screen.getByRole("button", { name: "Close model comparison" }))
+  expect(screen.queryByRole("dialog")).toBeNull()
+  expect(document.activeElement).toBe(trigger)
 })
 
 it("reports simulation precision as sampling error rather than forecast confidence", () => {
@@ -41,6 +48,7 @@ it("reports simulation precision as sampling error rather than forecast confiden
     fit_ms: 13, lookup_ms: 2, data_hash: "abc123456789more",
   }]} market={[]} selected="student_t_ewma" />)
   fireEvent.click(screen.getByText("Compare models"))
+  fireEvent.click(screen.getByText("Student-t EWMA"))
   const physical = screen.getByRole("region", { name: "Physical forecast models" }).textContent
   expect(physical).toContain("4,096 simulated paths")
   expect(physical).toContain("Maximum 95% simulation error ±1.6 percentage points; model uncertainty excluded")
@@ -65,6 +73,9 @@ it("keeps retrospective and as-issued evidence distinct and reports N=0 without 
   const replay = { ...empty, independent_date_blocks: 20, ticker_origin_horizon_units: 500, tickers: 20, coverage_basis: "recorded_contract_cells_with_baseline_issuance", replay_scheduled_units: 25, replay_baseline_available_units: 20, replay_fit_coverage: 0.8, replay_rejection_reasons: { split_affected: 5 }, brier: { baseline: 0.22, candidate: 0.20, paired_delta: -0.02, bootstrap_95: [-0.03, -0.01] } }
   render(<ModelComparison physical={physical} market={[]} selected="student_t_ewma" evidenceIndex={{ "student_t_ewma:2-5": { prospective: empty, retrospective: replay } }} />)
   fireEvent.click(screen.getByText("Compare models"))
+  fireEvent.click(screen.getByText("Student-t EWMA"))
+  fireEvent.click(screen.getByText(/Prospective as-issued · N=0/))
+  fireEvent.click(screen.getByText(/Retrospective replay · N=500/))
   const prospective = screen.getByRole("region", { name: "Prospective as-issued evidence" })
   const replayPanel = screen.getByRole("region", { name: "Retrospective replay evidence" })
   expect(prospective.textContent).toContain("N=0")
