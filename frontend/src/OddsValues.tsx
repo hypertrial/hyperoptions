@@ -1,5 +1,5 @@
 import { unsignedPercentTenths } from "./format"
-import { oddsAvailable, predictiveAvailable, quoteSupportLabel, unavailableReasons, type MarketOdds, type PredictiveOdds } from "./marketOdds"
+import { oddsAvailable, predictiveAvailable, predictiveSupportLabel, quoteSupportLabel, unavailableReasons, type MarketOdds, type PredictiveOdds } from "./marketOdds"
 
 export default function OddsValues({ odds, predictiveOdds, compact = false }: {
   odds: MarketOdds | null | undefined
@@ -16,14 +16,14 @@ export default function OddsValues({ odds, predictiveOdds, compact = false }: {
       : <span className="odds-unavailable"><strong>{status}</strong>{!pending ? <span>{unavailableReasons(odds, predictiveOdds)}</span> : null}</span>
   }
   const values = market ? odds! : predictiveOdds!
-  const support = market ? quoteSupportLabel(odds) : null
+  const support = market ? quoteSupportLabel(odds) : compact ? predictiveSupportLabel(predictiveOdds) : null
   return (
     <span className={compact ? "odds-values compact" : "odds-values"}>
       <span className="odds-method">{market ? "Market-implied" : "Historical predictive"}</span>
       <span><strong>{unsignedPercentTenths(values.itm_pct_tenths)}</strong> ITM</span>
       <span><strong>{unsignedPercentTenths(values.otm_pct_tenths)}</strong> OTM</span>
       {predictive ? <span><strong>{unsignedPercentTenths(predictiveOdds!.atm_pct_tenths)}</strong> ATM</span> : null}
-      {support ? <span className="odds-support" title="Quote-bound tightness equals 100 minus the ITM bound width in percentage points. It is not forecast confidence.">{support}</span> : null}
+      {support ? <span className="odds-support" title={market ? "Quote-bound tightness equals 100 minus the ITM bound width in percentage points. It is not forecast confidence." : "Model support counts daily returns for EWMA or independent horizon blocks for the empirical model. It is not forecast confidence."}>{support}</span> : null}
     </span>
   )
 }

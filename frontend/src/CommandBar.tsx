@@ -142,7 +142,7 @@ export default function CommandBar(props: Props) {
   const quoteLoading = props.loading && props.page == null
   const compactSession: SessionInfo = {
     ...props.session,
-    label: props.session.state === "open" ? "Open" : props.session.state === "closed" ? "Closed" : "Unavailable",
+    label: props.session.state === "open" ? "Open at fetch" : props.session.state === "closed" ? "Closed at fetch" : "Unavailable",
     detail: null,
   }
 
@@ -158,16 +158,16 @@ export default function CommandBar(props: Props) {
     <Drawer.Root modal swipeDirection="left">
       <div className="mobile-market-bar">
         <div className="mobile-market-quote" aria-busy={quoteLoading}>
-          <strong>{props.ticker}</strong>
           {quoteLoading ? (
-            <span className="mobile-loading-label">
-              <RefreshCw className="animate-spin" aria-hidden="true" />
-              Loading market data…
-            </span>
+            <><strong>{props.ticker}</strong><span className="mobile-loading-label"><RefreshCw className="animate-spin" aria-hidden="true" />Loading market data…</span></>
           ) : (
             <>
-              <span className="font-mono">{moneyCents(props.page?.current_cents)}</span>
-              <MarketStatus session={compactSession} />
+              <span className="mobile-market-line">
+                <strong>{props.ticker}</strong>
+                <span className="font-mono">{moneyCents(props.page?.current_cents)}</span>
+                <MarketStatus session={compactSession} />
+              </span>
+              {props.page ? <span className="mobile-quote-time">Quote {props.quoteStamp || "time unavailable"}</span> : null}
             </>
           )}
         </div>

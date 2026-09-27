@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, Check, ChevronRight, Copy } from "lucide-react"
-import { Fragment, type CSSProperties, type ReactNode } from "react"
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -86,8 +86,29 @@ function DesktopResults({
   watchStates: Readonly<Record<string, WatchActionState>>
   onWatch: (watchKey: string) => void
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [overflow, setOverflow] = useState(false)
+
+  useEffect(() => {
+    const viewport = scrollRef.current
+    const table = viewport?.querySelector("table")
+    if (!viewport || !table) return
+    const update = () => setOverflow(viewport.scrollWidth > viewport.clientWidth + 1)
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update)
+    observer?.observe(viewport)
+    observer?.observe(table)
+    window.addEventListener("resize", update)
+    update()
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener("resize", update)
+    }
+  }, [])
+
   return (
-    <div className="table-scroll">
+    <>
+      {overflow ? <p className="table-scroll-hint">Scroll table sideways to view more metrics</p> : null}
+      <div ref={scrollRef} className="table-scroll" role={overflow ? "region" : undefined} aria-label={overflow ? `${group.expiration} option metrics` : undefined} tabIndex={overflow ? 0 : undefined}>
       <table data-density={density}>
         <thead>
           <tr>
@@ -160,7 +181,8 @@ function DesktopResults({
           })}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   )
 }
 

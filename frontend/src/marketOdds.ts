@@ -39,6 +39,11 @@ export function quoteSupportLabel(odds: MarketOdds | null | undefined): string |
   return `Quote tightness ${score}/100 · ITM bounds ${unsignedPercentTenths(low)}–${unsignedPercentTenths(high)}`
 }
 
+export function predictiveSupportLabel(odds: PredictiveOdds | null | undefined): string | null {
+  if (!predictiveAvailable(odds)) return null
+  return `Closes through ${odds!.as_of_session ?? "date unavailable"} · model support ${odds!.support ?? "unavailable"}`
+}
+
 export function preferredOddsKind(market: MarketOdds | null | undefined, predictive: PredictiveOdds | null | undefined): "market" | "predictive" | null {
   if (oddsAvailable(market)) return "market"
   if (predictiveAvailable(predictive)) return "predictive"
@@ -52,8 +57,8 @@ export function oddsMessage(odds: MarketOdds | null | undefined): string {
 
 export function oddsLabel(market: MarketOdds | null | undefined, predictive?: PredictiveOdds | null): string {
   if (oddsAvailable(market)) return `Market-implied ${unsignedPercentTenths(market!.itm_pct_tenths)} ITM, ${unsignedPercentTenths(market!.otm_pct_tenths)} OTM${quoteSupportLabel(market) ? `, ${quoteSupportLabel(market)}` : ""}`
-  if (predictiveAvailable(predictive)) return `Historical predictive ${unsignedPercentTenths(predictive!.itm_pct_tenths)} ITM, ${unsignedPercentTenths(predictive!.otm_pct_tenths)} OTM, ${unsignedPercentTenths(predictive!.atm_pct_tenths)} ATM`
-  return oddsMessage(market)
+  if (predictiveAvailable(predictive)) return `Historical predictive ${unsignedPercentTenths(predictive!.itm_pct_tenths)} ITM, ${unsignedPercentTenths(predictive!.otm_pct_tenths)} OTM, ${unsignedPercentTenths(predictive!.atm_pct_tenths)} ATM, ${predictiveSupportLabel(predictive)}`
+  return unavailableReasons(market, predictive)
 }
 
 export function unavailableReasons(market: MarketOdds | null | undefined, predictive: PredictiveOdds | null | undefined): string {

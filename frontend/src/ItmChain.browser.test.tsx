@@ -129,7 +129,7 @@ describe("chain interactions", () => {
     expect(missingCells.slice(1, 8)).toEqual(["—", "—", "—", "—", "—", "—", "—"])
     expect(screen.queryByText("Suggested trade")).toBeNull()
     expect(screen.getByRole("button", { name: "Copy row IREN 2026-09-18 strike $50.00" })).toBeTruthy()
-    expect(screen.getByText("Market open")).toBeTruthy()
+    expect(screen.getByText("Market open at fetch")).toBeTruthy()
     expect(screen.getByText(/Stock bid/)).toBeTruthy()
     expect(screen.getByText(/\$49\.90/)).toBeTruthy()
     expect(screen.getByText(/Sep 11, 2026 10:00 AM ET/)).toBeTruthy()
@@ -229,6 +229,7 @@ describe("chain interactions", () => {
     const rows = await screen.findAllByRole("row")
     expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("Historical predictive")
     expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("52.1% ITM")
+    expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("Closes through 2026-09-18 · model support 60")
     expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("Why market odds unavailable?")
     expect(screen.getByRole("columnheader", { name: "Est P&L" })).toBeTruthy()
     expect(screen.getByRole("columnheader", { name: "Loss odds" })).toBeTruthy()
@@ -257,6 +258,17 @@ describe("chain interactions", () => {
     expect(summary.textContent).toContain("63.8% ITM")
     expect(summary.textContent).toContain("36.2% OTM")
     expect(summary.getAttribute("aria-label")).toContain("Quote tightness 70/100")
+    expect(document.querySelector(".mobile-market-quote")?.textContent).toContain("Quote Sep 11, 2026 10:00 AM ET")
+    expect(document.querySelector(".mobile-market-quote")?.textContent).toContain("Open at fetch")
+  })
+
+  it("labels a missing compact quote time instead of implying a live price", async () => {
+    setDesktopViewport(false)
+    fetchMock.mockResolvedValue(page({ quote_timestamp: null }))
+    render(<ItmChain />)
+
+    await screen.findByRole("heading", { name: /2026-09-18/ })
+    expect(document.querySelector(".mobile-market-quote")?.textContent).toContain("Quote time unavailable")
   })
 
   it("adds a selected desktop contract by its server key and distinguishes an existing watch", async () => {

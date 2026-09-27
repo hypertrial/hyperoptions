@@ -328,13 +328,14 @@
     backdrop-filter: blur(14px);
   }
   .mobile-market-quote {
-    display: flex;
+    display: grid;
     min-width: 0;
-    align-items: center;
-    gap: 8px;
+    gap: 2px;
   }
-  .mobile-market-quote > strong { font-size: .88rem; }
-  .mobile-market-quote > .font-mono { font-size: 1rem; font-weight: 750; }
+  .mobile-market-line { display: flex; min-width: 0; align-items: center; gap: 8px; }
+  .mobile-market-line > strong { font-size: .88rem; }
+  .mobile-market-line > .font-mono { font-size: 1rem; font-weight: 750; }
+  .mobile-quote-time { color: var(--muted-foreground); font-size: .68rem; line-height: 1.25; overflow-wrap: break-word; }
   .mobile-market-quote .market-session-status {
     min-width: 0;
     gap: 4px;
@@ -883,6 +884,14 @@
   .expiry-content { border-top: 1px solid var(--border); }
   .expiry-reveal-note { padding: 16px; }
 
+  .table-scroll-hint {
+    margin: 0;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--muted-foreground);
+    font-size: .72rem;
+  }
+
   .table-scroll {
     max-width: 100%;
     max-height: max(16rem, calc(100dvh - 14rem));
@@ -891,6 +900,7 @@
     background: var(--card);
     -webkit-overflow-scrolling: touch;
   }
+  .table-scroll:focus-visible { outline: 3px solid var(--ring); outline-offset: -3px; }
   table {
     width: max-content;
     min-width: 100%;
@@ -951,7 +961,7 @@
     position: sticky;
     right: 0;
     z-index: 2;
-    width: 2.8rem;
+    width: 4.5rem;
     box-shadow: -7px 0 12px -9px rgb(0 0 0 / .7);
   }
   thead th:last-child { z-index: 3; background: var(--secondary); }
@@ -959,7 +969,7 @@
   thead th:nth-last-child(2),
   tbody td.watch-cell {
     position: sticky;
-    right: 2.8rem;
+    right: 4.5rem;
     z-index: 2;
     min-width: 5.5rem;
     box-shadow: -7px 0 12px -9px rgb(0 0 0 / .7);
@@ -1157,7 +1167,7 @@
   }
 
   @media (max-width: 28rem) {
-    .mobile-market-quote { gap: 6px; }
+    .mobile-market-line { gap: 6px; }
     .mobile-settings-trigger { padding-inline: 9px; }
     .toolbar-actions > button,
     .toolbar-actions > [data-slot="button"],
