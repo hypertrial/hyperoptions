@@ -17,6 +17,9 @@ const watched = {
     status: "available",
     itm_pct_tenths: 638,
     otm_pct_tenths: 362,
+    bound_low_pct_tenths: 500,
+    bound_high_pct_tenths: 800,
+    quote_support_score: 70,
     reason: null,
     source: "nasdaq",
     fetched_at: "2026-09-17T14:00:00Z",
@@ -49,6 +52,7 @@ it("shows dated market-implied ITM and OTM odds beside the expiry result", async
   const odds = await screen.findByRole("region", { name: "Odds estimates" })
   expect(odds.textContent).toContain("63.8% ITM")
   expect(odds.textContent).toContain("36.2% OTM")
+  expect(odds.textContent).toContain("Quote tightness 70/100 · ITM bounds 50.0%–80.0%")
   expect(odds.textContent).toContain("Risk-neutral")
   expect(odds.textContent).toContain("Nasdaq")
   expect(odds.textContent).toContain("Sep 17, 2026")
@@ -171,11 +175,11 @@ it("does not revive an old real-world forecast when current market odds are unav
   expect(screen.queryByText(/Historical pre-expiry forecast/)).toBeNull()
 })
 
-it("uses a dated historical forecast when market bounds fail and keeps prior market odds as context", async () => {
+it("uses a dated historical forecast when market bounds conflict and keeps prior scored odds", async () => {
   window.history.replaceState(null, "", "/watchlist")
   const item = {
     ...watched,
-    market_odds: { ...watched.market_odds, status: "unavailable", itm_pct_tenths: null, otm_pct_tenths: null, reason: "Bounds too wide", session_date: "2026-09-18" },
+    market_odds: { ...watched.market_odds, status: "unavailable", itm_pct_tenths: null, otm_pct_tenths: null, reason: "Quote bounds inconsistent", session_date: "2026-09-18" },
     last_available_market_odds: watched.market_odds,
     predictive_odds: {
       status: "available", method: "lognormal_ewma", reason: null,
@@ -197,10 +201,11 @@ it("uses a dated historical forecast when market bounds fail and keeps prior mar
   expect(odds.querySelector(".watch-odds")?.textContent).toContain("52.0% ITM")
   expect(odds.querySelector(".watch-odds")?.textContent).not.toContain("63.8%")
   expect(odds.textContent).toContain("completed stock closes through 2026-09-18")
-  expect(odds.textContent).toContain("Bounds too wide")
+  expect(odds.textContent).toContain("Quote bounds inconsistent")
   const prior = odds.querySelector(".watch-prior-odds") as HTMLDetailsElement
   expect(prior.open).toBe(false)
   expect(prior.textContent).toContain("session 2026-09-17")
+  expect(prior.textContent).toContain("Quote tightness 70/100")
 
   const risk = screen.getByRole("region", { name: "Hypothetical expiry risk" })
   expect(risk.textContent).toContain("Assumed stock entry")

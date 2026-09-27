@@ -29,6 +29,16 @@ export function predictiveAvailable(odds: PredictiveOdds | null | undefined): bo
     && (values[0]! + values[1]! + values[2]!) === 1000
 }
 
+export function quoteSupportLabel(odds: MarketOdds | null | undefined): string | null {
+  const low = odds?.bound_low_pct_tenths
+  const high = odds?.bound_high_pct_tenths
+  const score = odds?.quote_support_score
+  if (!oddsAvailable(odds) || low == null || high == null || score == null
+    || !Number.isInteger(low) || !Number.isInteger(high) || !Number.isInteger(score)
+    || low < 0 || low > high || high > 1000 || score < 0 || score > 100) return null
+  return `Quote tightness ${score}/100 · ITM bounds ${unsignedPercentTenths(low)}–${unsignedPercentTenths(high)}`
+}
+
 export function preferredOddsKind(market: MarketOdds | null | undefined, predictive: PredictiveOdds | null | undefined): "market" | "predictive" | null {
   if (oddsAvailable(market)) return "market"
   if (predictiveAvailable(predictive)) return "predictive"
@@ -41,7 +51,7 @@ export function oddsMessage(odds: MarketOdds | null | undefined): string {
 }
 
 export function oddsLabel(market: MarketOdds | null | undefined, predictive?: PredictiveOdds | null): string {
-  if (oddsAvailable(market)) return `Market-implied ${unsignedPercentTenths(market!.itm_pct_tenths)} ITM, ${unsignedPercentTenths(market!.otm_pct_tenths)} OTM`
+  if (oddsAvailable(market)) return `Market-implied ${unsignedPercentTenths(market!.itm_pct_tenths)} ITM, ${unsignedPercentTenths(market!.otm_pct_tenths)} OTM${quoteSupportLabel(market) ? `, ${quoteSupportLabel(market)}` : ""}`
   if (predictiveAvailable(predictive)) return `Historical predictive ${unsignedPercentTenths(predictive!.itm_pct_tenths)} ITM, ${unsignedPercentTenths(predictive!.otm_pct_tenths)} OTM, ${unsignedPercentTenths(predictive!.atm_pct_tenths)} ATM`
   return oddsMessage(market)
 }

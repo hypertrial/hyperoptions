@@ -178,7 +178,7 @@ test("shows a separate forecast, prior market context, and dated hypothetical ri
   await page.route("**/api/watchlist", async (route) => {
     await route.fulfill({ json: { items: [{
       ...item,
-      market_odds: { ...item.market_odds, status: "unavailable", itm_pct_tenths: null, otm_pct_tenths: null, reason: "Quote bounds too wide" },
+      market_odds: { ...item.market_odds, status: "unavailable", itm_pct_tenths: null, otm_pct_tenths: null, reason: "Quote bounds inconsistent" },
       last_available_market_odds: item.market_odds,
       predictive_odds: {
         status: "available", method: "lognormal_ewma", itm_pct_tenths: 520,

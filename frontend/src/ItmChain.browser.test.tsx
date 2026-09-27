@@ -175,6 +175,7 @@ describe("chain interactions", () => {
     Object.assign(oddsPage.expirations[0].contracts[0], {
       market_odds: {
         status: "available", itm_pct_tenths: 638, otm_pct_tenths: 362,
+        bound_low_pct_tenths: 500, bound_high_pct_tenths: 800, quote_support_score: 70,
         reason: null, source: "nasdaq", fetched_at: "2026-09-17T14:00:00Z",
         session_date: "2026-09-17", model_version: "regimelib-0.1.0",
       },
@@ -193,6 +194,7 @@ describe("chain interactions", () => {
     const rows = await screen.findAllByRole("row")
     expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("63.8% ITM")
     expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("36.2% OTM")
+    expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("Quote tightness 70/100 · ITM bounds 50.0%–80.0%")
     expect(rows[2].querySelector(".odds-cell")?.textContent).toContain("Too few reliable option quotes")
     expect(screen.getByText(/Nasdaq · last estimate Sep 17, 2026/)).toBeTruthy()
   })
@@ -203,7 +205,7 @@ describe("chain interactions", () => {
     oddsPage.expirations[0].contracts.forEach((row, index) => Object.assign(row, {
       market_odds: {
         status: "unavailable", itm_pct_tenths: null, otm_pct_tenths: null,
-        reason: "Quote bounds too wide", source: "nasdaq", fetched_at: "2026-09-18T20:00:00Z",
+        reason: "Quote bounds inconsistent", source: "nasdaq", fetched_at: "2026-09-18T20:00:00Z",
         session_date: "2026-09-18", model_version: "test",
       },
       predictive_odds: {
@@ -243,6 +245,7 @@ describe("chain interactions", () => {
     Object.assign(oddsPage.expirations[0].contracts[0], {
       market_odds: {
         status: "available", itm_pct_tenths: 638, otm_pct_tenths: 362,
+        bound_low_pct_tenths: 500, bound_high_pct_tenths: 800, quote_support_score: 70,
         reason: null, source: "nasdaq", fetched_at: "2026-09-17T14:00:00Z",
         session_date: "2026-09-17", model_version: "regimelib-0.1.0",
       },
@@ -253,6 +256,7 @@ describe("chain interactions", () => {
     const summary = await screen.findByRole("button", { name: /Show details for IREN 2026-09-18 strike \$50\.00.*63\.8% ITM/ })
     expect(summary.textContent).toContain("63.8% ITM")
     expect(summary.textContent).toContain("36.2% OTM")
+    expect(summary.getAttribute("aria-label")).toContain("Quote tightness 70/100")
   })
 
   it("adds a selected desktop contract by its server key and distinguishes an existing watch", async () => {

@@ -116,6 +116,9 @@ class MarketOddsView(BaseModel):
     fetched_at: datetime | None = None
     session_date: date | None = None
     model_version: str | None = None
+    bound_low_pct_tenths: int | None = None
+    bound_high_pct_tenths: int | None = None
+    quote_support_score: int | None = None
 
 
 class PredictiveOddsView(BaseModel):
