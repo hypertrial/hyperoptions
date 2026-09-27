@@ -263,7 +263,9 @@ class WatchStore:
                         previous
                         and previous[0]["status"] == "provisional"
                         and result.status == "provisional"
-                        and previous[0]["close_price"] != str(result.close_price)
+                        and previous[0]["close_price"] is not None
+                        and result.close_price is not None
+                        and Decimal(previous[0]["close_price"]) != result.close_price
                     )
                     connection.execute(
                         """INSERT INTO watch_outcomes

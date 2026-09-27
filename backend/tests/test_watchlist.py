@@ -325,6 +325,17 @@ def test_watch_store_dedupes_and_keeps_revisions_across_restart(tmp_path: Path) 
     restarted.record_outcome(
         record,
         OutcomeResult(
+            "provisional", "itm", None, "Yahoo", date(2026, 7, 2),
+            datetime(2026, 7, 3, 12, tzinfo=UTC), D("51.00"),
+        ),
+        date(2026, 7, 2),
+    )
+    same_close = restarted.latest_outcomes()[record.id]
+    assert same_close.close_exact == "51.00"
+    assert same_close.revised is False
+    restarted.record_outcome(
+        record,
+        OutcomeResult(
             "provisional",
             "otm",
             None,

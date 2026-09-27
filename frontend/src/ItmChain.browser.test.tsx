@@ -640,6 +640,19 @@ describe("chain interactions", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("CIFR", "call", "itm"))
   })
 
+  it("offers retry for a network failure instead of reporting no ticker matches", async () => {
+    tickersMock.mockRejectedValueOnce(new Error("Local API unavailable"))
+      .mockResolvedValueOnce({ as_of: "2026-09-11T14:00:00Z", total: LISTINGS.length, results: LISTINGS })
+    render(<ItmChain />)
+
+    expect(await screen.findByText("Ticker list unavailable")).toBeTruthy()
+    expect(screen.queryByRole("option", { name: "No matches" })).toBeNull()
+    expect(screen.getByRole("combobox")).toHaveProperty("disabled", true)
+    fireEvent.click(screen.getByRole("button", { name: "Retry ticker list" }))
+    await waitFor(() => expect(screen.getByRole("combobox")).toHaveProperty("disabled", false))
+    expect(tickersMock).toHaveBeenCalledTimes(2)
+  })
+
   it("stays blocked after a repeated ticker-universe outage", async () => {
     tickersMock.mockRejectedValue(new ApiError(503, "Ticker universe unavailable"))
     render(<ItmChain />)
