@@ -11,6 +11,8 @@ import pytest
 
 from options_api.contract_identity import make_watch_key
 from options_api.intraday_capture import capture_intraday_window
+from options_api.intraday_capture import _COMPARATOR_VERSION
+from options_api.intraday_shadow import _VERSION as INTRADAY_VERSION
 from options_api.predictive_watch import PredictiveWatchOdds
 from options_api.watchlist import OutcomeView, WatchItem, get_watchlist
 from stocksweeper.forecast.calendar import SessionCalendar
@@ -24,52 +26,32 @@ from stocksweeper.forecast.predictive import BASELINE_VERSION, PredictiveForecas
 from .test_intraday_capture import _fixture, _future_session
 from .test_intraday_prospective_evaluation import _rows
 from .test_predictive_watch import _CalibrationLedger, _calibration_rows
-from .test_promotion import _Prices, _activate, _bars
+from .test_predictive import NoNetwork, Prices, _bars
 
 
-def test_forced_baseline_and_watch_ignore_prepared_promoted_champion(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from stocksweeper.forecast.physical_contest import STUDENT_VERSION, ShadowForecast
-    from stocksweeper.forecast.physical_contest import PhysicalShadowForecaster
-    from stocksweeper.forecast.promotion import PromotionRegistry
-
+def test_forecast_and_watch_ignore_legacy_champion_artifact_after_restart(tmp_path) -> None:
     completed = date(2026, 9, 24)
     now = datetime(2026, 9, 24, 23, tzinfo=UTC)
     expiry = date(2026, 9, 25)
-    forecaster = PredictiveForecaster(tmp_path, _Prices(_bars()))
+    legacy = tmp_path / "forecast_champions.json"
+    legacy.write_text("legacy artifact is inert")
+    forecaster = PredictiveForecaster(tmp_path, Prices(_bars()))
     forecaster.prepare("AAPL", completed)
-    _activate(PromotionRegistry(tmp_path), monkeypatch)
-
-    def promoted(_shadow, frozen, _method, *, clean):
-        assert clean is not None
-        return ShadowForecast(
-            replace(frozen, method="student_t_ewma", model_version=STUDENT_VERSION),
-            None, 0, 0,
-        )
-
-    monkeypatch.setattr(PhysicalShadowForecaster, "cached_candidate", promoted)
-    forecaster.prepare("AAPL", completed)
-    assert forecaster.forecast("AAPL", now, expiry).method == "student_t_ewma"
-    baseline = forecaster.forecast("AAPL", now, expiry, force_baseline=True)
+    baseline = forecaster.forecast("AAPL", now, expiry)
     assert (baseline.method, baseline.model_version) == ("lognormal_ewma", BASELINE_VERSION)
     assert forecaster.forecast_baseline("AAPL", now, expiry) == baseline
 
-    watch = PredictiveWatchOdds(tmp_path, lambda: now, forecaster, refresh_enabled=False)
+    restarted = PredictiveForecaster(tmp_path, NoNetwork())
+    watch = PredictiveWatchOdds(tmp_path, lambda: now, restarted, refresh_enabled=False)
     view, issued = watch.lookup("AAPL", "call", expiry, Decimal("100"))
     assert issued == baseline
     assert (view.method, view.evidence_key) == ("lognormal_ewma", "lognormal_ewma:1")
+    assert legacy.read_text() == "legacy artifact is inert"
 
 
-def test_intraday_capture_keeps_ewma_as_its_dated_close_reference(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_intraday_capture_keeps_ewma_as_its_dated_close_reference(tmp_path) -> None:
     ledger, forecaster, market, (issue, _), _, now = _fixture(tmp_path, _future_session())
-    monkeypatch.setattr(
-        forecaster, "_select_promoted",
-        lambda frozen: replace(frozen, method="student_t_ewma"),
-    )
-    assert forecaster.forecast("TEST", now, issue.expiration).method == "student_t_ewma"
+    assert forecaster.forecast("TEST", now, issue.expiration).method == "lognormal_ewma"
     watch = PredictiveWatchOdds(tmp_path, lambda: now, forecaster, refresh_enabled=False)
     baseline = watch.distribution("TEST", issue.expiration, contract_since=issue.input_session)
     assert baseline.method == "lognormal_ewma"
@@ -138,7 +120,11 @@ def test_overlapping_expiries_do_not_create_intraday_significance(tmp_path) -> N
     calendar = SessionCalendar()
     days = calendar.sessions(date(2026, 9, 28), date(2026, 10, 27))[:20]
     rows = [
-        row
+        {**row, "model_version": {
+            "lognormal_ewma": BASELINE_VERSION,
+            "quote_reanchored_comparator": _COMPARATOR_VERSION,
+            "intraday_shadow": INTRADAY_VERSION,
+        }[row["method"]]}
         for day in days
         for row in _rows(day=day, expiry=calendar.offset(day, 4))
     ]
@@ -166,10 +152,15 @@ def test_overlapping_expiries_do_not_create_intraday_significance(tmp_path) -> N
         def panel_coverage(self, **_kwargs):
             return {}
 
+    rows.extend(
+        {**row, "contract_key": "OLD", "model_version": "obsolete-v0"}
+        for row in _rows(day=days[0], expiry=calendar.offset(days[0], 4))
+    )
     prospective = build_model_evidence(tmp_path, Ledger(), as_of)[
         ("intraday_shadow", "2-5")
     ]["prospective"]
     assert prospective["independent_date_blocks"] == summary["scored_date_blocks"]
+    assert prospective["contract_cells_attempted"] == 20
     assert prospective["significance"] == "not_estimable"
     assert prospective["brier"]["bootstrap_95"] is None
 

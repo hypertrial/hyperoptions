@@ -1,4 +1,4 @@
-"""Unpublished quote-conditioned physical forecast for prospective comparison."""
+"""Quote-conditioned physical forecast for live comparison and evaluation."""
 
 from __future__ import annotations
 

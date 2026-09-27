@@ -1,4 +1,4 @@
-"""Record prospective quote-conditioned challengers without publishing them."""
+"""Record prospective quote-conditioned forecasts with as-issued provenance."""
 
 from __future__ import annotations
 

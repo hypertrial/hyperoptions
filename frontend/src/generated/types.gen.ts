@@ -845,6 +845,22 @@ export type PredictiveOddsView = {
      */
     support?: number | null;
     /**
+     * Independent Blocks
+     */
+    independent_blocks?: number | null;
+    /**
+     * Fit Ms
+     */
+    fit_ms?: number | null;
+    /**
+     * Lookup Ms
+     */
+    lookup_ms?: number | null;
+    /**
+     * Simulation Error 95 Pct Tenths
+     */
+    simulation_error_95_pct_tenths?: number | null;
+    /**
      * Data Hash
      */
     data_hash?: string | null;

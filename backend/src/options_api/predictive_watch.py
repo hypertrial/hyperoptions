@@ -7,6 +7,7 @@ import logging
 from collections.abc import Callable, Iterable
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
+from math import ceil, sqrt
 from pathlib import Path
 
 from options_api.market_calendar import session_close
@@ -46,15 +47,13 @@ class PredictiveWatchOdds:
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._pending: dict[str, None] = {}
         self._cache: dict[
-            tuple[str, date, date, date | None, bool, str | None], PredictiveDistribution
+            tuple[str, date, date, date | None, bool], PredictiveDistribution
         ] = {}
-        self._horizons: dict[tuple[date, date], int] = {}
         self._retrieved_at: dict[
             tuple[str, date, str], tuple[datetime, tuple[int, ...]]
         ] = {}
         self._semaphore = asyncio.Semaphore(2)
         self._refresh_locks: dict[str, asyncio.Lock] = {}
-        self._champion_attempts: dict[tuple[str, date, str], datetime] = {}
         self._calibration: dict[tuple[str, str, str, str, Side], dict[str, object]] = {}
         self._calibration_day: date | None = None
         self._model_evidence: dict[tuple[str, str], dict[str, object]] = {}
@@ -96,28 +95,6 @@ class PredictiveWatchOdds:
 
     def _done(self, ticker: str) -> None:
         self._tasks.pop(ticker, None)
-        self._pump()
-
-    def _schedule_champion(self, ticker: str, session: date, choice: str) -> None:
-        """Warm a newly promoted model once per retry window, off the request path."""
-        if (
-            self._closed
-            or not self.refresh_enabled
-            or ticker in self._tasks
-            or ticker in self._pending
-        ):
-            return
-        now = self._now()
-        key = ticker, session, choice
-        prior = self._champion_attempts.get(key)
-        if prior is not None and now - prior < _RETRY:
-            return
-        if len(self._pending) >= _MAX_PENDING:
-            return
-        self._champion_attempts[key] = now
-        if len(self._champion_attempts) > 1024:
-            self._champion_attempts.pop(next(iter(self._champion_attempts)))
-        self._pending[ticker] = None
         self._pump()
 
     def schedule_calibration(self) -> None:
@@ -243,22 +220,9 @@ class PredictiveWatchOdds:
     ) -> PredictiveDistribution:
         now = self._now()
         completed = self.forecaster.calendar.last_completed(now)
-        horizon_key = completed, expiry
-        horizon = self._horizons.get(horizon_key)
-        if horizon is None:
-            horizon = self.forecaster.calendar.horizon(completed, expiry)
-            self._horizons[horizon_key] = horizon
-            if len(self._horizons) > 512:
-                self._horizons.pop(next(iter(self._horizons)))
-        champion = getattr(self.forecaster, "champion_method", lambda _horizon: None)(horizon)
-        key = (ticker, expiry, completed, contract_since, standard_terms, champion)
+        key = (ticker, expiry, completed, contract_since, standard_terms)
         cached = self._cache.get(key)
         if cached is not None:
-            if (
-                champion is not None
-                and cached.selection.rejection_reason == "band_champion_not_prepared"
-            ):
-                self._schedule_champion(ticker, completed, champion)
             return cached
         result = getattr(self.forecaster, "forecast_baseline", self.forecaster.forecast)(
             ticker,
@@ -267,11 +231,6 @@ class PredictiveWatchOdds:
             contract_since=contract_since,
             standard_terms=standard_terms,
         )
-        if (
-            champion is not None
-            and result.selection.rejection_reason == "band_champion_not_prepared"
-        ):
-            self._schedule_champion(ticker, completed, champion)
         self._cache[key] = result
         if len(self._cache) > _MAX_CACHED_DISTRIBUTIONS:
             self._cache.pop(next(iter(self._cache)))
@@ -376,6 +335,12 @@ class PredictiveWatchOdds:
             itm_pct_tenths=itm,
             otm_pct_tenths=otm,
             atm_pct_tenths=1000 - itm - otm,
+            simulation_error_95_pct_tenths=(
+                ceil(980 / sqrt(distribution.support))
+                if distribution.method in {"student_t_ewma", "gjr_garch_t"}
+                and distribution.support > 0
+                else None
+            ),
             validation_evidence=(
                 PredictiveValidationEvidence.model_validate(evidence) if evidence else None
             ),

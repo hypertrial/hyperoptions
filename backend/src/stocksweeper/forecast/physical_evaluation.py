@@ -135,6 +135,15 @@ def evaluate_band(
         if previous is None or _issued_order(row) < _issued_order(previous):
             first_baseline[unit] = row
     selected_vintages = {unit: row.input_vintage for unit, row in first_baseline.items()}
+    orphan_attempts = [
+        row for row in relevant
+        if row.method == candidate
+        and (row.ticker, row.origin, row.horizon) not in selected_vintages
+    ]
+    orphan_contracts = {
+        (row.ticker, row.origin, row.expiry_session, row.contract_id or f"{row.strike}|{row.side}")
+        for row in orphan_attempts
+    }
     original_attempts = len(relevant)
     relevant = [
         row
@@ -143,7 +152,7 @@ def evaluate_band(
         and row.input_vintage == selected_vintages[(row.ticker, row.origin, row.horizon)]
         and (row.method == _BASELINE or row.input_vintage is not None)
     ]
-    revised_attempts_excluded = original_attempts - len(relevant)
+    revised_attempts_excluded = original_attempts - len(relevant) - len(orphan_attempts)
     by_contract: dict[tuple[str, date, date, str], dict[str, ContestRow]] = defaultdict(dict)
     duplicate_attempts_excluded = 0
     for row in relevant:
@@ -159,6 +168,7 @@ def evaluate_band(
         if prior is None or _issued_order(row) < _issued_order(prior):
             by_contract[key][row.method] = row
     rejection_reasons: Counter[str] = Counter()
+    rejection_reasons["baseline_not_issued"] += len(orphan_contracts)
     unit_pairs: dict[tuple[str, date, int], list[tuple[ContestRow, ContestRow]]] = defaultdict(list)
     latencies: dict[str, list[float]] = defaultdict(list)
     timed_prepare: set[tuple[str, date]] = set()
@@ -306,25 +316,6 @@ def evaluate_band(
     provenance = {row.provenance for row in relevant}
     brier_delta = mean(unit["brier_delta"] for unit in units) if units else None
     log_delta = mean(unit["log_delta"] for unit in units) if units else None
-    gates = {
-        "predeclared_as_issued_holdout": (
-            period == "holdout" and holdout_start is not None and provenance == {"as_issued"}
-        ),
-        "as_issued": provenance == {"as_issued"},
-        "tickers": len(tickers) >= 20,
-        "date_blocks": len(origins) >= 20,
-        "units": len(units) >= 500,
-        "brier_interval": brier_ci is not None and brier_ci[1] < 0,
-        "log_loss": log_delta is not None
-        and log_delta <= 0
-        and log_ci is not None
-        and log_ci[1] <= 0.01,
-        "subgroups": all(
-            not summary["supported"] or summary["brier_delta"] <= 0.01
-            for summary in subgroups.values()
-        ),
-        "availability": baseline_available == candidate_available,
-    }
     def calibration(bins: list[list[tuple[float, float]]]) -> list[dict[str, float | int | None]]:
         return [
             {
@@ -347,7 +338,7 @@ def evaluate_band(
         "provenance": sorted(provenance),
         "later_vintage_attempts_excluded": revised_attempts_excluded,
         "duplicate_attempts_excluded": duplicate_attempts_excluded,
-        "contract_cells_attempted": len(by_contract),
+        "contract_cells_attempted": len(by_contract) + len(orphan_contracts),
         "baseline_contract_forecasts_attempted": baseline_attempted,
         "contract_forecasts_available": candidate_available,
         "baseline_contract_forecasts_available": baseline_available,
@@ -380,6 +371,4 @@ def evaluate_band(
             label: {"p50": _quantile(values, 0.5), "p95": _quantile(values, 0.95)}
             for label, values in latencies.items()
         },
-        "promotion_gates": gates,
-        "promotion_eligible": all(gates.values()),
     }

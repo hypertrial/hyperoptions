@@ -49,7 +49,6 @@ from options_api.watchlist import WatchlistService, router as watchlist_router
 from stocksweeper.config import Settings, load_settings
 from stocksweeper.forecast.labels import collect_matured_labels
 from stocksweeper.forecast.predictive import PredictiveForecaster
-from stocksweeper.forecast.promotion import PromotionRegistry
 from stocksweeper.pipeline.jobs import JobManager
 from stocksweeper.storage.db import single_instance
 
@@ -433,7 +432,6 @@ def create_app(
                 predictive_forecaster,
                 refresh_enabled=predictive_refresh,
             )
-            app.state.promotion_registry = PromotionRegistry(settings.resolved_data_dir())
             app.state.market_odds = MarketWatchOdds(
                 app.state.service,
                 client,
@@ -481,14 +479,6 @@ def create_app(
                     except Exception:
                         LOG.exception("forecast label collector failed")
                     app.state.predictive_odds.schedule_calibration()
-                    try:
-                        await asyncio.to_thread(
-                            app.state.promotion_registry.post_release_check,
-                            app.state.predictive_odds.ledger,
-                            as_of=datetime.now(UTC),
-                        )
-                    except Exception:
-                        LOG.exception("forecast quality rollback check failed")
                     await asyncio.sleep(300)
 
             async def capture_intraday() -> None:

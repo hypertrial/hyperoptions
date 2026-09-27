@@ -2,7 +2,7 @@
 
 Run from backend/: uv run --group research python scripts/evaluate_intraday_prospective.py
 Only recorded watchlist snapshots form the denominator; this report never
-promotes a model or calls retrospective current-vintage history as-issued.
+changes the selected model or calls retrospective current-vintage history as-issued.
 """
 
 from __future__ import annotations

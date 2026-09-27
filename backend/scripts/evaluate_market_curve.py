@@ -1,4 +1,4 @@
-"""Summarize unpublished constrained-curve quote fit, coverage, and latency."""
+"""Summarize constrained-curve quote fit, coverage, and latency."""
 
 from __future__ import annotations
 

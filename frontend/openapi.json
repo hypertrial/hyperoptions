@@ -2447,6 +2447,54 @@
             ],
             "title": "Support"
           },
+          "independent_blocks": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Independent Blocks"
+          },
+          "fit_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fit Ms"
+          },
+          "lookup_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lookup Ms"
+          },
+          "simulation_error_95_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Simulation Error 95 Pct Tenths"
+          },
           "data_hash": {
             "anyOf": [
               {

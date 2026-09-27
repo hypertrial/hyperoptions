@@ -357,13 +357,11 @@ def test_forecaster_cache_evicts_prior_session_and_oldest_ticker(tmp_path):
     forecaster = PredictiveForecaster(tmp_path, provider)
     forecaster.prepare("AAPL", COMPLETED)
     assert forecaster.forecast("AAPL", AS_OF, EXPIRY).status == "available"
-    assert any(key[0] == "AAPL" for key in forecaster._candidates)
     next_session = date(2026, 9, 25)
     provider.frame = _bars(101, last=next_session)
     forecaster.prepare("AAPL", next_session)
     assert all(key[1] == next_session for key in forecaster._prepared)
     assert all(key[1] == next_session for key in forecaster._inputs)
-    assert not forecaster._candidates
     assert forecaster.forecast(
         "AAPL", datetime(2026, 9, 25, 23, tzinfo=UTC), EXPIRY
     ).status == "available"
@@ -373,7 +371,6 @@ def test_forecaster_cache_evicts_prior_session_and_oldest_ticker(tmp_path):
     assert "AAPL" not in forecaster._ticker_sessions
     assert not any(key[0] == "AAPL" for key in forecaster._prepared)
     assert not any(key[0] == "AAPL" for key in forecaster._inputs)
-    assert not any(key[0] == "AAPL" for key in forecaster._candidates)
 
 
 def test_unavailable_result_and_invalid_inputs_are_explicit(tmp_path):

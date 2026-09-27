@@ -153,6 +153,10 @@ class PredictiveOddsView(BaseModel):
     expiry_session: date | None = None
     model_version: str | None = None
     support: int | None = None
+    independent_blocks: int | None = Field(default=None, ge=0)
+    fit_ms: int | None = Field(default=None, ge=0)
+    lookup_ms: int | None = Field(default=None, ge=0)
+    simulation_error_95_pct_tenths: int | None = Field(default=None, ge=0)
     data_hash: str | None = None
     price_basis: Literal["completed_close", "validated_underlying_quote"] | None = None
     price_as_of: datetime | None = None
