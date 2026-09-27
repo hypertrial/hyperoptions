@@ -1,4 +1,4 @@
-"""Shadow model reproducibility, causal fit reuse, and paired promotion gates."""
+"""Model reproducibility, causal fit reuse, and paired accuracy evidence."""
 
 from __future__ import annotations
 
@@ -194,11 +194,10 @@ def _paired_rows(provenance: str = "as_issued") -> list[ContestRow]:
     return rows
 
 
-def test_paired_band_gate_uses_ticker_origin_units_and_as_issued_evidence():
+def test_paired_band_evidence_uses_ticker_origin_units_and_provenance():
     rows = _paired_rows()
     descriptive = evaluate_band(rows, "student_t_ewma", "1", bootstrap_samples=200)
-    assert descriptive["promotion_gates"]["predeclared_as_issued_holdout"] is False
-    assert descriptive["promotion_eligible"] is False
+    assert descriptive["provenance"] == ["as_issued"]
     report = evaluate_band(
         rows,
         "student_t_ewma",
@@ -213,7 +212,7 @@ def test_paired_band_gate_uses_ticker_origin_units_and_as_issued_evidence():
     assert report["contract_forecasts_available"] == 1000
     assert report["brier"]["bootstrap_95"][1] < 0
     assert report["crps"]["scored_units"] == 500
-    assert report["promotion_eligible"] is True
+    assert report["brier"]["paired_delta"] < 0
     call_bins = report["calibration_by_side"]["call"]
     put_bins = report["calibration_by_side"]["put"]
     assert sum(item["count"] for item in call_bins) == 500
@@ -228,8 +227,7 @@ def test_paired_band_gate_uses_ticker_origin_units_and_as_issued_evidence():
         period="holdout",
         bootstrap_samples=200,
     )
-    assert replay["promotion_gates"]["as_issued"] is False
-    assert replay["promotion_eligible"] is False
+    assert replay["provenance"] == ["immutable_replay"]
 
 
 def test_missing_candidate_and_duplicate_issuance_do_not_inflate_units():
@@ -237,7 +235,7 @@ def test_missing_candidate_and_duplicate_issuance_do_not_inflate_units():
     one = rows[1]
     missing = [row for row in rows if row is not one]
     report = evaluate_band(missing, "student_t_ewma", "1", bootstrap_samples=200)
-    assert report["promotion_gates"]["availability"] is False
+    assert report["contract_forecasts_available"] < report["baseline_contract_forecasts_available"]
     assert report["rejection_reasons"]["candidate_not_issued"] == 1
     duplicate = replace(rows[0], issued_at=rows[0].issued_at.replace(hour=1), probability=0.1)
     original = evaluate_band(rows, "student_t_ewma", "1", bootstrap_samples=200)
@@ -265,7 +263,6 @@ def test_data_revision_is_not_paired_with_earlier_baseline_vintage():
     assert report["baseline_contract_forecasts_available"] == 1
     assert report["contract_forecasts_available"] == 0
     assert report["later_vintage_attempts_excluded"] == 2
-    assert report["promotion_gates"]["availability"] is False
 
 
 def test_frozen_cohort_replay_is_screening_only(tmp_path, monkeypatch):
@@ -322,7 +319,7 @@ def test_frozen_cohort_replay_is_screening_only(tmp_path, monkeypatch):
     )
     assert report["provenance"] == "immutable_replay"
     assert report["bands"]["1"]["ticker_origin_horizon_units"] == 1
-    assert report["bands"]["1"]["promotion_gates"]["as_issued"] is False
+    assert report["bands"]["1"]["provenance"] == ["immutable_replay"]
 
 
 def test_ledger_contest_uses_exact_joined_label_and_counts_failed_attempts():
@@ -389,7 +386,6 @@ def test_ledger_contest_uses_exact_joined_label_and_counts_failed_attempts():
     assert first["baseline_contract_forecasts_available"] == 1
     assert first["contract_forecasts_available"] == 0
     assert first["rejection_reasons"]["gjr_nonconverged"] == 1
-    assert first["promotion_gates"]["availability"] is False
     assert first["crps"]["scored_units"] == 0
 
     class LateLedger(Ledger):

@@ -14,12 +14,13 @@ import pytest
 
 from options_api.contract_identity import make_watch_key
 from options_api.outcomes import TERMS_NOTE
-from options_api.physical_shadow_capture import PhysicalShadowCapture
+from options_api.physical_shadow_capture import MODEL_VERSIONS, PhysicalShadowCapture
 from stocksweeper.forecast.ledger import ForecastIssuance, ForecastLabel, ForecastLedger
 from stocksweeper.forecast.physical_contest import ShadowForecast
+from stocksweeper.forecast.calendar import SessionCalendar
+from stocksweeper.forecast.evidence_reports import ledger_band_rows
 from stocksweeper.forecast.physical_evaluation import evaluate_band
 from stocksweeper.forecast.predictive import PredictiveDistribution
-from stocksweeper.forecast.promotion import _contest_rows
 
 
 INPUT = date(2026, 9, 25)
@@ -42,7 +43,7 @@ def _distribution(
         horizon_sessions=5,
         spot=100.0,
         daily_volatility=0.02,
-        model_version=f"{method}-shadow-v1",
+        model_version=MODEL_VERSIONS[method],
         support=60,
         data_hash=digest,
         terminal_prices=(80.0, 100.0, 120.0),
@@ -64,7 +65,7 @@ def _issue(strike: str = "100.000") -> ForecastIssuance:
         input_session=INPUT,
         input_retrieved_at=RETRIEVED,
         issued_at=ISSUED,
-        model_version="live-empirical-v1",
+        model_version=MODEL_VERSIONS["empirical_scaled"],
         method="empirical_scaled",
         data_hash="a" * 64,
         distribution_hash=None,
@@ -94,7 +95,7 @@ def _candidates(*, digest: str = "a" * 64) -> dict[str, ShadowForecast]:
     }
 
 
-def test_live_empirical_still_captures_baseline_and_all_predeclared_challengers(tmp_path) -> None:
+def test_live_input_captures_every_physical_method_independently(tmp_path) -> None:
     capture = _capture(tmp_path)
     calls: list[tuple[object, ...]] = []
 
@@ -162,9 +163,10 @@ def test_as_issued_report_includes_persisted_preparation_and_lookup_latency(tmp_
             classification="atm",
         )
     )
-    rows = _contest_rows(
-        ledger, since=INPUT, as_of=datetime(2026, 10, 4, tzinfo=UTC),
-        band="2-5", methods=("lognormal_ewma", "student_t_ewma"),
+    rows = ledger_band_rows(
+            ledger, SessionCalendar(), "as_issued", "student_t_ewma", INPUT,
+            "holdout", "2-5", as_of=datetime(2026, 10, 4, tzinfo=UTC),
+            current_version_only=True,
     )
     report = evaluate_band(
         rows, "student_t_ewma", "2-5", holdout_start=INPUT,

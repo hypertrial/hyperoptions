@@ -1,7 +1,6 @@
-"""Causal physical forecast challengers and their cached live lookup.
+"""Causal physical distributions and their cached live lookup.
 
-These distributions run in shadow until prospective, as-issued evidence passes
-the band gate. HTTP lookup never fits a challenger.
+Each valid method is available for comparison. HTTP lookup never fits a model.
 """
 
 from __future__ import annotations
@@ -46,6 +45,7 @@ class ShadowForecast:
     reason: str | None
     prepare_ms: float
     lookup_ms: float
+    independent_blocks: int | None = None
 
 
 @dataclass(frozen=True)
@@ -185,7 +185,7 @@ def _gjr_terminal(
 
 
 class PhysicalShadowForecaster:
-    """Fit once per verified ticker/session; never fetch or promote a challenger."""
+    """Fit once per verified ticker/session without fetching on lookup."""
 
     def __init__(self, forecaster: PredictiveForecaster) -> None:
         self.forecaster = forecaster
@@ -250,8 +250,11 @@ class PhysicalShadowForecaster:
             if clean is None or price_hash(clean) != current.data_hash:
                 return ShadowForecast(None, "candidate_input_unverified", 0, 0)
             samples = _samples(clean, current.as_of, horizon, self.forecaster.calendar)
-            if len(_independent_samples(samples)) < 30:
-                return ShadowForecast(None, "insufficient_independent_blocks", 0, 0)
+            independent_blocks = len(_independent_samples(samples))
+            if independent_blocks < 30:
+                return ShadowForecast(
+                    None, "insufficient_independent_blocks", 0, 0, independent_blocks
+                )
             values = sorted(value for _, _, value in samples)
             try:
                 prices = tuple(
@@ -301,7 +304,10 @@ class PhysicalShadowForecaster:
             terminal_prices=prices,
             weights=(1 / len(prices),) * len(prices),
         )
-        return ShadowForecast(distribution, None, fit_ms, (perf_counter() - started) * 1000)
+        return ShadowForecast(
+            distribution, None, fit_ms, (perf_counter() - started) * 1000,
+            independent_blocks if method == "empirical_scaled" else None,
+        )
 
     def forecast_candidates(
         self,

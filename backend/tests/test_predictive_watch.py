@@ -18,7 +18,7 @@ from options_api.outcomes import TERMS_NOTE
 from stocksweeper.forecast.calendar import SessionCalendar
 from stocksweeper.forecast.calibration import build_calibration, moneyness_band
 from stocksweeper.forecast.ledger import ForecastIssuance, ForecastLabel, ForecastLedger
-from stocksweeper.forecast.predictive import PredictiveDistribution, SelectionEvidence
+from stocksweeper.forecast.predictive import PredictiveDistribution
 
 
 SESSION = date(2026, 9, 25)
@@ -107,6 +107,20 @@ def test_discrete_call_put_and_atm_are_separate_and_share_one_distribution(tmp_p
     assert (call.price_basis, call.price_as_of, call.validation_evidence) == (
         "completed_close", session_close(SESSION), None
     )
+
+
+def test_simulated_path_precision_is_bounded_and_not_attached_to_empirical_odds(tmp_path) -> None:
+    watch = PredictiveWatchOdds(
+        tmp_path, lambda: datetime(2026, 9, 25, 21, tzinfo=UTC), refresh_enabled=False
+    )
+    scenarios = replace(
+        _distribution(), method="student_t_ewma", support=4096,
+        terminal_prices=(90.0, 110.0), weights=(0.5, 0.5),
+    )
+    view = watch.view_for_distribution(scenarios, "call", Decimal("100"))
+    assert view.simulation_error_95_pct_tenths == 16
+    empirical = watch.view_for_distribution(_distribution(), "call", Decimal("100"))
+    assert empirical.simulation_error_95_pct_tenths is None
 
 
 def test_verified_input_retrieval_is_cached_by_exact_forecast_identity(tmp_path) -> None:
@@ -372,75 +386,6 @@ async def test_calibration_refresh_is_daily_and_background(tmp_path) -> None:
     await watch._calibration_task
     assert ledger.reads == 2
     await watch.close()
-
-
-@pytest.mark.asyncio
-async def test_mid_session_promotion_invalidates_cache_and_warms_in_background(tmp_path) -> None:
-    class Promotable(_Forecaster):
-        choice: str | None = None
-        champion_prepared = False
-
-        def champion_method(self, _horizon: int) -> str | None:
-            return self.choice
-
-        def prepare(self, ticker: str, session: date) -> None:
-            super().prepare(ticker, session)
-            if self.choice == "student_t_ewma":
-                self.champion_prepared = True
-
-        def forecast(
-            self, ticker: str, now: datetime, expiry: date, **kwargs: object
-        ) -> PredictiveDistribution:
-            baseline = super().forecast(ticker, now, expiry, **kwargs)
-            if self.choice == "student_t_ewma" and not self.champion_prepared:
-                return replace(
-                    baseline,
-                    method="lognormal_ewma",
-                    model_version="baseline-v1",
-                    selection=SelectionEvidence(rejection_reason="band_champion_not_prepared"),
-                )
-            if self.choice == "student_t_ewma":
-                return replace(baseline, method="student_t_ewma", model_version="student-v1")
-            if self.choice == "lognormal_ewma":
-                return replace(baseline, method="lognormal_ewma", model_version="baseline-v1")
-            return baseline
-
-    now = [datetime(2026, 9, 25, 21, tzinfo=UTC)]
-    forecaster = Promotable()
-    watch = PredictiveWatchOdds(tmp_path, lambda: now[0], forecaster=forecaster)
-    try:
-        watch.schedule(["IREN"])
-        await _settle(watch)
-        frozen, _ = watch.lookup("IREN", "call", EXPIRY, Decimal("100"))
-        assert frozen.method == "empirical_scaled"
-        assert forecaster.prepared == [SESSION]
-
-        forecaster.choice = "student_t_ewma"
-        forecaster.fail_next = True
-        warming, _ = watch.lookup("IREN", "call", EXPIRY, Decimal("100"))
-        assert warming.method == "lognormal_ewma"
-        await _settle(watch)
-        assert forecaster.prepared == [SESSION, SESSION]
-        still_warming, _ = watch.lookup("IREN", "call", EXPIRY, Decimal("100"))
-        assert still_warming.method == "lognormal_ewma"
-        assert not watch._tasks
-
-        now[0] += timedelta(minutes=5)
-        # The cached fallback retries after the window without waiting for a
-        # new session or another source revision.
-        cached_fallback, _ = watch.lookup("IREN", "call", EXPIRY, Decimal("100"))
-        assert cached_fallback.method == "lognormal_ewma"
-        await _settle(watch)
-        promoted, _ = watch.lookup("IREN", "call", EXPIRY, Decimal("100"))
-        assert promoted.method == "student_t_ewma"
-        assert forecaster.prepared == [SESSION, SESSION, SESSION]
-
-        forecaster.choice = "lognormal_ewma"
-        rolled_back, _ = watch.lookup("IREN", "call", EXPIRY, Decimal("100"))
-        assert rolled_back.method == "lognormal_ewma"
-        assert forecaster.forecasts == 5
-    finally:
-        await watch.close()
 
 
 def test_calibration_query_uses_latest_exact_label_without_scenarios(tmp_path) -> None:

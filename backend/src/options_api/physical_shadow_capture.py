@@ -12,18 +12,28 @@ from decimal import Decimal
 from time import monotonic
 
 from options_api.market_calendar import session_close
-from options_api.intraday_shadow import forecast_intraday_shadow
+from options_api.intraday_shadow import _VERSION as INTRADAY_VERSION, forecast_intraday_shadow
 from options_api.market_watch import MarketWatchOdds, UnderlyingQuote
 from options_api.predictive_watch import PredictiveWatchOdds
 from stocksweeper.forecast.ledger import ForecastIssuance
-from stocksweeper.forecast.physical_contest import PhysicalShadowForecaster, ShadowForecast
-from stocksweeper.forecast.predictive import PredictiveDistribution
+from stocksweeper.forecast.physical_contest import (
+    EMPIRICAL_SHADOW_VERSION, GJR_VERSION, STUDENT_VERSION,
+    PhysicalShadowForecaster, ShadowForecast,
+)
+from stocksweeper.forecast.predictive import BASELINE_VERSION, PredictiveDistribution
 
 LOG = logging.getLogger(__name__)
 _MAX_BATCH_CONTRACTS = 512
 _MAX_PENDING_BATCHES = 4
 _MAX_CACHED_GROUPS = 512
 _RETRY_SECONDS = 30
+MODEL_VERSIONS = {
+    "lognormal_ewma": BASELINE_VERSION,
+    "empirical_scaled": EMPIRICAL_SHADOW_VERSION,
+    "student_t_ewma": STUDENT_VERSION,
+    "gjr_garch_t": GJR_VERSION,
+    "intraday_shadow": INTRADAY_VERSION,
+}
 
 Entry = tuple[ForecastIssuance, PredictiveDistribution | None]
 
@@ -134,7 +144,7 @@ class PhysicalShadowCapture:
                 replace(
                     issue,
                     issued_at=datetime.now(UTC),
-                    model_version=method + "-shadow-v1",
+                    model_version=MODEL_VERSIONS[method],
                     method=method,
                     distribution_hash=None,
                     status="unavailable",
@@ -320,7 +330,7 @@ class PhysicalShadowCapture:
                                 model_version=(
                                     distribution.model_version
                                     if available
-                                    else method + "-shadow-v1"
+                                    else MODEL_VERSIONS[method]
                                 ),
                                 method=method,
                                 distribution_hash=None,
@@ -347,6 +357,7 @@ class PhysicalShadowCapture:
                             None if available else reason,
                             candidate.prepare_ms if candidate is not None else 0,
                             candidate.lookup_ms if candidate is not None else 0,
+                            candidate.independent_blocks if candidate is not None else None,
                         )
             if reference.data_hash and (
                 ticker, input_session, expiry, contract_since, reference.data_hash

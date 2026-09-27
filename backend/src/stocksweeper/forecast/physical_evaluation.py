@@ -306,25 +306,6 @@ def evaluate_band(
     provenance = {row.provenance for row in relevant}
     brier_delta = mean(unit["brier_delta"] for unit in units) if units else None
     log_delta = mean(unit["log_delta"] for unit in units) if units else None
-    gates = {
-        "predeclared_as_issued_holdout": (
-            period == "holdout" and holdout_start is not None and provenance == {"as_issued"}
-        ),
-        "as_issued": provenance == {"as_issued"},
-        "tickers": len(tickers) >= 20,
-        "date_blocks": len(origins) >= 20,
-        "units": len(units) >= 500,
-        "brier_interval": brier_ci is not None and brier_ci[1] < 0,
-        "log_loss": log_delta is not None
-        and log_delta <= 0
-        and log_ci is not None
-        and log_ci[1] <= 0.01,
-        "subgroups": all(
-            not summary["supported"] or summary["brier_delta"] <= 0.01
-            for summary in subgroups.values()
-        ),
-        "availability": baseline_available == candidate_available,
-    }
     def calibration(bins: list[list[tuple[float, float]]]) -> list[dict[str, float | int | None]]:
         return [
             {
@@ -380,6 +361,4 @@ def evaluate_band(
             label: {"p50": _quantile(values, 0.5), "p95": _quantile(values, 0.95)}
             for label, values in latencies.items()
         },
-        "promotion_gates": gates,
-        "promotion_eligible": all(gates.values()),
     }

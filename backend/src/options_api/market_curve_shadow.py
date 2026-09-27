@@ -1,4 +1,4 @@
-"""Unpublished arbitrage-constrained call-curve comparison for public quotes."""
+"""Arbitrage-constrained call-curve comparison for public quotes."""
 
 from __future__ import annotations
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from math import ceil
 
 from options_api.contract_identity import make_watch_key, strike_exact
 from options_api.greeks import (
@@ -14,7 +15,6 @@ from options_api.greeks import (
     years_until_expiry_close,
 )
 from options_api.hypothetical_risk import compute_hypothetical_risk
-from options_api.intraday_shadow import _VERSION as INTRADAY_VERSION
 from options_api.market_calendar import session_close
 from options_api.market_watch import MarketWatchOdds
 from options_api.models import (
@@ -28,22 +28,10 @@ from options_api.models import (
 from options_api.money import to_pct_tenths
 from options_api.outcomes import TERMS_NOTE
 from options_api.predictive_watch import PredictiveWatchOdds
-from options_api.physical_shadow_capture import PhysicalShadowCapture
+from options_api.physical_shadow_capture import MODEL_VERSIONS, PhysicalShadowCapture
 from stocksweeper.forecast.calibration import horizon_band
 from stocksweeper.forecast.ledger import ForecastIssuance
 from stocksweeper.forecast.predictive import PredictiveDistribution
-from stocksweeper.forecast.predictive import BASELINE_VERSION
-from stocksweeper.forecast.physical_contest import (
-    EMPIRICAL_SHADOW_VERSION, GJR_VERSION, STUDENT_VERSION,
-)
-
-_MODEL_VERSIONS = {
-    "lognormal_ewma": BASELINE_VERSION,
-    "empirical_scaled": EMPIRICAL_SHADOW_VERSION,
-    "student_t_ewma": STUDENT_VERSION,
-    "gjr_garch_t": GJR_VERSION,
-    "intraday_shadow": INTRADAY_VERSION,
-}
 
 
 @dataclass(frozen=True)
@@ -181,7 +169,7 @@ def quant_for_contract(
                     method=method, status="unavailable", reason=predictive.reason,
                     as_of_session=distribution.as_of,
                     expiry_session=distribution.expiry_session,
-                    model_version=_MODEL_VERSIONS[method],
+                    model_version=MODEL_VERSIONS[method],
                 )
             else:
                 candidate = physical_shadow.candidate(
@@ -200,7 +188,10 @@ def quant_for_contract(
                         as_of_session=distribution.as_of,
                         expiry_session=distribution.expiry_session,
                         data_hash=distribution.data_hash,
-                        model_version=_MODEL_VERSIONS[method],
+                        model_version=MODEL_VERSIONS[method],
+                        independent_blocks=candidate.independent_blocks,
+                        fit_ms=ceil(candidate.prepare_ms) if candidate.prepare_ms else None,
+                        lookup_ms=ceil(candidate.lookup_ms) if candidate.lookup_ms else None,
                     )
                 elif (
                     choice.as_of != distribution.as_of
@@ -209,7 +200,7 @@ def quant_for_contract(
                 ):
                     view = PredictiveOddsView(
                         method=method, status="unavailable", reason="input_vintage_changed",
-                        model_version=_MODEL_VERSIONS[method],
+                        model_version=MODEL_VERSIONS[method],
                     )
                 else:
                     view = predictive_odds.view_for_distribution(
@@ -224,6 +215,11 @@ def quant_for_contract(
                             else None
                         ),
                     )
+                    view = view.model_copy(update={
+                        "independent_blocks": candidate.independent_blocks,
+                        "fit_ms": ceil(candidate.prepare_ms) if candidate.prepare_ms else None,
+                        "lookup_ms": ceil(candidate.lookup_ms) if candidate.lookup_ms else None,
+                    })
                     if method == forecast_model and view.status == "available":
                         selected_distribution = choice
             if view.evidence_key is None and (

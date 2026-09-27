@@ -1,6 +1,6 @@
 """Screen intraday conditioning at historical Opens using current-vintage cache.
 
-This is retrospective research, never prospective as-issued promotion evidence.
+This is retrospective research, never prospective as-issued accuracy evidence.
 """
 
 from __future__ import annotations

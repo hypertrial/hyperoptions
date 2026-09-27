@@ -5,7 +5,7 @@ Add --refresh to fetch Yahoo first; the default reads only the verified cache.
 Paired as-issued scoring: uv run python scripts/evaluate_predictive.py
     --ledger-contest --candidate student_t_ewma --period holdout
     --holdout-start 2026-10-01
-Immutable-replay evidence is screening only and can never promote a live model.
+Immutable-replay evidence is screening only and never changes a live model.
 Frozen-cohort screen: uv run python scripts/evaluate_predictive.py
     --replay-cohort --candidate student_t_ewma --period screen
     [--max-origins 20] [--max-tickers 50]
@@ -189,7 +189,7 @@ def _replay_cohort(
         "provenance": "immutable_replay",
         "warning": (
             "Retrospective Yahoo current-vintage, synthetic-strike labels. "
-            "Screening only; never promotion evidence."
+            "Screening only; not as-issued accuracy evidence."
         ),
         "audit_session": cohort.completed_session.isoformat(),
         "audit_frozen_at": cohort.frozen_at.isoformat(),

@@ -1,7 +1,6 @@
 """Dated, descriptive model evidence for the local comparison UI.
 
-These reports never select a champion. Formal promotion still requires the
-separate, predeclared prospective holdout in ``promotion.py``.
+These reports describe matched accuracy; they never select a live model.
 """
 
 from __future__ import annotations
@@ -17,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from options_api.market_calendar import session_close
+from options_api.intraday_capture import _COMPARATOR_VERSION
 from options_api.intraday_shadow import _VERSION as INTRADAY_VERSION
 from stocksweeper.forecast.calendar import SessionCalendar
 from stocksweeper.forecast.intraday_evidence import evaluate as evaluate_intraday
@@ -47,6 +47,7 @@ def ledger_band_rows(
     band: str,
     as_of: datetime | None = None,
     since: date | None = None,
+    current_version_only: bool = False,
 ) -> list[ContestRow]:
     """Adapt first-party issuance rows to the paired evaluator's exact grain."""
     horizons = BANDS[band]
@@ -65,10 +66,17 @@ def ledger_band_rows(
         label_as_of=as_of,
     )
     rows: list[ContestRow] = []
+    candidate_keys: set[tuple[object, ...]] = set()
     for item in issues:
         origin = item["input_session"]
         method = item["method"]
         if origin is None or method is None:
+            continue
+        expected_version = (
+            BASELINE_VERSION if method == "lognormal_ewma"
+            else CANDIDATE_VERSIONS.get(candidate)
+        )
+        if current_version_only and item.get("model_version") != expected_version:
             continue
         label_valid = (
             item["label_status"] == "valid"
@@ -84,24 +92,34 @@ def ledger_band_rows(
             "near_atm" if relative <= 0.05 else
             "moderate" if relative <= 0.15 else "tail"
         )
-        rows.append(
-            ContestRow(
-                ticker=item["ticker"], origin=origin,
-                expiry_session=item["expiry_session"],
-                horizon=calendar.horizon(origin, item["expiration"]),
-                strike=item["strike_exact"], side=item["side"], method=method,
-                probability=(item["itm_probability"] if item["status"] == "available" else None),
-                observed_itm=(bool(item["observed_itm"]) if label_valid else None),
-                provenance=provenance, moneyness=moneyness,
-                volatility_regime=item["volatility_regime"] or "unknown",
-                event_status=item["known_event_status"] or "unknown",
-                reason=item["unavailable_reason"] or item["label_reason"],
-                input_vintage=item["data_hash"], issued_at=item["issued_at"],
-                issuance_key=item["idempotency_key"], contract_id=item["contract_key"],
-                crps=(item["crps"] if label_valid else None),
-                prepare_ms=item["prepare_ms"], lookup_ms=item["lookup_ms"],
-            )
+        row = ContestRow(
+            ticker=item["ticker"], origin=origin,
+            expiry_session=item["expiry_session"],
+            horizon=calendar.horizon(origin, item["expiration"]),
+            strike=item["strike_exact"], side=item["side"], method=method,
+            probability=(item["itm_probability"] if item["status"] == "available" else None),
+            observed_itm=(bool(item["observed_itm"]) if label_valid else None),
+            provenance=provenance, moneyness=moneyness,
+            volatility_regime=item["volatility_regime"] or "unknown",
+            event_status=item["known_event_status"] or "unknown",
+            reason=item["unavailable_reason"] or item["label_reason"],
+            input_vintage=item["data_hash"], issued_at=item["issued_at"],
+            issuance_key=item["idempotency_key"], contract_id=item["contract_key"],
+            crps=(item["crps"] if label_valid else None),
+            prepare_ms=item["prepare_ms"], lookup_ms=item["lookup_ms"],
         )
+        if current_version_only and candidate != "lognormal_ewma":
+            key = (row.ticker, row.origin, row.expiry_session, row.contract_id)
+            if method == candidate:
+                candidate_keys.add(key)
+        rows.append(row)
+    if current_version_only and candidate != "lognormal_ewma":
+        return [
+            row for row in rows
+            if row.method == candidate
+            or (row.ticker, row.origin, row.expiry_session, row.contract_id)
+            in candidate_keys
+        ]
     return rows
 
 
@@ -114,6 +132,7 @@ def ledger_contest(
     period: str,
     as_of: datetime | None = None,
     since: date | None = None,
+    current_version_only: bool = False,
 ) -> dict[str, Any]:
     start = max(
         (day for day in (since, holdout_start if period == "holdout" else None) if day),
@@ -136,6 +155,7 @@ def ledger_contest(
                     ledger, calendar, provenance, candidate, holdout_start, period, band,
                     as_of=as_of,
                     since=since,
+                    current_version_only=current_version_only,
                 ),
                 candidate, band, holdout_start=holdout_start, period=period, calendar=calendar,
             )
@@ -205,6 +225,7 @@ def _summary(
     report_hash: str, model_version: str, reference_only: bool = False,
     audit_session: str | None = None, audit_frozen_at: str | None = None,
     evidence_window_start: date | None = None,
+    coverage_basis: str = "recorded_contract_cells_with_baseline_issuance",
 ) -> dict[str, Any]:
     dates = band_report["independent_date_blocks"]
     brier = dict(band_report["brier"])
@@ -240,7 +261,7 @@ def _summary(
             band_report["contract_forecasts_available"] / band_report["contract_cells_attempted"]
             if band_report["contract_cells_attempted"] else None
         ),
-        "coverage_basis": "recorded_contract_cells_with_baseline_issuance",
+        "coverage_basis": coverage_basis,
         "replay_scheduled_units": band_report.get("replay_scheduled_units"),
         "replay_baseline_available_units": band_report.get("replay_baseline_available_units"),
         "replay_fit_coverage": (
@@ -274,7 +295,7 @@ def build_model_evidence(
     for band in BANDS:
         baseline_rows = ledger_band_rows(
             ledger, calendar, "as_issued", "lognormal_ewma", None, "all", band,
-            as_of=as_of, since=since,
+            as_of=as_of, since=since, current_version_only=True,
         )
         reference = evaluate_band(
             [*baseline_rows, *(replace(row, method="baseline_reference") for row in baseline_rows)],
@@ -286,13 +307,14 @@ def build_model_evidence(
                 report_hash=_digest(reference), model_version=BASELINE_VERSION,
                 reference_only=True,
                 evidence_window_start=since,
+                coverage_basis="recorded_current_version_baseline_attempts",
             ),
             "retrospective": None,
         }
     for candidate, version in CANDIDATE_VERSIONS.items():
         prospective = ledger_contest(
             ledger, calendar, "as_issued", candidate, None, "all", as_of=as_of,
-            since=since,
+            since=since, current_version_only=True,
         )
         replay = load_replay_report(data_dir, candidate)
         prospective_hash = _digest(prospective)
@@ -303,6 +325,7 @@ def build_model_evidence(
                     generated_at=as_of.isoformat(), report_hash=prospective_hash,
                     model_version=version,
                     evidence_window_start=since,
+                    coverage_basis="recorded_current_version_candidate_cells",
                 ),
                 "retrospective": (
                     _summary(
@@ -315,14 +338,19 @@ def build_model_evidence(
                 ),
             }
     for band, horizons in BANDS.items():
-        intraday_rows = list(ledger.iter_evaluation_rows(
+        intraday_versions = {
+            "lognormal_ewma": BASELINE_VERSION,
+            "quote_reanchored_comparator": _COMPARATOR_VERSION,
+            "intraday_shadow": INTRADAY_VERSION,
+        }
+        intraday_rows = [row for row in ledger.iter_evaluation_rows(
             provenance="as_issued",
             methods=("lognormal_ewma", "quote_reanchored_comparator", "intraday_shadow"),
             horizon_range=(horizons.start, horizons.stop - 1),
             since=since,
             issued_before=as_of,
             label_as_of=as_of,
-        ))
+        ) if row.get("model_version") == intraday_versions.get(row.get("method"))]
         report = evaluate_intraday(intraday_rows, as_of=as_of)
         summary = report["overall"]
         blocks = summary["scored_date_blocks"]

@@ -1,18 +1,16 @@
 """Small, causal distribution forecast from completed Yahoo Close history.
 
-The baseline is always a zero-log-drift EWMA lognormal distribution when the
-latest 61 completed closes are valid. An empirical alternative earns use only
-after an out-of-sample, non-overlapping rolling-origin score check.
+The direct forecast is the zero-log-drift EWMA baseline. Other methods are
+computed independently from the same verified input for explicit comparison.
 """
 
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
 from collections import Counter, OrderedDict
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-import logging
 from math import exp, isfinite, log, sqrt
 from pathlib import Path
 from statistics import NormalDist
@@ -30,7 +28,6 @@ from stocksweeper.forecast.market import (
     clean_completed,
     price_hash,
 )
-from stocksweeper.forecast.promotion import PromotionRegistry
 
 Side = Literal["call", "put"]
 _NORMAL = NormalDist()
@@ -42,8 +39,6 @@ _MAX_CACHED_TICKERS = 512
 _SCORE_GRID = (-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5)
 _BASELINE_QUANTILES = tuple(_NORMAL.inv_cdf((i + 0.5) / 1024) for i in range(1024))
 BASELINE_VERSION = "lognormal-ewma60-v1"
-EMPIRICAL_VERSION = "empirical-ewma60-rolling-v1"
-LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -545,45 +540,19 @@ class PredictiveForecaster:
         data_dir: Path,
         provider: ForecastProvider | None = None,
         calendar: SessionCalendar | None = None,
-        *,
-        enable_promotions: bool = True,
     ) -> None:
         self.data_dir = data_dir
         self.calendar = calendar or SessionCalendar()
         self.prices = ForecastPriceStore(data_dir, provider or YahooForecastProvider())
-        self._enable_promotions = enable_promotions
-        self._promotions = PromotionRegistry(data_dir) if enable_promotions else None
-        self._shadow = None
-        self._promoted_ready: set[tuple[str, date, str]] = set()
         self._prepared: dict[tuple[str, date], pl.DataFrame] = {}
         self._inputs: dict[tuple[str, date], tuple[pl.DataFrame, float, float, str] | str] = {}
-        self._candidates: dict[
-            tuple[str, date, int], tuple[SelectionEvidence, tuple[float, ...] | None]
-        ] = {}
         self._ticker_sessions: OrderedDict[str, date] = OrderedDict()
 
     def _evict_ticker(self, ticker: str) -> None:
-        for cache in (self._prepared, self._inputs, self._candidates):
+        for cache in (self._prepared, self._inputs):
             for key in tuple(cache):
                 if key[0] == ticker:
                     del cache[key]
-        self._promoted_ready = {key for key in self._promoted_ready if key[0] != ticker}
-
-    def _shadow_forecaster(self):
-        from stocksweeper.forecast.physical_contest import PhysicalShadowForecaster
-
-        if self._shadow is None:
-            # The shadow calls forecast(); its base remains frozen to avoid recursion.
-            base = PredictiveForecaster(
-                self.data_dir, self.prices.provider, self.calendar, enable_promotions=False
-            )
-            base.prices = self.prices
-            self._shadow = PhysicalShadowForecaster(base)
-        return self._shadow
-
-    def champion_method(self, horizon: int) -> str | None:
-        """None means the frozen selection remains in effect for this band."""
-        return self._promotions.method(horizon) if self._promotions is not None else None
 
     def _touch_cache(self, ticker: str, completed: date) -> None:
         previous = self._ticker_sessions.pop(ticker, None)
@@ -608,24 +577,6 @@ class PredictiveForecaster:
         self._touch_cache(ticker, completed)
         self._prepared[(ticker, completed)] = verified
         self._inputs.pop((ticker, completed), None)
-        for key in list(self._candidates):
-            if key[:2] == (ticker, completed):
-                del self._candidates[key]
-        if self._promotions is not None and any(
-            self._promotions.method(horizon) not in (None, "lognormal_ewma")
-            for horizon in (1, 2, 6)
-        ):
-            # This runs in the existing background refresh, never in an HTTP lookup.
-            try:
-                clean = clean_completed(verified, completed, self.calendar)
-                if clean.is_empty() or clean["ts"][-1] != completed:
-                    return
-                digest = price_hash(clean)
-                self._shadow_forecaster()._fit(ticker, completed, clean, digest)
-                self._promoted_ready.add((ticker, completed, digest))
-            except Exception:
-                # Forecast lookup uses EWMA until a later successful preparation.
-                LOG.warning("champion preparation failed for %s", ticker, exc_info=True)
 
     def forecast(
         self,
@@ -635,7 +586,6 @@ class PredictiveForecaster:
         *,
         contract_since: date | None = None,
         standard_terms: bool = True,
-        force_baseline: bool = False,
     ) -> PredictiveDistribution:
         if as_of.tzinfo is None:
             raise ValueError("as_of must have a timezone")
@@ -713,54 +663,30 @@ class PredictiveForecaster:
                 self._inputs[key] = inputs
             if isinstance(inputs, str):
                 return unavailable(inputs)
-            clean, spot, volatility, digest = inputs
-            evidence = SelectionEvidence(rejection_reason="horizon_above_empirical_limit")
-            empirical = None
-            if horizon <= _EMPIRICAL_MAX_HORIZON and not force_baseline:
-                candidate_key = (ticker, completed, horizon)
-                candidate = self._candidates.get(candidate_key)
-                if candidate is None:
-                    candidate = _empirical_evidence(
-                        _samples(clean, completed, horizon, self.calendar)
-                    )
-                    self._candidates[candidate_key] = candidate
-                evidence, empirical = candidate
-            if empirical is None:
-                terminal = tuple(
-                    spot * exp(volatility * sqrt(horizon) * z) for z in _BASELINE_QUANTILES
-                )
-                method: Literal["lognormal_ewma", "empirical_scaled"] = "lognormal_ewma"
-                version = BASELINE_VERSION
-                support = _EWMA_LOOKBACK
-            else:
-                terminal = tuple(
-                    spot * exp(volatility * sqrt(horizon) * value) for value in empirical
-                )
-                method = "empirical_scaled"
-                version = EMPIRICAL_VERSION
-                support = len(empirical)
+            _, spot, volatility, digest = inputs
+            terminal = tuple(
+                spot * exp(volatility * sqrt(horizon) * z) for z in _BASELINE_QUANTILES
+            )
             terminal = tuple(sorted(terminal))
             if not all(isfinite(price) and price > 0 for price in terminal):
                 return unavailable("volatility_unusable")
             weights = (1.0 / len(terminal),) * len(terminal)
-            result = PredictiveDistribution(
+            return PredictiveDistribution(
                 ticker=ticker,
                 status="available",
                 reason=None,
-                method=method,
+                method="lognormal_ewma",
                 as_of=completed,
                 expiry_session=expiry_session,
                 horizon_sessions=horizon,
                 spot=spot,
                 daily_volatility=volatility,
-                model_version=version,
-                support=support,
+                model_version=BASELINE_VERSION,
+                support=_EWMA_LOOKBACK,
                 data_hash=digest,
                 terminal_prices=terminal,
                 weights=weights,
-                selection=evidence,
             )
-            return result if force_baseline else self._select_promoted(result)
         except (OSError, ValueError, OverflowError, pl.exceptions.PolarsError):
             return unavailable("market_data_invalid")
 
@@ -775,61 +701,5 @@ class PredictiveForecaster:
     ) -> PredictiveDistribution:
         return self.forecast(
             ticker, as_of, expiry, contract_since=contract_since,
-            standard_terms=standard_terms, force_baseline=True,
+            standard_terms=standard_terms,
         )
-
-    def _select_promoted(
-        self,
-        frozen: PredictiveDistribution,
-    ) -> PredictiveDistribution:
-        if self._promotions is None:
-            return frozen
-        choice = self.champion_method(frozen.horizon_sessions)
-        if choice is None:
-            return frozen
-        assert frozen.spot is not None and frozen.daily_volatility is not None
-        baseline_prices = tuple(
-            frozen.spot * exp(frozen.daily_volatility * sqrt(frozen.horizon_sessions) * z)
-            for z in _BASELINE_QUANTILES
-        )
-        baseline = replace(
-            frozen,
-            method="lognormal_ewma",
-            model_version=BASELINE_VERSION,
-            support=_EWMA_LOOKBACK,
-            terminal_prices=baseline_prices,
-            weights=(1 / len(baseline_prices),) * len(baseline_prices),
-            selection=SelectionEvidence(rejection_reason="band_baseline"),
-        )
-        if choice == "lognormal_ewma":
-            return baseline
-        from stocksweeper.forecast.promotion import _version
-
-        fit_key = (frozen.ticker, frozen.as_of, frozen.data_hash)
-        if (
-            fit_key not in self._promoted_ready
-            or self._shadow is None
-            or fit_key not in self._shadow._fits
-        ):
-            return replace(
-                baseline,
-                selection=SelectionEvidence(rejection_reason="band_champion_not_prepared"),
-            )
-        try:
-            inputs = self._inputs.get((frozen.ticker, frozen.as_of))
-            clean = inputs[0] if isinstance(inputs, tuple) else None
-            candidate = self._shadow.cached_candidate(frozen, choice, clean=clean).distribution
-        except Exception:
-            LOG.warning("champion lookup failed for %s", frozen.ticker, exc_info=True)
-            candidate = None
-        if (
-            candidate is None
-            or candidate.status != "available"
-            or candidate.data_hash != frozen.data_hash
-            or candidate.model_version != _version(choice)
-        ):
-            return replace(
-                baseline,
-                selection=SelectionEvidence(rejection_reason="band_champion_unavailable"),
-            )
-        return replace(candidate, selection=SelectionEvidence())

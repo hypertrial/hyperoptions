@@ -16,7 +16,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from options_api.contract_identity import make_watch_key, parse_watch_key, strike_exact
-from options_api.live_quant import _MODEL_VERSIONS, quant_for_contract
+from options_api.live_quant import MODEL_VERSIONS, quant_for_contract
 from options_api.market_calendar import (
     expiry_session_completed,
     first_session_after_completed,
@@ -499,7 +499,7 @@ async def get_watchlist(
                     method=method, model_version=version,
                     status="unavailable", reason="expiry_completed",
                 )
-                for method, version in _MODEL_VERSIONS.items()
+                for method, version in MODEL_VERSIONS.items()
             ]
             item.market_models = [
                 MarketOddsView(

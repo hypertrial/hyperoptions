@@ -9,9 +9,9 @@ afterEach(cleanup)
 
 it("shows all physical and market methods, including pending and unavailable results", () => {
   const physical: PredictiveOddsView[] = [
-    { method: "lognormal_ewma", status: "available", itm_pct_tenths: 600, otm_pct_tenths: 400, atm_pct_tenths: 0 },
-    { method: "empirical_scaled", status: "available", itm_pct_tenths: 630, otm_pct_tenths: 370, atm_pct_tenths: 0 },
-    { method: "student_t_ewma", status: "pending", reason: "candidate_not_prepared" },
+    { method: "lognormal_ewma", status: "available", itm_pct_tenths: 600, otm_pct_tenths: 400, atm_pct_tenths: 0, price_basis: "completed_close", support: 60 },
+    { method: "empirical_scaled", status: "available", itm_pct_tenths: 630, otm_pct_tenths: 370, atm_pct_tenths: 0, price_basis: "completed_close", support: 210, independent_blocks: 35 },
+    { method: "student_t_ewma", status: "pending", reason: "candidate_not_prepared", fit_ms: 20 },
     { method: "gjr_garch_t", status: "unavailable", reason: "needs_500_sessions" },
     { method: "intraday_shadow", status: "unavailable", reason: "stale_quote" },
   ]
@@ -25,11 +25,27 @@ it("shows all physical and market methods, including pending and unavailable res
   fireEvent.click(screen.getByText("Compare models"))
   expect(disclosure.open).toBe(true)
   expect(screen.getByRole("region", { name: "Physical forecast models" }).textContent).toContain("Student-t EWMA")
-  expect(screen.getByRole("region", { name: "Physical forecast models" }).textContent).toContain("Selected · experimental")
+  expect(screen.getByRole("region", { name: "Physical forecast models" }).textContent).toContain("Student-t EWMASelected")
+  expect(screen.getByRole("region", { name: "Physical forecast models" }).textContent).toContain("Model spread: 3.0 percentage points across 2 completed-close models")
+  expect(screen.getByRole("region", { name: "Physical forecast models" }).textContent).toContain("Independent history blocks 35 (minimum 30)")
   expect(screen.getByRole("region", { name: "Physical forecast models" }).textContent).toContain("needs_500_sessions")
   expect(screen.getByRole("region", { name: "Risk-neutral market models" }).textContent).toContain("Regimelib")
   expect(screen.getByRole("region", { name: "Risk-neutral market models" }).textContent).toContain("clean_strikes_do_not_bracket_contract")
   expect(disclosure.textContent).toContain("Quote bounds")
+})
+
+it("reports simulation precision as sampling error rather than forecast confidence", () => {
+  render(<ModelComparison physical={[{
+    method: "student_t_ewma", status: "available", itm_pct_tenths: 610, otm_pct_tenths: 390,
+    price_basis: "completed_close", support: 4096, simulation_error_95_pct_tenths: 16,
+    fit_ms: 13, lookup_ms: 2, data_hash: "abc123456789more",
+  }]} market={[]} selected="student_t_ewma" />)
+  fireEvent.click(screen.getByText("Compare models"))
+  const physical = screen.getByRole("region", { name: "Physical forecast models" }).textContent
+  expect(physical).toContain("4,096 simulated paths")
+  expect(physical).toContain("Maximum 95% simulation error ±1.6 percentage points; model uncertainty excluded")
+  expect(physical).toContain("Model spread: N/A")
+  expect(physical).toContain("data abc123456789")
 })
 
 it("keeps retrospective and as-issued evidence distinct and reports N=0 without confidence", () => {
@@ -37,6 +53,7 @@ it("keeps retrospective and as-issued evidence distinct and reports N=0 without 
     generated_at: "2026-09-27T12:00:00Z", model_version: "student-v1", input_version: "ledger-v1",
     tickers: 0, independent_date_blocks: 0, ticker_origin_horizon_units: 0,
     contract_forecasts_available: 0, contract_cells_attempted: 0,
+    coverage_basis: "recorded_current_version_candidate_cells",
     brier: { baseline: null, candidate: null, paired_delta: null, bootstrap_95: null },
     log_loss: { baseline: null, candidate: null, paired_delta: null },
     calibration_by_side: { call: [], put: [] }, latency_ms: {}, rejection_reasons: {},
@@ -53,6 +70,7 @@ it("keeps retrospective and as-issued evidence distinct and reports N=0 without 
   expect(prospective.textContent).toContain("N=0")
   expect(prospective.textContent).toContain("Brier N/A")
   expect(prospective.textContent).toContain("significance not estimable")
+  expect(prospective.textContent).toContain("including cells without EWMA as failures")
   expect(replayPanel.textContent).toContain("Current-vintage screening")
   expect(replayPanel.textContent).toContain("[-0.030, -0.010]")
   expect(replayPanel.textContent).toContain("20/25 scheduled units (80.0%)")
