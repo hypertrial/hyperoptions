@@ -125,6 +125,13 @@ def test_saved_adjusted_root_cannot_suppress_standard_watch_forecast(
             "IREN": "available",
             "IREN1": "unavailable",
         }
+        predictive._pending["IREN"] = None
+        refreshing = client.get("/api/watchlist")
+        assert refreshing.status_code == 200
+        by_root = {item["root"]: item for item in refreshing.json()["items"]}
+        assert by_root["IREN"]["predictive_odds"]["status"] == "available"
+        assert by_root["IREN1"]["predictive_odds"]["status"] == "unavailable"
+        assert by_root["IREN1"]["predictive_odds"]["reason"] == "contract_terms_ambiguous"
 
 
 def test_noncanonical_terms_are_not_forecast_as_standard() -> None:

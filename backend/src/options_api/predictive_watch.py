@@ -278,7 +278,7 @@ class PredictiveWatchOdds:
             ),
         }
         if distribution.status != "available":
-            refreshing = ticker in self._tasks or ticker in self._pending
+            refreshing = standard_terms and (ticker in self._tasks or ticker in self._pending)
             return PredictiveOddsView(
                 status="pending" if refreshing else "unavailable",
                 reason=(
