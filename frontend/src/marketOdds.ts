@@ -1,4 +1,5 @@
 import { unsignedPercentTenths } from "./format"
+import { physicalModelName } from "./forecastModels"
 import type { MarketOddsView, PredictiveOddsView } from "./generated/types.gen"
 
 export type MarketOdds = MarketOddsView
@@ -79,20 +80,17 @@ export function oddsMessage(odds: MarketOdds | null | undefined): string {
 
 export function oddsLabel(market: MarketOdds | null | undefined, predictive?: PredictiveOdds | null): string {
   const reliability = predictiveReliabilityLabel(predictive)
+  const model = predictive?.method ? `${physicalModelName(predictive.method)} stock forecast` : "Stock forecast"
   const physical = predictiveAvailable(predictive)
-    ? `Stock forecast ${unsignedPercentTenths(predictive!.itm_pct_tenths)} ITM, ${unsignedPercentTenths(predictive!.otm_pct_tenths)} OTM, ${predictiveBasisLabel(predictive)}${reliability === "Reliability not yet established" ? "" : `, ${reliability}`}`
-    : `Stock forecast ${predictive?.status === "pending" ? "pending" : `unavailable: ${predictive?.reason || "no validated forecast"}`}`
+    ? `${model} ${unsignedPercentTenths(predictive!.itm_pct_tenths)} ITM, ${unsignedPercentTenths(predictive!.otm_pct_tenths)} OTM, ${predictiveBasisLabel(predictive)}${reliability === "Reliability not yet established" ? "" : `, ${reliability}`}`
+    : `${model} ${predictive?.status === "pending" ? "pending" : `unavailable: ${predictive?.reason || "no validated forecast"}`}`
   if (oddsAvailable(market)) return `${physical}. Market-implied risk-neutral ${unsignedPercentTenths(market!.itm_pct_tenths)} ITM, ${unsignedPercentTenths(market!.otm_pct_tenths)} OTM${quoteSupportLabel(market) ? `, ${quoteSupportLabel(market)}` : ""}`
   return `${physical}. ${oddsMessage(market)}`
 }
 
 export function predictiveProvenance(odds: PredictiveOdds | null | undefined): string | null {
   if (!predictiveAvailable(odds)) return null
-  const method = odds!.method === "empirical_scaled"
-    ? "Volatility-scaled empirical model"
-    : odds!.method === "lognormal_ewma"
-      ? "EWMA lognormal model"
-      : "Historical predictive model"
+  const method = `${physicalModelName(odds!.method)} model`
   return `${method} · expiry session ${odds!.expiry_session ?? "unknown"}`
 }
 

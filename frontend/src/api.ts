@@ -1,4 +1,5 @@
 import { zCashSecuredPutPage, zCoveredCallPage, zTickerSearchResponse } from "./generated/zod.gen"
+import { DEFAULT_FORECAST_MODEL, type PhysicalModel } from "./forecastModels"
 import type { CashSecuredPutPage, CoveredCallPage, Moneyness, Side, Ticker, TickerSearchResponse } from "./types"
 
 export class ApiError extends Error {
@@ -54,8 +55,9 @@ export async function fetchTickers(query: string, limit = 10): Promise<TickerSea
   return parsed.data
 }
 
-export async function fetchCoveredCalls(ticker: Ticker, moneyness: Moneyness): Promise<CoveredCallPage> {
-  const body = await fetchJson(`/api/covered-calls/${ticker}?moneyness=${moneyness}`)
+export async function fetchCoveredCalls(ticker: Ticker, moneyness: Moneyness, model: PhysicalModel = "lognormal_ewma"): Promise<CoveredCallPage> {
+  const choice = model === DEFAULT_FORECAST_MODEL ? "" : `&forecast_model=${model}`
+  const body = await fetchJson(`/api/covered-calls/${ticker}?moneyness=${moneyness}${choice}`)
   const parsed = zCoveredCallPage.safeParse(body)
   if (!parsed.success) {
     throw new Error("Local API returned an invalid response")
@@ -63,8 +65,9 @@ export async function fetchCoveredCalls(ticker: Ticker, moneyness: Moneyness): P
   return parsed.data
 }
 
-export async function fetchCashSecuredPuts(ticker: Ticker, moneyness: Moneyness): Promise<CashSecuredPutPage> {
-  const body = await fetchJson(`/api/cash-secured-puts/${ticker}?moneyness=${moneyness}`)
+export async function fetchCashSecuredPuts(ticker: Ticker, moneyness: Moneyness, model: PhysicalModel = "lognormal_ewma"): Promise<CashSecuredPutPage> {
+  const choice = model === DEFAULT_FORECAST_MODEL ? "" : `&forecast_model=${model}`
+  const body = await fetchJson(`/api/cash-secured-puts/${ticker}?moneyness=${moneyness}${choice}`)
   const parsed = zCashSecuredPutPage.safeParse(body)
   if (!parsed.success) {
     throw new Error("Local API returned an invalid response")
@@ -72,8 +75,8 @@ export async function fetchCashSecuredPuts(ticker: Ticker, moneyness: Moneyness)
   return parsed.data
 }
 
-export async function fetchChain(ticker: Ticker, side: Side, moneyness: Moneyness) {
+export async function fetchChain(ticker: Ticker, side: Side, moneyness: Moneyness, model: PhysicalModel = "lognormal_ewma") {
   return side === "put"
-    ? fetchCashSecuredPuts(ticker, moneyness)
-    : fetchCoveredCalls(ticker, moneyness)
+    ? fetchCashSecuredPuts(ticker, moneyness, model)
+    : fetchCoveredCalls(ticker, moneyness, model)
 }

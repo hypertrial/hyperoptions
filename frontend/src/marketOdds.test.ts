@@ -34,7 +34,7 @@ it("shows calibration only for supported matching prospective evidence", () => {
   const forecast: PredictiveOddsView = {
     status: "available", itm_pct_tenths: 600, otm_pct_tenths: 400, atm_pct_tenths: 0,
     model_version: "ewma-v1", validation_evidence: {
-      source: "prospective_as_issued", model_version: "ewma-v1", horizon_band: "6–25 sessions",
+      source: "prospective_as_issued", option_side: "call", model_version: "ewma-v1", horizon_band: "6–25 sessions",
       moneyness_band: "near ATM", independent_units: 500,
       predicted_itm_pct_tenths: 600, observed_itm_pct_tenths: 570,
       through_session: "2026-09-25",

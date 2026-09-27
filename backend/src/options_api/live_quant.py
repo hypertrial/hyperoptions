@@ -14,20 +14,36 @@ from options_api.greeks import (
     years_until_expiry_close,
 )
 from options_api.hypothetical_risk import compute_hypothetical_risk
+from options_api.intraday_shadow import _VERSION as INTRADAY_VERSION
 from options_api.market_calendar import session_close
 from options_api.market_watch import MarketWatchOdds
 from options_api.models import (
     HypotheticalRiskView,
     MarketOddsView,
     MarketSource,
+    PhysicalModel,
     PredictiveOddsView,
     Side,
 )
 from options_api.money import to_pct_tenths
 from options_api.outcomes import TERMS_NOTE
 from options_api.predictive_watch import PredictiveWatchOdds
+from options_api.physical_shadow_capture import PhysicalShadowCapture
+from stocksweeper.forecast.calibration import horizon_band
 from stocksweeper.forecast.ledger import ForecastIssuance
 from stocksweeper.forecast.predictive import PredictiveDistribution
+from stocksweeper.forecast.predictive import BASELINE_VERSION
+from stocksweeper.forecast.physical_contest import (
+    EMPIRICAL_SHADOW_VERSION, GJR_VERSION, STUDENT_VERSION,
+)
+
+_MODEL_VERSIONS = {
+    "lognormal_ewma": BASELINE_VERSION,
+    "empirical_scaled": EMPIRICAL_SHADOW_VERSION,
+    "student_t_ewma": STUDENT_VERSION,
+    "gjr_garch_t": GJR_VERSION,
+    "intraday_shadow": INTRADAY_VERSION,
+}
 
 
 @dataclass(frozen=True)
@@ -36,6 +52,8 @@ class LiveQuant:
     predictive: PredictiveOddsView
     risk: HypotheticalRiskView
     greeks: ContractGreeks
+    physical_models: tuple[PredictiveOddsView, ...] = ()
+    market_models: tuple[MarketOddsView, ...] = ()
     greeks_rate_pct_tenths: int | None = None
     greeks_rate_as_of_session: date | None = None
     last_available_market: MarketOddsView | None = None
@@ -122,6 +140,8 @@ def quant_for_contract(
     displayed_chain_fetched_at: datetime | None = None,
     displayed_chain_source: MarketSource | None = None,
     terms_note: str = TERMS_NOTE,
+    physical_shadow: PhysicalShadowCapture | None = None,
+    forecast_model: PhysicalModel = "lognormal_ewma",
 ) -> LiveQuant:
     expiry_text = expiry.isoformat()
     market = market_odds.lookup(ticker, side, expiry_text, strike, root)
@@ -147,6 +167,94 @@ def quant_for_contract(
             contract_since=contract_since,
             terms_note=terms_note,
         )
+    physical_models: tuple[PredictiveOddsView, ...] = ()
+    selected_distribution = distribution
+    if physical_shadow is not None:
+        model_views = []
+        quote_for_model = market_odds.underlying_quote(ticker)
+        for method in (
+            "lognormal_ewma", "empirical_scaled", "student_t_ewma", "gjr_garch_t",
+            "intraday_shadow",
+        ):
+            if predictive.status == "unavailable":
+                view = PredictiveOddsView(
+                    method=method, status="unavailable", reason=predictive.reason,
+                    as_of_session=distribution.as_of,
+                    expiry_session=distribution.expiry_session,
+                    model_version=_MODEL_VERSIONS[method],
+                )
+            else:
+                candidate = physical_shadow.candidate(
+                    distribution, method, expiry, contract_since or distribution.as_of,
+                    quote_for_model if method == "intraday_shadow" else None,
+                )
+                choice = candidate.distribution
+                if choice is None:
+                    view = PredictiveOddsView(
+                        method=method,
+                        status=(
+                            "pending" if candidate.reason == "candidate_not_prepared"
+                            else "unavailable"
+                        ),
+                        reason=candidate.reason,
+                        as_of_session=distribution.as_of,
+                        expiry_session=distribution.expiry_session,
+                        data_hash=distribution.data_hash,
+                        model_version=_MODEL_VERSIONS[method],
+                    )
+                elif (
+                    choice.as_of != distribution.as_of
+                    or choice.expiry_session != distribution.expiry_session
+                    or (method != "intraday_shadow" and choice.data_hash != distribution.data_hash)
+                ):
+                    view = PredictiveOddsView(
+                        method=method, status="unavailable", reason="input_vintage_changed",
+                        model_version=_MODEL_VERSIONS[method],
+                    )
+                else:
+                    view = predictive_odds.view_for_distribution(
+                        choice, side, strike,
+                        price_basis=(
+                            "validated_underlying_quote"
+                            if method == "intraday_shadow" else "completed_close"
+                        ),
+                        price_as_of=(
+                            quote_for_model.quote_time
+                            if method == "intraday_shadow" and quote_for_model is not None
+                            else None
+                        ),
+                    )
+                    if method == forecast_model and view.status == "available":
+                        selected_distribution = choice
+            if view.evidence_key is None and (
+                band := horizon_band(distribution.horizon_sessions)
+            ):
+                view = view.model_copy(update={
+                    "evidence_key": f"{method}:{band}"
+                })
+            model_views.append(view)
+        physical_models = tuple(model_views)
+        predictive = next(view for view in physical_models if view.method == forecast_model)
+    market = market.model_copy(update={"method": "regimelib"})
+    market_report = market_odds.curve_shadow_report(ticker) if physical_shadow is not None else None
+    market = market.model_copy(update={"model_evidence": {
+        "held_out_inside": (
+            market_report.get("benchmark_held_out_inside") if market_report else None
+        ),
+        "held_out_count": (
+            market_report.get("benchmark_held_out_predicted") if market_report else None
+        ),
+        "paired_held_out_count": (
+            market_report.get("paired_held_out_count") if market_report else None
+        ),
+        "fit_ms": market_report.get("benchmark_ms") if market_report else None,
+        "one_tick_stable": None,
+        "bid_ask_fit": None,
+    }})
+    market_models = (
+        (market, market_odds.lookup_curve(ticker, side, expiry_text, strike, root))
+        if physical_shadow is not None else (market,)
+    )
     last_good = (
         market_odds.lookup_last_good(ticker, side, expiry_text, strike, root)
         if watched and market.status != "available"
@@ -165,8 +273,12 @@ def quant_for_contract(
         return LiveQuant(
             market,
             predictive,
-            HypotheticalRiskView(reason="Coherent entry quotes are unavailable"),
+            HypotheticalRiskView(
+                reason="Coherent entry quotes are unavailable", forecast_method=forecast_model
+            ),
             empty_greeks(),
+            physical_models=physical_models,
+            market_models=market_models,
             last_available_market=last_good,
             issuance=issuance,
         )
@@ -188,8 +300,8 @@ def quant_for_contract(
     )
     entry_spot = quote.stock_ask if side == "call" else quote.spot
     coherent_window = (
-        distribution.as_of <= quote.session_date <= distribution.expiry_session
-        and quote.valuation_time < session_close(distribution.expiry_session)
+        selected_distribution.as_of <= quote.session_date <= selected_distribution.expiry_session
+        and quote.valuation_time < session_close(selected_distribution.expiry_session)
     )
     if entry_spot is None:
         risk = HypotheticalRiskView(reason="A stock purchase quote is unavailable")
@@ -199,7 +311,7 @@ def quant_for_contract(
         risk = HypotheticalRiskView(reason="Forecast and entry quote dates do not align")
     else:
         risk = compute_hypothetical_risk(
-            distribution,
+            selected_distribution,
             side=side,
             strike=strike,
             spot=entry_spot,
@@ -208,11 +320,16 @@ def quant_for_contract(
             quote_session=quote.session_date,
             reanchor=False,
         )
+        if forecast_model == "intraday_shadow" and risk.status == "available":
+            risk = risk.model_copy(update={"forecast_price_basis": "intraday_quote"})
+    risk = risk.model_copy(update={"forecast_method": forecast_model})
     return LiveQuant(
         market,
         predictive,
         risk,
         greeks,
+        physical_models=physical_models,
+        market_models=market_models,
         greeks_rate_pct_tenths=(
             to_pct_tenths(quote.rate * 100) if greeks.source is not None else None
         ),

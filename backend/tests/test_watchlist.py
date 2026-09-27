@@ -113,7 +113,7 @@ def test_saved_adjusted_root_cannot_suppress_standard_watch_forecast(
 
         monkeypatch.setattr(predictive, "distribution", prepared)
         monkeypatch.setattr(app.state.physical_shadow, "submit", lambda _entries: None)
-        response = client.get("/api/watchlist")
+        response = client.get("/api/watchlist?forecast_model=empirical_scaled")
         assert response.status_code == 200
         by_root = {item["root"]: item for item in response.json()["items"]}
         assert by_root["IREN"]["predictive_odds"]["status"] == "available"
@@ -126,7 +126,7 @@ def test_saved_adjusted_root_cannot_suppress_standard_watch_forecast(
             "IREN1": "unavailable",
         }
         predictive._pending["IREN"] = None
-        refreshing = client.get("/api/watchlist")
+        refreshing = client.get("/api/watchlist?forecast_model=empirical_scaled")
         assert refreshing.status_code == 200
         by_root = {item["root"]: item for item in refreshing.json()["items"]}
         assert by_root["IREN"]["predictive_odds"]["status"] == "available"

@@ -32,6 +32,7 @@ from options_api.models import (
     HypotheticalRiskView,
     MarketOddsView,
     Moneyness,
+    PhysicalModel,
     PredictiveOddsView,
     TickerSearchResponse,
     normalize_ticker,
@@ -43,6 +44,7 @@ from options_api.predictive_watch import PredictiveWatchOdds
 from options_api.prospective_panel import ProspectivePanel
 from options_api.service import OptionChainService
 from options_api.universe import TickerUniverse
+from options_api.version import router as version_router
 from options_api.watchlist import WatchlistService, router as watchlist_router
 from stocksweeper.config import Settings, load_settings
 from stocksweeper.forecast.labels import collect_matured_labels
@@ -226,6 +228,7 @@ async def _load_page(
     ticker: str,
     load: Callable[..., Awaitable[CoveredCallPage | CashSecuredPutPage]],
     moneyness: Moneyness | None,
+    forecast_model: PhysicalModel,
 ) -> CoveredCallPage | CashSecuredPutPage:
     _check_origin(request)
     normalized = await _known_ticker(request, ticker)
@@ -264,6 +267,22 @@ async def _load_page(
                     contract.predictive_odds = PredictiveOddsView(
                         status="unavailable", reason="contract_terms_ambiguous"
                     )
+                    contract.physical_models = [
+                        PredictiveOddsView(
+                            method=method, status="unavailable", reason="contract_terms_ambiguous"
+                        )
+                        for method in (
+                            "lognormal_ewma", "empirical_scaled", "student_t_ewma",
+                            "gjr_garch_t", "intraday_shadow",
+                        )
+                    ]
+                    contract.market_models = [
+                        MarketOddsView(
+                            method=method, status="unavailable",
+                            reason="Contract terms cannot be verified",
+                        )
+                        for method in ("regimelib", "constrained_call_curve")
+                    ]
                     contract.hypothetical_risk = HypotheticalRiskView(
                         reason="Contract terms cannot be verified"
                     )
@@ -281,6 +300,8 @@ async def _load_page(
                         strike=Decimal(contract.strike_exact),
                         displayed_chain_fetched_at=page.chain_fetched_at,
                         displayed_chain_source=page.chain_source,
+                        physical_shadow=request.app.state.physical_shadow,
+                        forecast_model=forecast_model,
                     )
                     if result.issuance is not None:
                         issuances.append(result.issuance)
@@ -292,6 +313,18 @@ async def _load_page(
                         )
                     )
                     contract.predictive_odds = result.predictive
+                    contract.physical_models = list(result.physical_models)
+                    contract.market_models = (
+                        list(result.market_models)
+                        if market_snapshot_matches
+                        else [
+                            MarketOddsView(
+                                method=method, status="pending",
+                                reason="Refreshing odds for displayed quotes",
+                            )
+                            for method in ("regimelib", "constrained_call_curve")
+                        ]
+                    )
                     contract.hypothetical_risk = result.risk
                     contract.greeks_rate_pct_tenths = result.greeks_rate_pct_tenths
                     contract.greeks_rate_as_of_session = result.greeks_rate_as_of_session
@@ -310,7 +343,10 @@ async def _load_page(
                 LOG.exception("forecast issuance ledger unavailable for %s", normalized)
                 for expiration in page.expirations:
                     for contract in expiration.contracts:
-                        if contract.predictive_odds.status == "available":
+                        if contract.predictive_odds.status in {"available", "pending"} or any(
+                            model.status in {"available", "pending"}
+                            for model in contract.physical_models
+                        ):
                             contract.predictive_odds = contract.predictive_odds.model_copy(
                                 update={
                                     "status": "unavailable",
@@ -323,8 +359,20 @@ async def _load_page(
                             contract.hypothetical_risk = HypotheticalRiskView(
                                 reason="Forecast evidence unavailable"
                             )
+                            contract.physical_models = [
+                                model.model_copy(
+                                    update={
+                                        "status": "unavailable",
+                                        "reason": "Forecast evidence unavailable",
+                                        "itm_pct_tenths": None, "otm_pct_tenths": None,
+                                        "atm_pct_tenths": None,
+                                    }
+                                )
+                                for model in contract.physical_models
+                            ]
             else:
                 request.app.state.physical_shadow.submit(issuances)
+        page.model_evidence = predictive.evidence_index()
         return page
     except NasdaqError as exc:
         raise _http_nasdaq_error(exc) from exc
@@ -337,8 +385,9 @@ async def get_covered_calls(
     request: Request,
     ticker: Annotated[str, Path(min_length=1, max_length=8)],
     moneyness: Annotated[Moneyness | None, Query()] = None,
+    forecast_model: Annotated[PhysicalModel, Query()] = "lognormal_ewma",
 ) -> CoveredCallPage:
-    return await _load_page(request, ticker, load_covered_calls, moneyness)
+    return await _load_page(request, ticker, load_covered_calls, moneyness, forecast_model)
 
 
 @router.get("/api/cash-secured-puts/{ticker}", response_model=CashSecuredPutPage)
@@ -346,8 +395,9 @@ async def get_cash_secured_puts(
     request: Request,
     ticker: Annotated[str, Path(min_length=1, max_length=8)],
     moneyness: Annotated[Moneyness | None, Query()] = None,
+    forecast_model: Annotated[PhysicalModel, Query()] = "lognormal_ewma",
 ) -> CashSecuredPutPage:
-    return await _load_page(request, ticker, load_cash_secured_puts, moneyness)
+    return await _load_page(request, ticker, load_cash_secured_puts, moneyness, forecast_model)
 
 
 def create_app(
@@ -384,7 +434,6 @@ def create_app(
                 refresh_enabled=predictive_refresh,
             )
             app.state.promotion_registry = PromotionRegistry(settings.resolved_data_dir())
-            app.state.physical_shadow = PhysicalShadowCapture(app.state.predictive_odds)
             app.state.market_odds = MarketWatchOdds(
                 app.state.service,
                 client,
@@ -394,6 +443,9 @@ def create_app(
                     (record.watch_key, record.created_at)
                     for record in app.state.watchlist.store.list()
                 ),
+            )
+            app.state.physical_shadow = PhysicalShadowCapture(
+                app.state.predictive_odds, app.state.market_odds
             )
             app.state.prospective_panel = ProspectivePanel(
                 settings.resolved_data_dir(),
@@ -557,6 +609,7 @@ def create_app(
     )
     app.add_middleware(LocalHostMiddleware)
     app.include_router(router)
+    app.include_router(version_router, dependencies=[Depends(_check_origin)])
     app.include_router(watchlist_router, dependencies=[Depends(_check_origin)])
     return app
 

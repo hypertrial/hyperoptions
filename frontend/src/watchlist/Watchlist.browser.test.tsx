@@ -42,6 +42,7 @@ afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
   window.sessionStorage.clear()
+  window.localStorage.clear()
 })
 
 it("shows dated market-implied ITM and OTM odds beside the expiry result", async () => {
@@ -246,6 +247,34 @@ it("uses a dated historical forecast when market bounds conflict and keeps prior
   expect(risk.textContent).toContain("34.2%")
   expect(risk.textContent).toContain("-$93.00")
   expect(risk.textContent).toContain("No trade or position is recorded")
+})
+
+it("keeps an unavailable selected model unavailable while showing an available alternative", async () => {
+  window.history.replaceState(null, "", "/watchlist")
+  localStorage.setItem("hyperoptions.forecastModel", "student_t_ewma")
+  const item = {
+    ...watched,
+    predictive_odds: { method: "student_t_ewma", status: "unavailable", reason: "candidate_not_prepared" },
+    physical_models: [
+      { method: "lognormal_ewma", status: "available", itm_pct_tenths: 620, otm_pct_tenths: 380, atm_pct_tenths: 0 },
+      { method: "student_t_ewma", status: "unavailable", reason: "candidate_not_prepared" },
+    ],
+    market_models: [{ method: "regimelib", status: "pending", reason: "refreshing_quotes" }],
+    hypothetical_risk: { status: "unavailable", forecast_method: "student_t_ewma", reason: "Selected forecast unavailable" },
+  }
+  const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response(JSON.stringify({ items: [item] })))
+  vi.stubGlobal("fetch", fetchMock)
+  render(<App />)
+  const odds = await screen.findByRole("region", { name: "Odds estimates" })
+  expect(odds.querySelector(".watch-odds")?.textContent).toContain("Forecast unavailable")
+  expect(odds.querySelector(".watch-odds")?.textContent).not.toContain("62.0%")
+  fireEvent.click(screen.getByText("Compare models"))
+  expect(odds.textContent).toContain("62.0% ITM")
+  expect(odds.textContent).toContain("candidate_not_prepared")
+  const risk = screen.getByRole("region", { name: "Hypothetical expiry risk" })
+  expect(risk.textContent).toContain("Student-t EWMA")
+  expect(risk.textContent).toContain("Selected forecast unavailable")
+  await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url) === "/api/watchlist?forecast_model=student_t_ewma")).toBe(true))
 })
 
 it("labels the underlying quote for a cash-secured put without implying a stock purchase", async () => {

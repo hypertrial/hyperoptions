@@ -16,6 +16,13 @@ export const zHealthResponse = z.object({
  */
 export const zHypotheticalRiskView = z.object({
     status: z.enum(['available', 'unavailable']).optional().default('unavailable'),
+    forecast_method: z.enum([
+        'lognormal_ewma',
+        'empirical_scaled',
+        'student_t_ewma',
+        'gjr_garch_t',
+        'intraday_shadow'
+    ]).nullish(),
     reason: z.string().nullish(),
     assumed_spot_cents: z.int().nullish(),
     assumed_bid_cents: z.int().nullish(),
@@ -50,6 +57,7 @@ export const zJob = z.object({
  * MarketOddsView
  */
 export const zMarketOddsView = z.object({
+    method: z.enum(['regimelib', 'constrained_call_curve']).nullish(),
     status: z.enum([
         'pending',
         'available',
@@ -64,7 +72,8 @@ export const zMarketOddsView = z.object({
     model_version: z.string().nullish(),
     bound_low_pct_tenths: z.int().nullish(),
     bound_high_pct_tenths: z.int().nullish(),
-    quote_support_score: z.int().nullish()
+    quote_support_score: z.int().nullish(),
+    model_evidence: z.record(z.string(), z.unknown()).nullish()
 });
 
 /**
@@ -107,6 +116,7 @@ export const zPeriodLows = z.object({
  */
 export const zPredictiveValidationEvidence = z.object({
     source: z.literal('prospective_as_issued'),
+    option_side: z.enum(['call', 'put']),
     model_version: z.string(),
     horizon_band: z.string(),
     moneyness_band: z.string(),
@@ -127,7 +137,13 @@ export const zPredictiveOddsView = z.object({
         'available',
         'unavailable'
     ]).optional().default('pending'),
-    method: z.string().nullish(),
+    method: z.enum([
+        'lognormal_ewma',
+        'empirical_scaled',
+        'student_t_ewma',
+        'gjr_garch_t',
+        'intraday_shadow'
+    ]).nullish(),
     reason: z.string().nullish(),
     itm_pct_tenths: z.int().nullish(),
     otm_pct_tenths: z.int().nullish(),
@@ -139,7 +155,9 @@ export const zPredictiveOddsView = z.object({
     data_hash: z.string().nullish(),
     price_basis: z.enum(['completed_close', 'validated_underlying_quote']).nullish(),
     price_as_of: z.iso.datetime().nullish(),
-    validation_evidence: zPredictiveValidationEvidence.nullish()
+    validation_evidence: zPredictiveValidationEvidence.nullish(),
+    evidence_key: z.string().nullish(),
+    model_evidence: z.record(z.string(), z.unknown()).nullish()
 });
 
 /**
@@ -183,6 +201,8 @@ export const zCashSecuredPutContract = z.object({
     greeks_rate_as_of_session: z.iso.date().nullish(),
     market_odds: zMarketOddsView.optional(),
     predictive_odds: zPredictiveOddsView.optional(),
+    physical_models: z.array(zPredictiveOddsView).optional(),
+    market_models: z.array(zMarketOddsView).optional(),
     hypothetical_risk: zHypotheticalRiskView.optional()
 });
 
@@ -229,6 +249,7 @@ export const zCashSecuredPutPage = z.object({
     history_from_cache: z.boolean(),
     risk_free_rate_pct_tenths: z.int().nullable(),
     lows: zPeriodLows,
+    model_evidence: z.record(z.string(), z.unknown()).optional(),
     expirations: z.array(zCashSecuredPutExpiration)
 });
 
@@ -275,6 +296,8 @@ export const zCoveredCallContract = z.object({
     greeks_rate_as_of_session: z.iso.date().nullish(),
     market_odds: zMarketOddsView.optional(),
     predictive_odds: zPredictiveOddsView.optional(),
+    physical_models: z.array(zPredictiveOddsView).optional(),
+    market_models: z.array(zMarketOddsView).optional(),
     hypothetical_risk: zHypotheticalRiskView.optional()
 });
 
@@ -321,6 +344,7 @@ export const zCoveredCallPage = z.object({
     history_from_cache: z.boolean(),
     risk_free_rate_pct_tenths: z.int().nullable(),
     lows: zPeriodLows,
+    model_evidence: z.record(z.string(), z.unknown()).optional(),
     expirations: z.array(zCoveredCallExpiration)
 });
 
@@ -362,6 +386,23 @@ export const zHttpValidationError = z.object({
 });
 
 /**
+ * VersionStatus
+ */
+export const zVersionStatus = z.object({
+    running_sha: z.string().nullable(),
+    branch: z.string().nullable(),
+    remote_sha: z.string().nullable(),
+    status: z.enum([
+        'current',
+        'update_available',
+        'offline',
+        'unverified_checkout'
+    ]),
+    checked_at: z.iso.datetime(),
+    frontend_matches: z.boolean().nullable()
+});
+
+/**
  * WatchCreate
  */
 export const zWatchCreate = z.object({
@@ -383,6 +424,8 @@ export const zWatchItem = z.object({
     market_odds: zMarketOddsView.optional(),
     last_available_market_odds: zMarketOddsView.nullish(),
     predictive_odds: zPredictiveOddsView.optional(),
+    physical_models: z.array(zPredictiveOddsView).optional(),
+    market_models: z.array(zMarketOddsView).optional(),
     hypothetical_risk: zHypotheticalRiskView.optional(),
     outcome: zOutcomeView
 });
@@ -393,7 +436,8 @@ export const zWatchItem = z.object({
 export const zWatchCreateResponse = z.object({
     item: zWatchItem,
     created: z.boolean(),
-    job: zJob.nullable()
+    job: zJob.nullable(),
+    model_evidence: z.record(z.string(), z.unknown()).optional()
 });
 
 /**
@@ -401,7 +445,8 @@ export const zWatchCreateResponse = z.object({
  */
 export const zWatchListResponse = z.object({
     items: z.array(zWatchItem),
-    active_job: zJob.nullish()
+    active_job: zJob.nullish(),
+    model_evidence: z.record(z.string(), z.unknown()).optional()
 });
 
 /**
@@ -430,6 +475,11 @@ export const zGetCoveredCallsApiCoveredCallsTickerGetResponse = zCoveredCallPage
  * Successful Response
  */
 export const zGetCashSecuredPutsApiCashSecuredPutsTickerGetResponse = zCashSecuredPutPage;
+
+/**
+ * Successful Response
+ */
+export const zVersionApiVersionGetResponse = zVersionStatus;
 
 /**
  * Successful Response

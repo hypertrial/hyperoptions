@@ -309,7 +309,7 @@ def _calibration_rows() -> list[dict[str, object]]:
     return rows
 
 
-def test_calibration_requires_500_units_and_averages_shared_call_put_close() -> None:
+def test_calibration_requires_500_units_and_keeps_call_put_separate() -> None:
     rows = _calibration_rows()
     as_of = datetime(2025, 5, 1, tzinfo=UTC)
     ledger = _CalibrationLedger(rows[:-2])
@@ -318,11 +318,14 @@ def test_calibration_requires_500_units_and_averages_shared_call_put_close() -> 
 
     ledger.rows = rows
     summary = build_calibration(ledger, as_of)
-    evidence = summary[("test-v1", "completed_close", "1", "near ATM")]
-    assert evidence["independent_units"] == 500
-    assert evidence["predicted_itm_pct_tenths"] == 500
-    assert evidence["observed_itm_pct_tenths"] == 500
-    assert evidence["through_session"] == rows[-1]["expiry_session"]
+    call = summary[("test-v1", "completed_close", "1", "near ATM", "call")]
+    put = summary[("test-v1", "completed_close", "1", "near ATM", "put")]
+    assert call["independent_units"] == put["independent_units"] == 500
+    assert call["predicted_itm_pct_tenths"] == 600
+    assert put["predicted_itm_pct_tenths"] == 400
+    assert call["observed_itm_pct_tenths"] == 1000
+    assert put["observed_itm_pct_tenths"] == 0
+    assert call["through_session"] == put["through_session"] == rows[-1]["expiry_session"]
     assert ledger.reads == 2
 
     revised = dict(rows[0])

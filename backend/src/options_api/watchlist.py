@@ -10,13 +10,13 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from options_api.contract_identity import make_watch_key, parse_watch_key, strike_exact
-from options_api.live_quant import quant_for_contract
+from options_api.live_quant import _MODEL_VERSIONS, quant_for_contract
 from options_api.market_calendar import (
     expiry_session_completed,
     first_session_after_completed,
@@ -27,9 +27,11 @@ from options_api.models import (
     HypotheticalRiskView,
     MarketOddsView,
     OptionQuote,
+    PhysicalModel,
     PredictiveOddsView,
     normalize_ticker,
 )
+from options_api.market_watch import _CURVE_VERSION, _MODEL_VERSION
 from options_api.nasdaq import NasdaqError
 from options_api.outcomes import (
     TERMS_NOTE,
@@ -76,6 +78,8 @@ class WatchItem(BaseModel):
     market_odds: MarketOddsView = Field(default_factory=MarketOddsView)
     last_available_market_odds: MarketOddsView | None = None
     predictive_odds: PredictiveOddsView = Field(default_factory=PredictiveOddsView)
+    physical_models: list[PredictiveOddsView] = Field(default_factory=list)
+    market_models: list[MarketOddsView] = Field(default_factory=list)
     hypothetical_risk: HypotheticalRiskView = Field(default_factory=HypotheticalRiskView)
     outcome: OutcomeView
 
@@ -83,12 +87,14 @@ class WatchItem(BaseModel):
 class WatchListResponse(BaseModel):
     items: list[WatchItem]
     active_job: Job | None = None
+    model_evidence: dict[str, object] = Field(default_factory=dict)
 
 
 class WatchCreateResponse(BaseModel):
     item: WatchItem
     created: bool
     job: Job | None
+    model_evidence: dict[str, object] = Field(default_factory=dict)
 
 
 class WatchRefreshResponse(BaseModel):
@@ -468,7 +474,10 @@ def _queue(request: Request, *, force: bool = False, retry_pending: bool = False
 
 
 @router.get("/api/watchlist", response_model=WatchListResponse)
-async def get_watchlist(request: Request) -> WatchListResponse:
+async def get_watchlist(
+    request: Request,
+    forecast_model: Annotated[PhysicalModel, Query()] = "lognormal_ewma",
+) -> WatchListResponse:
     now = _now(request)
     items = request.app.state.watchlist.items(as_of=now)
     odds = request.app.state.market_odds
@@ -483,9 +492,28 @@ async def get_watchlist(request: Request) -> WatchListResponse:
                 status="unavailable", reason="Expiry session completed; see outcome"
             )
             item.predictive_odds = PredictiveOddsView(
-                status="unavailable", reason="expiry_completed"
+                method=forecast_model, status="unavailable", reason="expiry_completed"
             )
-            item.hypothetical_risk = HypotheticalRiskView(reason="Expiry session completed")
+            item.physical_models = [
+                PredictiveOddsView(
+                    method=method, model_version=version,
+                    status="unavailable", reason="expiry_completed",
+                )
+                for method, version in _MODEL_VERSIONS.items()
+            ]
+            item.market_models = [
+                MarketOddsView(
+                    method=method, model_version=version,
+                    status="unavailable", reason="expiry_completed",
+                )
+                for method, version in (
+                    ("regimelib", _MODEL_VERSION),
+                    ("constrained_call_curve", _CURVE_VERSION),
+                )
+            ]
+            item.hypothetical_risk = HypotheticalRiskView(
+                reason="Expiry session completed", forecast_method=forecast_model
+            )
             continue
         result = quant_for_contract(
             odds,
@@ -498,12 +526,16 @@ async def get_watchlist(request: Request) -> WatchListResponse:
             contract_since=first_session_after_completed(item.created_at),
             watched=True,
             terms_note=item.terms_note,
+            physical_shadow=getattr(request.app.state, "physical_shadow", None),
+            forecast_model=forecast_model,
         )
         if result.issuance is not None:
             issuances.append(result.issuance)
         item.market_odds = result.market
         item.last_available_market_odds = result.last_available_market
         item.predictive_odds = result.predictive
+        item.physical_models = list(result.physical_models)
+        item.market_models = list(result.market_models)
         item.hypothetical_risk = result.risk
     if issuances:
         try:
@@ -511,7 +543,9 @@ async def get_watchlist(request: Request) -> WatchListResponse:
         except Exception:
             LOG.exception("forecast issuance ledger unavailable for watchlist")
             for item in items:
-                if item.predictive_odds.status == "available":
+                if item.predictive_odds.status in {"available", "pending"} or any(
+                    model.status in {"available", "pending"} for model in item.physical_models
+                ):
                     item.predictive_odds = item.predictive_odds.model_copy(
                         update={
                             "status": "unavailable",
@@ -524,16 +558,28 @@ async def get_watchlist(request: Request) -> WatchListResponse:
                     item.hypothetical_risk = HypotheticalRiskView(
                         reason="Forecast evidence unavailable"
                     )
+                    item.physical_models = [
+                        model.model_copy(update={
+                            "status": "unavailable", "reason": "Forecast evidence unavailable",
+                            "itm_pct_tenths": None, "otm_pct_tenths": None,
+                            "atm_pct_tenths": None,
+                        }) for model in item.physical_models
+                    ]
         else:
             request.app.state.physical_shadow.submit(issuances)
     return WatchListResponse(
         items=items,
         active_job=request.app.state.jobs.active("watch_refresh"),
+        model_evidence=request.app.state.predictive_odds.evidence_index(),
     )
 
 
 @router.post("/api/watchlist", response_model=WatchCreateResponse)
-async def add_watch(request: Request, body: WatchCreate) -> WatchCreateResponse:
+async def add_watch(
+    request: Request,
+    body: WatchCreate,
+    forecast_model: Annotated[PhysicalModel, Query()] = "lognormal_ewma",
+) -> WatchCreateResponse:
     parsed = parse_watch_key(body.watch_key)
     if parsed is None:
         raise HTTPException(status_code=400, detail="Invalid watch key")
@@ -585,6 +631,8 @@ async def add_watch(request: Request, body: WatchCreate) -> WatchCreateResponse:
         contract_since=first_session_after_completed(record.created_at),
         watched=True,
         terms_note=item.terms_note,
+        physical_shadow=getattr(request.app.state, "physical_shadow", None),
+        forecast_model=forecast_model,
     )
     ledger_failed = False
     if result.issuance is not None:
@@ -603,13 +651,23 @@ async def add_watch(request: Request, body: WatchCreate) -> WatchCreateResponse:
             status="unavailable", reason="Forecast evidence unavailable"
         )
         item.hypothetical_risk = HypotheticalRiskView(reason="Forecast evidence unavailable")
+        item.physical_models = [
+            model.model_copy(update={
+                "status": "unavailable", "reason": "Forecast evidence unavailable",
+                "itm_pct_tenths": None, "otm_pct_tenths": None,
+                "atm_pct_tenths": None,
+            }) for model in result.physical_models
+        ]
     else:
         item.predictive_odds = result.predictive
         item.hypothetical_risk = result.risk
+        item.physical_models = list(result.physical_models)
+    item.market_models = list(result.market_models)
     return WatchCreateResponse(
         item=item,
         created=created,
         job=job,
+        model_evidence=request.app.state.predictive_odds.evidence_index(),
     )
 
 

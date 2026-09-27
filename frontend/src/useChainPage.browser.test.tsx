@@ -118,6 +118,61 @@ it("checks a pending predictive forecast after hours and stops when it resolves"
   expect(fetchMock).toHaveBeenCalledTimes(2)
 })
 
+it.each(["physical_models", "market_models"])("refreshes a pending %s comparison after hours", async (field) => {
+  vi.setSystemTime(new Date("2026-09-17T21:00:00Z"))
+  const pending = samplePage()
+  Object.assign(pending.expirations[0].contracts[0], { [field]: [{ status: "pending" }] })
+  fetchMock.mockResolvedValueOnce(pending).mockResolvedValue(samplePage())
+  renderHook(() => useChainPage("IREN", "call", "itm"))
+  await act(async () => { await Promise.resolve() })
+
+  await act(async () => { await vi.advanceTimersByTimeAsync(15_000) })
+  expect(fetchMock).toHaveBeenCalledTimes(2)
+  await act(async () => { await vi.advanceTimersByTimeAsync(5 * 60_000) })
+  expect(fetchMock).toHaveBeenCalledTimes(2)
+})
+
+it("refreshes missing shared evidence after hours and stops when it arrives", async () => {
+  vi.setSystemTime(new Date("2026-09-17T21:00:00Z"))
+  const missing = samplePage({ model_evidence: {} })
+  Object.assign(missing.expirations[0].contracts[0], {
+    physical_models: [{ status: "available", evidence_key: "lognormal_ewma:2-5" }],
+  })
+  const complete = samplePage({ model_evidence: { "lognormal_ewma:2-5": { prospective: {} } } })
+  Object.assign(complete.expirations[0].contracts[0], {
+    physical_models: [{ status: "available", evidence_key: "lognormal_ewma:2-5" }],
+  })
+  fetchMock.mockResolvedValueOnce(missing).mockResolvedValue(complete)
+  const hook = renderHook(() => useChainPage("IREN", "call", "itm"))
+  await act(async () => { await Promise.resolve() })
+
+  await act(async () => { await vi.advanceTimersByTimeAsync(14_999) })
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+  expect(fetchMock).toHaveBeenCalledTimes(2)
+  expect(hook.result.current.page?.model_evidence?.["lognormal_ewma:2-5"]).toBeTruthy()
+  await act(async () => { await vi.advanceTimersByTimeAsync(5 * 60_000) })
+  expect(fetchMock).toHaveBeenCalledTimes(2)
+})
+
+it("stops retrying genuinely absent evidence after eight polls", async () => {
+  vi.setSystemTime(new Date("2026-09-17T21:00:00Z"))
+  const missing = samplePage({ model_evidence: {} })
+  Object.assign(missing.expirations[0].contracts[0], {
+    physical_models: [{ status: "available", evidence_key: "lognormal_ewma:2-5" }],
+  })
+  fetchMock.mockResolvedValue(missing)
+  renderHook(() => useChainPage("IREN", "call", "itm"))
+  await act(async () => { await Promise.resolve() })
+
+  for (let poll = 0; poll < 8; poll += 1) {
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000) })
+  }
+  expect(fetchMock).toHaveBeenCalledTimes(9)
+  await act(async () => { await vi.advanceTimersByTimeAsync(20 * 60_000) })
+  expect(fetchMock).toHaveBeenCalledTimes(9)
+})
+
 it.each(["market_data_missing", "market_data_invalid"])("retries temporary %s forecast failure after hours only when visible", async (reason) => {
   vi.setSystemTime(new Date("2026-09-17T21:00:00Z"))
   const unavailable = samplePage()
@@ -137,7 +192,10 @@ it.each(["market_data_missing", "market_data_invalid"])("retries temporary %s fo
 it("does not poll terminal predictive unsupported reasons after hours", async () => {
   vi.setSystemTime(new Date("2026-09-17T21:00:00Z"))
   const unsupported = samplePage()
-  Object.assign(unsupported.expirations[0].contracts[0], { predictive_odds: { status: "unavailable", reason: "horizon_unsupported" } })
+  Object.assign(unsupported.expirations[0].contracts[0], {
+    predictive_odds: { status: "unavailable", reason: "horizon_unsupported" },
+    physical_models: [{ status: "unavailable", evidence_key: null }],
+  })
   fetchMock.mockResolvedValue(unsupported)
   renderHook(() => useChainPage("IREN", "call", "itm"))
   await act(async () => { await Promise.resolve() })

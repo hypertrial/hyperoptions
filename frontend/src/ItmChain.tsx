@@ -8,6 +8,7 @@ import CommandBar, { type SessionInfo } from "./CommandBar"
 import { formatContractValues, visibleColumns } from "./columns"
 import { contractCountIsSafe, contractSizeLabel, parseContractCount } from "./contracts"
 import { plural } from "./format"
+import { DEFAULT_FORECAST_MODEL, PHYSICAL_MODEL_NAMES, type PhysicalModel } from "./forecastModels"
 import { copyRowStateKey, formatRowClipboard } from "./copyRow"
 import { useDensity } from "./density"
 import ExpiryTables from "./ExpiryTable"
@@ -59,11 +60,11 @@ function firstDatedOdds(page: ChainPage | null): MarketOdds | null {
   return fallback
 }
 
-export default function ItmChain() {
+export default function ItmChain({ forecastModel = DEFAULT_FORECAST_MODEL }: { forecastModel?: PhysicalModel }) {
   const { state, setState } = useUrlState()
   const { ticker, side, moneyness, cols } = state
   const identityKey = `${ticker}|${side}|${moneyness}`
-  const { page, error, loading, beginTickerChange, beginRefresh } = useChainPage(ticker, side, moneyness)
+  const { page, error, loading, beginTickerChange, beginRefresh } = useChainPage(ticker, side, moneyness, forecastModel)
   const [contractsText, setContractsText] = useState("")
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [copiedNotice, setCopiedNotice] = useState("")
@@ -189,7 +190,9 @@ export default function ItmChain() {
   const watchContract = async (watchKey: string) => {
     setWatchStates((current) => ({ ...current, [watchKey]: { phase: "pending" } }))
     try {
-      const result = await addWatch(watchKey)
+      const result = forecastModel === DEFAULT_FORECAST_MODEL
+        ? await addWatch(watchKey)
+        : await addWatch(watchKey, forecastModel)
       if (result.job) sessionStorage.setItem(WATCH_JOB_KEY, result.job.id)
       setWatchStates((current) => ({ ...current, [watchKey]: { phase: result.created ? "added" : "existing" } }))
     } catch (cause) {
@@ -236,7 +239,7 @@ export default function ItmChain() {
               </>
             )}
           </p>
-          {page ? <p className="odds-context">Stock forecasts use past closes. Reliability is not yet established unless shown. Market odds use option prices (risk-neutral). {oddsStamp ? `Market quote: ${oddsStamp}.` : ""}</p> : null}
+          {page ? <p className="odds-context">Selected forecast: {PHYSICAL_MODEL_NAMES[forecastModel]}{forecastModel === DEFAULT_FORECAST_MODEL ? " baseline" : " · user-selected experimental"}. It drives expiry odds, odds sort, and hypothetical risk. Market odds use option prices (risk-neutral). {oddsStamp ? `Market quote: ${oddsStamp}.` : ""}</p> : null}
           {page && columns.some((column) => column.greek) ? <p className="odds-context">Greeks use the dated quote midpoint, Treasury rate, and time to the expiry-session close. European Black-Scholes estimates omit dividends and only approximate American equity options.</p> : null}
         </header>
 
@@ -335,6 +338,8 @@ export default function ItmChain() {
             expandedExpirations={expandedExpirations}
             copiedKey={copiedKey}
             sort={effectiveSort}
+            forecastModel={forecastModel}
+            modelEvidence={page?.model_evidence}
             density={density}
             onToggleExpiration={(expiration) => expansion.update((current) => {
               const next = new Set(current)

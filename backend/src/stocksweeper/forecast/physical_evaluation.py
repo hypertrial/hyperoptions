@@ -214,7 +214,9 @@ def evaluate_band(
         )
     units: list[dict] = []
     subgroup_values: dict[tuple[str, str, str, date, int], list[float]] = defaultdict(list)
-    calibration_bins: list[list[tuple[float, bool]]] = [[] for _ in range(10)]
+    calibration_bins: dict[str, list[list[tuple[float, float]]]] = {
+        side: [[] for _ in range(10)] for side in ("call", "put")
+    }
     for (ticker, origin, horizon), pairs in unit_pairs.items():
         baseline_scores = [_score(base.probability, base.observed_itm) for base, _ in pairs]
         candidate_scores = [
@@ -246,10 +248,11 @@ def evaluate_band(
                 "crps_candidate": mean(b for _, b in crps_values) if crps_values else None,
             }
         )
+        unit_calibration: dict[tuple[str, int], list[tuple[float, float]]] = defaultdict(list)
         for base, challenger in pairs:
-            calibration_bins[min(9, int(challenger.probability * 10))].append(
-                (challenger.probability, challenger.observed_itm)
-            )
+            unit_calibration[
+                challenger.side, min(9, int(challenger.probability * 10))
+            ].append((challenger.probability, float(challenger.observed_itm)))
             for category, value in (
                 ("horizon", str(horizon)),
                 ("moneyness", challenger.moneyness),
@@ -261,6 +264,10 @@ def evaluate_band(
                 subgroup_values[(category, value, ticker, origin, horizon)].append(
                     challenger_brier - base_brier
                 )
+        for (side, bin_index), values in unit_calibration.items():
+            calibration_bins[side][bin_index].append(
+                (mean(p for p, _ in values), mean(y for _, y in values))
+            )
     by_date: dict[date, list[dict]] = defaultdict(list)
     for unit in units:
         by_date[unit["origin"]].append(unit)
@@ -318,16 +325,19 @@ def evaluate_band(
         ),
         "availability": baseline_available == candidate_available,
     }
-    calibration = [
-        {
-            "lower": index / 10,
-            "upper": (index + 1) / 10,
-            "count": len(values),
-            "forecast_mean": mean(p for p, _ in values) if values else None,
-            "observed_rate": mean(float(y) for _, y in values) if values else None,
-        }
-        for index, values in enumerate(calibration_bins)
-    ]
+    def calibration(bins: list[list[tuple[float, float]]]) -> list[dict[str, float | int | None]]:
+        return [
+            {
+                "lower": index / 10,
+                "upper": (index + 1) / 10,
+                "count": len(values),
+                "forecast_mean": mean(p for p, _ in values) if values else None,
+                "observed_rate": mean(y for _, y in values) if values else None,
+            }
+            for index, values in enumerate(bins)
+        ]
+
+    calibration_by_side = {side: calibration(bins) for side, bins in calibration_bins.items()}
     crps_units = [unit for unit in units if unit["crps_candidate"] is not None]
     return {
         "candidate": candidate,
@@ -364,7 +374,7 @@ def evaluate_band(
             if crps_units
             else None,
         },
-        "calibration": calibration,
+        "calibration_by_side": calibration_by_side,
         "subgroups": subgroups,
         "latency_ms": {
             label: {"p50": _quantile(values, 0.5), "p95": _quantile(values, 0.95)}
