@@ -41,6 +41,7 @@ it("shows calibration only for supported matching prospective evidence", () => {
     },
   }
   expect(predictiveReliabilityLabel(forecast)).toContain("60.0% forecast vs 57.0% observed ITM · 500 independent units")
+  expect(oddsLabel({ status: "unavailable" }, forecast)).toContain("500 independent units")
   expect(predictiveReliabilityLabel({ ...forecast, validation_evidence: { ...forecast.validation_evidence!, independent_units: 499 } })).toBe("Reliability not yet established")
   expect(predictiveReliabilityLabel({ ...forecast, validation_evidence: { ...forecast.validation_evidence!, model_version: "other" } })).toBe("Reliability not yet established")
 })

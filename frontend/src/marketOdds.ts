@@ -78,8 +78,9 @@ export function oddsMessage(odds: MarketOdds | null | undefined): string {
 }
 
 export function oddsLabel(market: MarketOdds | null | undefined, predictive?: PredictiveOdds | null): string {
+  const reliability = predictiveReliabilityLabel(predictive)
   const physical = predictiveAvailable(predictive)
-    ? `Stock forecast ${unsignedPercentTenths(predictive!.itm_pct_tenths)} ITM, ${unsignedPercentTenths(predictive!.otm_pct_tenths)} OTM, ${predictiveBasisLabel(predictive)}`
+    ? `Stock forecast ${unsignedPercentTenths(predictive!.itm_pct_tenths)} ITM, ${unsignedPercentTenths(predictive!.otm_pct_tenths)} OTM, ${predictiveBasisLabel(predictive)}${reliability === "Reliability not yet established" ? "" : `, ${reliability}`}`
     : `Stock forecast ${predictive?.status === "pending" ? "pending" : `unavailable: ${predictive?.reason || "no validated forecast"}`}`
   if (oddsAvailable(market)) return `${physical}. Market-implied risk-neutral ${unsignedPercentTenths(market!.itm_pct_tenths)} ITM, ${unsignedPercentTenths(market!.otm_pct_tenths)} OTM${quoteSupportLabel(market) ? `, ${quoteSupportLabel(market)}` : ""}`
   return `${physical}. ${oddsMessage(market)}`

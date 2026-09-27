@@ -218,7 +218,7 @@ function MobileResults({
         <label>
           <span>Sort by</span>
           <select value={sortId} onChange={(event) => onSort(event.target.value)}>
-            <option value={PREDICTIVE_ODDS_SORT_ID}>Real-world ITM odds</option>
+            <option value={PREDICTIVE_ODDS_SORT_ID}>Stock forecast ITM odds</option>
             {columns.map((column) => <option key={column.id} value={column.id}>{column.label}</option>)}
           </select>
         </label>
