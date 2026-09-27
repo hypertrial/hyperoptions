@@ -191,6 +191,71 @@ def test_one_challenger_rejection_does_not_erase_available_baseline(tmp_path) ->
     assert rows["gjr_garch_t"]["unavailable_reason"] == "gjr_nonconverged"
 
 
+def test_shadow_failure_cannot_mask_valid_live_method(tmp_path) -> None:
+    capture = _capture(tmp_path)
+    base = _distribution("empirical_scaled")
+    key = base.ticker, base.as_of, EXPIRY, INPUT, base.data_hash
+    capture._live[key] = (
+        {"empirical_scaled": ShadowForecast(None, "market_data_missing", 0, 0)},
+        None,
+    )
+
+    result = capture.candidate(base, "empirical_scaled", EXPIRY, INPUT)
+    assert result.distribution is base
+    assert result.reason is None
+    assert capture.candidate(base, "student_t_ewma", EXPIRY, INPUT).reason == (
+        "candidate_not_prepared"
+    )
+
+
+@pytest.mark.parametrize("changed", ("hash", "session", "expiry", "contract_since"))
+def test_stale_shadow_candidate_is_not_reused_for_new_input(tmp_path, changed: str) -> None:
+    capture = _capture(tmp_path)
+    old = _distribution("empirical_scaled")
+    key = old.ticker, old.as_of, EXPIRY, INPUT, old.data_hash
+    capture._live[key] = (
+        {"student_t_ewma": ShadowForecast(_distribution("student_t_ewma"), None, 0, 0)},
+        None,
+    )
+
+    current = old
+    expiry = EXPIRY
+    contract_since = INPUT
+    if changed == "hash":
+        current = replace(old, data_hash="b" * 64)
+    elif changed == "session":
+        current = replace(old, as_of=date(2026, 9, 26))
+    elif changed == "expiry":
+        expiry = date(2026, 10, 9)
+        current = replace(old, expiry_session=expiry)
+    else:
+        contract_since = date(2026, 9, 24)
+
+    assert (
+        capture.candidate(current, "empirical_scaled", expiry, contract_since).distribution
+        is current
+    )
+    shadow = capture.candidate(current, "student_t_ewma", expiry, contract_since)
+    assert shadow.distribution is None
+    assert shadow.reason == "candidate_not_prepared"
+
+
+@pytest.mark.parametrize(
+    ("base", "reason"),
+    (
+        (replace(_distribution(), status="unavailable", reason="source_outage"), "source_outage"),
+        (replace(_distribution(), data_hash=None), "completed_close_forecast_unavailable"),
+    ),
+)
+def test_invalid_base_cannot_bypass_availability_guard(
+    tmp_path, base: PredictiveDistribution, reason: str
+) -> None:
+    capture = _capture(tmp_path)
+    result = capture.candidate(base, base.method, EXPIRY, INPUT)
+    assert result.distribution is None
+    assert result.reason == reason
+
+
 def test_unavailable_first_contract_does_not_suppress_valid_peer(tmp_path) -> None:
     capture = _capture(tmp_path)
     capture.forecaster = SimpleNamespace(

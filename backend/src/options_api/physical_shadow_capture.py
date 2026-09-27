@@ -59,14 +59,14 @@ class PhysicalShadowCapture:
             return ShadowForecast(None, base.reason or "completed_close_forecast_unavailable", 0, 0)
         if base.horizon_sessions > 25 and method != "lognormal_ewma":
             return ShadowForecast(None, "candidate_horizon_unsupported", 0, 0)
+        if method == base.method and method != "intraday_shadow":
+            return ShadowForecast(base, None, 0, 0)
         key = base.ticker, base.as_of, expiry, contract_since, base.data_hash
         cached = self._live.get(key)
         if cached is not None:
             results, saved_quote = cached
             if method != "intraday_shadow" or saved_quote == quote:
                 return results.get(method, ShadowForecast(None, "candidate_not_prepared", 0, 0))
-        if method == base.method and method != "intraday_shadow":
-            return ShadowForecast(base, None, 0, 0)
         return ShadowForecast(None, "candidate_not_prepared", 0, 0)
 
     def submit(self, entries: list[Entry]) -> None:
