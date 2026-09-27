@@ -218,14 +218,19 @@
   .watch-card-section h3 { margin: 0 0 12px; font-size: .83rem; font-weight: 700; text-transform: uppercase; letter-spacing: .045em; }
   .watch-outcome { margin: 0 0 8px; font-size: .94rem; }
   .watch-odds { margin: 12px 0; }
-  .watch-odds .odds-values { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-  .watch-odds .odds-method { grid-column: 1 / -1; color: var(--muted-foreground); font-size: .8rem; font-weight: 700; }
-  .watch-odds .odds-values > span { display: grid; gap: 3px; color: var(--muted-foreground); font-size: .8rem; }
-  .watch-odds .odds-values strong { color: var(--foreground); font-size: clamp(1.25rem, 4vw, 1.8rem); font-variant-numeric: tabular-nums; }
-  .watch-odds .odds-values .odds-support { grid-column: 1 / -1; font-size: .8rem; }
-  .watch-odds .odds-unavailable { display: grid; gap: 4px; }
-  .watch-odds .odds-unavailable strong { color: var(--foreground); font-size: 1.05rem; }
-  .watch-odds .odds-unavailable span { color: var(--muted-foreground); font-size: .82rem; line-height: 1.5; }
+  .watch-odds .odds-values,
+  .watch-odds .odds-physical,
+  .watch-odds .odds-market { display: grid; min-width: 0; gap: 5px; }
+  .watch-odds .odds-method { color: var(--muted-foreground); font-size: .8rem; font-weight: 700; }
+  .watch-odds .odds-numbers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .watch-odds .odds-numbers > span { display: grid; min-width: 0; gap: 3px; color: var(--muted-foreground); font-size: .8rem; }
+  .watch-odds .odds-numbers strong { color: var(--foreground); font-size: clamp(1.1rem, 3vw, 1.8rem); font-variant-numeric: tabular-nums; }
+  .watch-odds .odds-basis,
+  .watch-odds .odds-reliability,
+  .watch-odds .odds-market { color: var(--muted-foreground); font-size: .78rem; line-height: 1.45; }
+  .watch-odds .odds-market { display: flex; flex-wrap: wrap; gap: 3px 6px; margin-top: 5px; padding-top: 9px; border-top: 1px solid var(--border); }
+  .watch-odds .odds-market-bounds { flex-basis: 100%; }
+  .watch-odds .odds-unavailable { color: var(--muted-foreground); font-size: .85rem; }
   .watch-outcome strong { font-size: 1.05rem; }
   .watch-muted,
   .watch-provenance,
@@ -976,12 +981,19 @@
   }
   thead th:nth-last-child(2) { z-index: 3; background: var(--secondary); }
   tbody td.watch-cell { background: var(--card); text-align: center; }
-  tbody td.odds-cell { min-width: 9rem; white-space: normal; text-align: left; }
-  .odds-values.compact { display: grid; gap: 2px; line-height: 1.3; }
+  tbody td.odds-cell { min-width: 11rem; white-space: normal; text-align: left; }
+  .odds-values.compact,
+  .odds-values.compact .odds-physical,
+  .odds-values.compact .odds-market { display: grid; min-width: 0; gap: 2px; line-height: 1.3; }
+  .odds-values.compact { gap: 6px; }
+  .odds-values.compact .odds-numbers { display: flex; flex-wrap: wrap; gap: 2px 8px; }
   .odds-values.compact .odds-method { color: var(--muted-foreground); font-size: .7rem; font-weight: 700; }
   .odds-values.compact strong { font-variant-numeric: tabular-nums; }
-  .odds-values.compact .odds-support { color: var(--muted-foreground); font-size: .7rem; }
-  .odds-unavailable.compact { display: block; color: var(--muted-foreground); font-size: .75rem; font-weight: 600; line-height: 1.35; }
+  .odds-values.compact .odds-basis,
+  .odds-values.compact .odds-reliability,
+  .odds-values.compact .odds-market { color: var(--muted-foreground); font-size: .7rem; }
+  .odds-values.compact .odds-market { padding-top: 5px; border-top: 1px solid var(--border); }
+  .odds-values.compact .odds-unavailable { color: var(--muted-foreground); font-size: .75rem; font-weight: 600; }
   .odds-reason { margin-top: 4px; color: var(--muted-foreground); font-size: .72rem; line-height: 1.4; }
   .odds-reason summary { width: fit-content; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
   .odds-reason summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
@@ -1124,8 +1136,7 @@
     }
     .mobile-row-main { display: grid; min-width: 0; gap: 5px; }
     .mobile-row-odds { padding: 0 6px; font-size: .72rem; }
-    .mobile-row-odds .odds-values.compact { display: flex; flex-wrap: wrap; gap: 3px 12px; }
-    .mobile-row-odds .odds-values.compact .odds-method { flex-basis: 100%; }
+    .mobile-row-odds .odds-values.compact { display: grid; }
     .mobile-priority-grid > span {
       display: grid;
       min-width: 0;

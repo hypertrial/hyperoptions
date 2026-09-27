@@ -11,7 +11,7 @@ import math
 import time
 from collections.abc import Callable, Sequence
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from decimal import Decimal
 from functools import lru_cache
@@ -39,6 +39,8 @@ class OddsEstimate:
     call_itm_probability: float | None
     reason: str | None = None
     bounds: tuple[float, float] | None = None
+    # Internal quote-fit diagnostic; not an API probability or live selection input.
+    held_out_vanilla_price: float | None = None
 
 
 @dataclass(frozen=True)
@@ -208,7 +210,8 @@ def _with_rate(
 
 
 def _fit(
-    train: list[_Quote], held_out: list[_Quote], spot: float
+    train: list[_Quote], held_out: list[_Quote], spot: float,
+    held_out_prices: dict[tuple[str, Decimal], float] | None = None,
 ) -> rl.SwitchingBlackScholesProcess | None:
     if len(train) < 6 or len(held_out) < 2:
         return None
@@ -266,6 +269,8 @@ def _fit(
     model = _model(spot, best_parameters)
     # Only prices actually inside (or within one tick of) held-out markets pass.
     try:
+        validated_held_out: dict[tuple[str, Decimal], float] = {}
+        held_keys = {(quote.expiration, quote.strike) for quote in held_out}
         for quote in [*train, *held_out]:
             price = _price_converged(model, quote, digital=False)
             if price is None:
@@ -273,6 +278,9 @@ def _fit(
             tolerance = max(0.05, 0.0005 * spot)
             if not quote.bid - tolerance <= price <= quote.ask + tolerance:
                 return None
+            key = quote.expiration, quote.strike
+            if key in held_keys:
+                validated_held_out[key] = price
         if len(solutions) > 1 and solutions[1][0] <= best_cost * 1.15 + 0.1:
             alternative = _model(spot, solutions[1][1])
             for quote in held_out:
@@ -289,6 +297,8 @@ def _fit(
                     return None
     except (ArithmeticError, OverflowError, ValueError):
         return None
+    if held_out_prices is not None:
+        held_out_prices.update(validated_held_out)
     return model
 
 
@@ -440,7 +450,8 @@ def calculate_market_odds(
         quotes.sort(key=lambda q: q.strike)
 
     train, held_out = _sample_fit_quotes(by_expiry, price)
-    model = _fit(train, held_out, price)
+    held_out_prices: dict[tuple[str, Decimal], float] = {}
+    model = _fit(train, held_out, price, held_out_prices)
     if model is None:
         valid_keys = {(q.expiration, q.strike) for qs in by_expiry.values() for q in qs}
         return {
@@ -487,4 +498,7 @@ def calculate_market_odds(
         if any(left < right - 0.001 for (_, left), (_, right) in pairwise(published)):
             for strike, _ in published:
                 result[(expiry, strike)] = OddsEstimate(None, "nonmonotone_odds")
+    for key, vanilla in held_out_prices.items():
+        if key in result:
+            result[key] = replace(result[key], held_out_vanilla_price=vanilla)
     return result

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import math
+import time
 from collections.abc import Callable, Iterable
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -23,6 +25,7 @@ from options_api.market_calendar import (
     regular_session_open,
     session_close,
 )
+from options_api.market_curve_shadow import CurveShadowResult, calculate_curve_shadow
 from options_api.market_odds import OddsEstimate, calculate_market_odds
 from options_api.market_sources import DividendStatus, fetch_dividend_status, fetch_treasury_curve
 from options_api.models import (
@@ -43,6 +46,7 @@ _MAX_CACHED_TICKERS = 320  # All 256 watches plus recently viewed chain tickers.
 _MAX_SCHEDULED = 8
 _MAX_PENDING = 320
 _MODEL_VERSION = "regimelib-0.1.0-market-odds-v2"
+_CURVE_VERSION = "constrained-call-curve-shadow-v2"
 _REASONS = {
     "same_day": "Same-day option quote timing cannot be verified",
     "same_day_quote_timing": "Same-day option quote timing cannot be verified",
@@ -77,6 +81,8 @@ class _Snapshot:
     spot: Decimal | None = None
     stock_ask: Decimal | None = None
     valuation_time: datetime | None = None
+    underlying_quote_time: datetime | None = None
+    underlying_quote_fetched_at: datetime | None = None
     rate_as_of_session: date | None = None
     rates: dict[str, Decimal] = field(default_factory=dict)
     entry_quotes: dict[tuple[str, str, Decimal], tuple[Decimal, Decimal]] = field(
@@ -98,6 +104,15 @@ class EntryQuote:
     rate: Decimal | None
     valuation_time: datetime
     rate_as_of_session: date | None
+
+
+@dataclass(frozen=True)
+class UnderlyingQuote:
+    spot: Decimal
+    session_date: date
+    source: str
+    fetched_at: datetime
+    quote_time: datetime
 
 
 @dataclass(frozen=True)
@@ -125,18 +140,16 @@ def _underlying_time(value: str | None) -> datetime | None:
     except ValueError:
         pass
     try:
-        return datetime.strptime(value, "%b %d, %Y %I:%M %p ET").replace(
-            tzinfo=_NY
-        ).astimezone(UTC)
+        return datetime.strptime(value, "%b %d, %Y %I:%M %p ET").replace(tzinfo=_NY).astimezone(UTC)
     except ValueError:
         return None
 
 
 def _spot(
     chain: OptionChainResponse, info: StockInfoResponse, now: datetime
-) -> tuple[Decimal | None, str | None]:
+) -> tuple[Decimal | None, datetime | None, str | None]:
     if not regular_session_open(now):
-        return None, "Official completed-session close required"
+        return None, None, "Official completed-session close required"
     if chain.source == "yahoo":
         price = chain.spot
         quote_time = _underlying_time(chain.last_trade_timestamp)
@@ -150,17 +163,17 @@ def _spot(
             or (ask - bid) / ((bid + ask) / 2) > Decimal("0.02")
             or abs((chain.fetched_at - info.fetched_at).total_seconds()) > 120
         ):
-            return None, "A coherent underlying bid and ask is unavailable"
+            return None, None, "A coherent underlying bid and ask is unavailable"
         price = (bid + ask) / 2
         quote_time = _underlying_time(info.quote_timestamp)
         if not info.is_real_time:
-            return None, "Underlying quote is not marked real time"
+            return None, None, "Underlying quote is not marked real time"
     if price is None or price <= 0 or quote_time is None:
-        return None, "Underlying quote time or price is unavailable"
+        return None, None, "Underlying quote time or price is unavailable"
     age = (now - quote_time).total_seconds()
     if age < -60 or age > _REFRESH.total_seconds():
-        return None, "Underlying quote is stale"
-    return price, None
+        return None, None, "Underlying quote is stale"
+    return price, quote_time, None
 
 
 def _positive_close(bars: Iterable[HistoricalBar], session: date) -> Decimal | None:
@@ -193,16 +206,12 @@ def _quote_support(estimate: OddsEstimate, side: str) -> tuple[int | None, int |
         return None, None, None
     low, high = (1 - upper, 1 - lower) if side == "put" else (lower, upper)
     score = int(
-        (Decimal(str(1 - (upper - lower))) * 100).quantize(
-            Decimal("1"), rounding=ROUND_HALF_UP
-        )
+        (Decimal(str(1 - (upper - lower))) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     )
     return _to_tenths(low), _to_tenths(high), score
 
 
-def _entry_bid_ask(
-    row: OptionQuote, side: str, spot: Decimal
-) -> tuple[Decimal, Decimal] | None:
+def _entry_bid_ask(row: OptionQuote, side: str, spot: Decimal) -> tuple[Decimal, Decimal] | None:
     bid = row.call_bid if side == "call" else row.put_bid
     ask = row.call_ask if side == "call" else row.put_ask
     interest = row.call_open_interest if side == "call" else row.put_open_interest
@@ -239,7 +248,9 @@ class MarketWatchOdds:
         self._last_good: dict[str, _LastGood] = {}
         self._last_good_session: date | None = None
         self._cache: dict[str, _Snapshot] = {}
+        self._curve_shadow: dict[str, dict[str, object]] = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._shadow_tasks: set[asyncio.Task[None]] = set()
         self._pending: dict[str, None] = {}
         self._chain_refresh_attempts: dict[str, tuple[datetime, str, datetime]] = {}
         self._dividends: dict[str, DividendStatus] = {}
@@ -326,8 +337,11 @@ class MarketWatchOdds:
             high = row["call_bound_high_pct_tenths"]
             score = row["quote_support_score"]
             if not (
-                isinstance(low, int) and isinstance(high, int) and isinstance(score, int)
-                and 0 <= low <= high <= 1000 and 0 <= score <= 100
+                isinstance(low, int)
+                and isinstance(high, int)
+                and isinstance(score, int)
+                and 0 <= low <= high <= 1000
+                and 0 <= score <= 100
             ):
                 low = high = score = None
             self._last_good[key] = _LastGood(
@@ -353,7 +367,9 @@ class MarketWatchOdds:
                 continue
             symbol, root, _, expiry, strike = identity
             if (
-                symbol != ticker or root != ticker or expiry in snapshot.reasons
+                symbol != ticker
+                or root != ticker
+                or expiry in snapshot.reasons
                 or (expiry, strike) not in snapshot.valid_contracts
             ):
                 continue
@@ -370,11 +386,20 @@ class MarketWatchOdds:
                 and existing.fetched_at >= snapshot.fetched_at
             ):
                 continue
-            values.append((
-                key, created, _MODEL_VERSION, snapshot.session_date,
-                snapshot.fetched_at, snapshot.source, call_itm,
-                bound_low, bound_high, score,
-            ))
+            values.append(
+                (
+                    key,
+                    created,
+                    _MODEL_VERSION,
+                    snapshot.session_date,
+                    snapshot.fetched_at,
+                    snapshot.source,
+                    call_itm,
+                    bound_low,
+                    bound_high,
+                    score,
+                )
+            )
         if not values:
             return
         try:
@@ -411,12 +436,84 @@ class MarketWatchOdds:
         if snapshot.refreshed_at is None:
             snapshot.refreshed_at = _as_utc(self.clock())
         self._cache.pop(ticker, None)
+        self._curve_shadow.pop(ticker, None)
         self._cache[ticker] = snapshot
         while len(self._cache) > _MAX_CACHED_TICKERS:
             oldest = next(iter(self._cache))
             self._cache.pop(oldest)
             self._chain_refresh_attempts.pop(oldest, None)
         self._persist_current_watches(ticker, snapshot)
+
+    def curve_shadow_report(self, ticker: str) -> dict[str, object] | None:
+        """Research-only report; it never supplies published market odds."""
+        return self._curve_shadow.get(ticker)
+
+    def _record_curve_shadow(
+        self,
+        ticker: str,
+        snapshot: _Snapshot,
+        shadow: CurveShadowResult,
+        benchmark_ms: float,
+        live_refresh_ms: float,
+    ) -> None:
+        bands: dict[str, dict[str, dict[str, int]]] = {}
+        for (expiry, strike), benchmark in snapshot.odds.items():
+            if (expiry, strike) not in snapshot.valid_contracts or snapshot.spot is None:
+                continue
+            ratio = float(strike / snapshot.spot)
+            band = (
+                "near_atm"
+                if 0.95 <= ratio <= 1.05
+                else ("moderate" if 0.85 <= ratio <= 1.15 else "tail")
+            )
+            counts = bands.setdefault(expiry, {}).setdefault(
+                band, {"contracts": 0, "benchmark_available": 0, "shadow_available": 0}
+            )
+            counts["contracts"] += 1
+            counts["benchmark_available"] += int(benchmark.call_itm_probability is not None)
+            candidate = shadow.odds.get((expiry, strike))
+            counts["shadow_available"] += int(
+                candidate is not None and candidate.call_itm_probability is not None
+            )
+        report: dict[str, object] = {
+            "model_version": _CURVE_VERSION,
+            "held_out_inside": shadow.held_out_inside,
+            "held_out_count": shadow.held_out_count,
+            "shadow_held_out_predicted": shadow.shadow_held_out_predicted,
+            "benchmark_held_out_inside": shadow.benchmark_held_out_inside,
+            "benchmark_held_out_predicted": shadow.benchmark_held_out_predicted,
+            "paired_held_out_count": shadow.paired_held_out_count,
+            "paired_shadow_inside": shadow.paired_shadow_inside,
+            "paired_benchmark_inside": shadow.paired_benchmark_inside,
+            "held_out_cohort": shadow.held_out_cohort,
+            "held_out_comparison_ready": (
+                shadow.held_out_cohort == "benchmark_as_fitted"
+                and shadow.held_out_count > 0
+                and shadow.paired_held_out_count == shadow.held_out_count
+            ),
+            "elapsed_ms": shadow.elapsed_ms,
+            "benchmark_ms": benchmark_ms,
+            "live_refresh_ms": live_refresh_ms,
+            "rejection_reasons": shadow.rejection_reasons,
+            "by_expiry_moneyness": bands,
+        }
+        self._curve_shadow[ticker] = report
+        if self._data_path is not None and snapshot.source is not None:
+            with connect(self._data_path) as connection:
+                connection.execute(
+                    """INSERT INTO market_curve_shadow_runs
+                       (ticker, chain_fetched_at, source, session_date,
+                        model_version, report_json) VALUES (?, ?, ?, ?, ?, ?)
+                       ON CONFLICT DO NOTHING""",
+                    [
+                        ticker,
+                        snapshot.fetched_at,
+                        snapshot.source,
+                        snapshot.session_date,
+                        _CURVE_VERSION,
+                        json.dumps(report, sort_keys=True),
+                    ],
+                )
 
     def _valid(self, entry: _Snapshot, now: datetime) -> bool:
         if entry.error is not None:
@@ -466,9 +563,13 @@ class MarketWatchOdds:
         itm = call_itm if side == "call" else 1000 - call_itm
         bound_low, bound_high, support = _quote_support(estimate, side)
         return MarketOddsView(
-            status="available", itm_pct_tenths=itm, otm_pct_tenths=1000 - itm,
-            bound_low_pct_tenths=bound_low, bound_high_pct_tenths=bound_high,
-            quote_support_score=support, **common
+            status="available",
+            itm_pct_tenths=itm,
+            otm_pct_tenths=1000 - itm,
+            bound_low_pct_tenths=bound_low,
+            bound_high_pct_tenths=bound_high,
+            quote_support_score=support,
+            **common,
         )
 
     def lookup_last_good(
@@ -498,10 +599,7 @@ class MarketWatchOdds:
                 and estimate.reason in ("invalid_contract", "duplicate_contract")
             ):
                 return None
-        itm = (
-            saved.call_itm_pct_tenths if side == "call"
-            else 1000 - saved.call_itm_pct_tenths
-        )
+        itm = saved.call_itm_pct_tenths if side == "call" else 1000 - saved.call_itm_pct_tenths
         low, high = saved.call_bound_low_pct_tenths, saved.call_bound_high_pct_tenths
         if low is not None and high is not None and side == "put":
             low, high = 1000 - high, 1000 - low
@@ -560,6 +658,33 @@ class MarketWatchOdds:
             entry.rates.get(expiry),
             entry.valuation_time,
             entry.rate_as_of_session,
+        )
+
+    def underlying_quote(self, ticker: str) -> UnderlyingQuote | None:
+        """Validated live stock quote, regardless of option bid/ask availability."""
+        now = _as_utc(self.clock())
+        entry = self._cache.get(ticker)
+        if (
+            entry is None
+            or not regular_session_open(now)
+            or not self._valid(entry, now)
+            or entry.error is not None
+            or entry.spot is None
+            or entry.source is None
+            or entry.underlying_quote_time is None
+            or entry.underlying_quote_fetched_at is None
+            or quote_session(entry.underlying_quote_time) != entry.session_date
+        ):
+            return None
+        age = (now - entry.underlying_quote_time).total_seconds()
+        if age < -60 or age > _REFRESH.total_seconds():
+            return None
+        return UnderlyingQuote(
+            entry.spot,
+            entry.session_date,
+            entry.source,
+            entry.underlying_quote_fetched_at,
+            entry.underlying_quote_time,
         )
 
     def schedule_for_chain(
@@ -641,6 +766,35 @@ class MarketWatchOdds:
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        if self._shadow_tasks:
+            await asyncio.gather(*self._shadow_tasks, return_exceptions=True)
+
+    async def _run_curve_shadow(
+        self,
+        ticker: str,
+        snapshot: _Snapshot,
+        chain_rows: list[OptionQuote],
+        spot: Decimal,
+        rates: dict[str, Decimal],
+        allowed: set[str],
+        valuation_time: datetime,
+        benchmark_ms: float,
+        live_refresh_ms: float,
+    ) -> None:
+        try:
+            shadow = await asyncio.to_thread(
+                calculate_curve_shadow,
+                chain_rows,
+                spot,
+                lambda expiry: float(rates[expiry.isoformat()]),
+                allowed,
+                valuation_time,
+                snapshot.odds,
+            )
+            if self._cache.get(ticker) is snapshot:
+                self._record_curve_shadow(ticker, snapshot, shadow, benchmark_ms, live_refresh_ms)
+        except Exception:
+            LOG.exception("market curve shadow failed for %s", ticker)
 
     async def _completed_session_close(self, ticker: str, now: datetime) -> Decimal | None:
         session = latest_completed_session(now)
@@ -672,6 +826,7 @@ class MarketWatchOdds:
 
     async def _refresh(self, ticker: str) -> None:
         async with self._semaphore:
+            refresh_started = time.perf_counter()
             now = _as_utc(self.clock())
             try:
                 chain_result, info_result = await asyncio.gather(
@@ -703,23 +858,33 @@ class MarketWatchOdds:
                 session = quote_session(now)
                 valuation_time = now if regular_session_open(now) else session_close(session)
                 if quote_session(chain.fetched_at) != session:
-                    self._remember(ticker, _Snapshot(
-                        chain.fetched_at, session, chain.source, {}, {},
-                        "Option chain belongs to another quote session",
-                    ))
+                    self._remember(
+                        ticker,
+                        _Snapshot(
+                            chain.fetched_at,
+                            session,
+                            chain.source,
+                            {},
+                            {},
+                            "Option chain belongs to another quote session",
+                        ),
+                    )
                     return
                 if chain.truncated:
-                    self._remember(ticker, _Snapshot(
-                        chain.fetched_at,
-                        session,
-                        chain.source,
-                        {},
-                        {},
-                        "Option-chain coverage is incomplete",
-                    ))
+                    self._remember(
+                        ticker,
+                        _Snapshot(
+                            chain.fetched_at,
+                            session,
+                            chain.source,
+                            {},
+                            {},
+                            "Option-chain coverage is incomplete",
+                        ),
+                    )
                     return
                 if regular_session_open(now):
-                    spot, spot_reason = _spot(chain, info, now)
+                    spot, underlying_quote_time, spot_reason = _spot(chain, info, now)
                     stock_ask = (
                         info.ask if chain.source == "nasdaq" and spot_reason is None else None
                     )
@@ -732,10 +897,12 @@ class MarketWatchOdds:
                     else:
                         spot, spot_reason = None, "Official completed-session close is unavailable"
                     stock_ask = None
+                    underlying_quote_time = None
                 if spot_reason is not None:
-                    self._remember(ticker, _Snapshot(
-                        chain.fetched_at, session, chain.source, {}, {}, spot_reason
-                    ))
+                    self._remember(
+                        ticker,
+                        _Snapshot(chain.fetched_at, session, chain.source, {}, {}, spot_reason),
+                    )
                     return
                 curve, dividends = await asyncio.gather(
                     fetch_treasury_curve(self.client, now), self._dividend_status(ticker, now)
@@ -778,6 +945,7 @@ class MarketWatchOdds:
                         if quote is not None:
                             entry_quotes[(side, expiry, strike)] = quote
                 odds: dict[tuple[str, Decimal], OddsEstimate] = {}
+                benchmark_started = time.perf_counter()
                 if allowed and curve is not None and spot is not None:
                     odds = await asyncio.to_thread(
                         calculate_market_odds,
@@ -787,18 +955,70 @@ class MarketWatchOdds:
                         allowed,
                         valuation_time,
                     )
-                self._remember(ticker, _Snapshot(
-                    chain.fetched_at, session, chain.source, odds, reasons,
-                    spot=spot, stock_ask=stock_ask, valuation_time=valuation_time,
+                benchmark_ms = (time.perf_counter() - benchmark_started) * 1000
+                snapshot = _Snapshot(
+                    chain.fetched_at,
+                    session,
+                    chain.source,
+                    odds,
+                    reasons,
+                    spot=spot,
+                    stock_ask=stock_ask,
+                    valuation_time=valuation_time,
+                    underlying_quote_time=underlying_quote_time,
+                    underlying_quote_fetched_at=(
+                        (chain.fetched_at if chain.source == "yahoo" else info.fetched_at)
+                        if underlying_quote_time is not None
+                        else None
+                    ),
                     rate_as_of_session=curve.as_of if curve is not None else None,
-                    rates=rates, entry_quotes=entry_quotes,
+                    rates=rates,
+                    entry_quotes=entry_quotes,
                     valid_contracts=set(standard_rows),
                     invalid_contracts=set(by_contract) - set(standard_rows),
-                ))
+                )
+                self._remember(ticker, snapshot)
+                live_refresh_ms = (time.perf_counter() - refresh_started) * 1000
+                if allowed and curve is not None and len(self._shadow_tasks) < 4:
+                    # Research must not hold a live market-refresh slot.
+                    task = asyncio.create_task(
+                        self._run_curve_shadow(
+                            ticker,
+                            snapshot,
+                            chain.rows,
+                            spot,
+                            rates,
+                            allowed,
+                            valuation_time,
+                            benchmark_ms,
+                            live_refresh_ms,
+                        )
+                    )
+                    self._shadow_tasks.add(task)
+                    task.add_done_callback(self._shadow_tasks.discard)
+                elif allowed and curve is not None:
+                    try:
+                        self._record_curve_shadow(
+                            ticker,
+                            snapshot,
+                            CurveShadowResult({}, 0, 0, 0, {"shadow_queue_full": 1}),
+                            benchmark_ms,
+                            live_refresh_ms,
+                        )
+                    except Exception:
+                        LOG.exception("market curve shadow queue report failed for %s", ticker)
             except asyncio.CancelledError:
                 raise
             except Exception:
                 LOG.exception("market odds refresh failed for %s", ticker)
-                self._remember(ticker, _Snapshot(
-                    now, quote_session(now), None, {}, {}, "Market data or pricing is unavailable"
-                ))
+                self._remember(
+                    ticker,
+                    _Snapshot(
+                        now,
+                        quote_session(now),
+                        None,
+                        {},
+                        {},
+                        "Market data or pricing is unavailable",
+                    ),
+                )

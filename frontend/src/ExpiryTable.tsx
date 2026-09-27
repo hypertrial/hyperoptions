@@ -9,11 +9,11 @@ import { copyRowAccessibleName, copyRowStateKey } from "./copyRow"
 import type { Density } from "./density"
 import { integer, moneyStrike } from "./format"
 import { heatmapHue, heatmapStop, type MetricRange } from "./heatmap"
-import { oddsAvailable, oddsLabel, oddsMessage, predictiveAvailable, unavailableReasons } from "./marketOdds"
+import { oddsAvailable, oddsLabel, oddsMessage, predictiveAvailable } from "./marketOdds"
 import OddsValues from "./OddsValues"
 import type { Side } from "./types"
 import { useMediaQuery } from "./useMediaQuery"
-import type { SortState, VisibleGroup } from "./viewModel"
+import { PREDICTIVE_ODDS_SORT_ID, type SortState, type VisibleGroup } from "./viewModel"
 import WatchButton, { type WatchActionState } from "./watchlist/WatchButton"
 
 function heatProps(value: number | null | undefined, range: MetricRange | null) {
@@ -123,7 +123,12 @@ function DesktopResults({
                       {active ? (sort.dir === "asc" ? <ArrowUp aria-hidden="true" /> : <ArrowDown aria-hidden="true" />) : null}
                     </button>
                   </th>
-                  {index === 0 ? <th scope="col" title="Current market-implied odds when available; otherwise a separately labeled historical forecast for the expiry-session close">ITM / OTM odds</th> : null}
+                  {index === 0 ? <th scope="col" title="Sort by the real-world forecast's ITM probability. Market-implied odds are shown separately." aria-sort={sort.id === PREDICTIVE_ODDS_SORT_ID ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
+                    <button type="button" onClick={() => onSort(PREDICTIVE_ODDS_SORT_ID)}>
+                      Expiry odds
+                      {sort.id === PREDICTIVE_ODDS_SORT_ID ? (sort.dir === "asc" ? <ArrowUp aria-hidden="true" /> : <ArrowDown aria-hidden="true" />) : null}
+                    </button>
+                  </th> : null}
                 </Fragment>
               )
             })}
@@ -148,8 +153,11 @@ function DesktopResults({
                     </HeatCell>
                     {index === 0 ? <td className="odds-cell">
                       <OddsValues odds={row.market_odds} predictiveOdds={row.predictive_odds} compact />
+                      {!predictiveAvailable(row.predictive_odds) && row.predictive_odds?.status !== "pending" ? (
+                        <details className="odds-reason"><summary>Why real-world forecast unavailable?</summary><p>{row.predictive_odds?.reason || "No validated forecast is available for this contract."}</p></details>
+                      ) : null}
                       {!oddsAvailable(row.market_odds) && row.market_odds?.status !== "pending" ? (
-                        <details className="odds-reason"><summary>{predictiveAvailable(row.predictive_odds) ? "Why market odds unavailable?" : "Why unavailable?"}</summary><p>{predictiveAvailable(row.predictive_odds) ? oddsMessage(row.market_odds) : unavailableReasons(row.market_odds, row.predictive_odds)}</p></details>
+                        <details className="odds-reason"><summary>Why market odds unavailable?</summary><p>{oddsMessage(row.market_odds)}</p></details>
                       ) : null}
                     </td> : null}
                   </Fragment>
@@ -203,16 +211,18 @@ function MobileResults({
   const priority = mobilePriorityColumns(columns, side)
   const remaining = columns.filter((column) => !priority.some((item) => item.id === column.id))
   const activeSort = columns.find((column) => column.id === sort.id) ?? columns[0]
+  const sortId = sort.id === PREDICTIVE_ODDS_SORT_ID ? sort.id : activeSort.id
   return (
     <div className="mobile-results">
       <div className="mobile-sort-row">
         <label>
           <span>Sort by</span>
-          <select value={activeSort.id} onChange={(event) => onSort(event.target.value)}>
+          <select value={sortId} onChange={(event) => onSort(event.target.value)}>
+            <option value={PREDICTIVE_ODDS_SORT_ID}>Real-world ITM odds</option>
             {columns.map((column) => <option key={column.id} value={column.id}>{column.label}</option>)}
           </select>
         </label>
-        <Button type="button" variant="outline" aria-label={`Sort ${sort.dir === "asc" ? "descending" : "ascending"}`} onClick={() => onSort(activeSort.id)}>
+        <Button type="button" variant="outline" aria-label={`Sort ${sort.dir === "asc" ? "descending" : "ascending"}`} onClick={() => onSort(sortId)}>
           {sort.dir === "asc" ? <ArrowUp aria-hidden="true" /> : <ArrowDown aria-hidden="true" />}
           {sort.dir === "asc" ? "Ascending" : "Descending"}
         </Button>
@@ -242,7 +252,8 @@ function MobileResults({
                 <ChevronRight className="row-chevron" aria-hidden="true" />
               </CollapsibleTrigger>
               <CollapsibleContent className="mobile-row-details">
-                {!oddsAvailable(odds) && odds?.status !== "pending" ? <p className="mobile-odds-reason"><strong>{predictiveAvailable(predictive) ? "Why market odds are unavailable:" : "Why odds are unavailable:"}</strong> {predictiveAvailable(predictive) ? oddsMessage(odds) : unavailableReasons(odds, predictive)}</p> : null}
+                {!predictiveAvailable(predictive) && predictive?.status !== "pending" ? <p className="mobile-odds-reason"><strong>Real-world forecast unavailable:</strong> {predictive?.reason || "No validated forecast is available for this contract."}</p> : null}
+                {!oddsAvailable(odds) && odds?.status !== "pending" ? <p className="mobile-odds-reason"><strong>Market odds unavailable:</strong> {oddsMessage(odds)}</p> : null}
                 {remaining.length > 0 ? (
                   <dl>
                     {remaining.map((column) => (

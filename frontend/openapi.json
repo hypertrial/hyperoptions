@@ -1701,6 +1701,21 @@
             ],
             "title": "Quote Session"
           },
+          "forecast_price_basis": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "completed_close",
+                  "intraday_quote"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast Price Basis"
+          },
           "expected_pnl_cents": {
             "anyOf": [
               {
@@ -2223,11 +2238,104 @@
               }
             ],
             "title": "Data Hash"
+          },
+          "price_basis": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "completed_close",
+                  "validated_underlying_quote"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Basis"
+          },
+          "price_as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price As Of"
+          },
+          "validation_evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PredictiveValidationEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
         "title": "PredictiveOddsView",
         "description": "Physical expiry-close forecast, distinct from risk-neutral option odds."
+      },
+      "PredictiveValidationEvidence": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "const": "prospective_as_issued",
+            "title": "Source"
+          },
+          "model_version": {
+            "type": "string",
+            "title": "Model Version"
+          },
+          "horizon_band": {
+            "type": "string",
+            "title": "Horizon Band"
+          },
+          "moneyness_band": {
+            "type": "string",
+            "title": "Moneyness Band"
+          },
+          "independent_units": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Independent Units"
+          },
+          "predicted_itm_pct_tenths": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Predicted Itm Pct Tenths"
+          },
+          "observed_itm_pct_tenths": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Observed Itm Pct Tenths"
+          },
+          "through_session": {
+            "type": "string",
+            "format": "date",
+            "title": "Through Session"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "model_version",
+          "horizon_band",
+          "moneyness_band",
+          "independent_units",
+          "predicted_itm_pct_tenths",
+          "observed_itm_pct_tenths",
+          "through_session"
+        ],
+        "title": "PredictiveValidationEvidence",
+        "description": "Comparable calibration from independent, prospective as-issued forecasts."
       },
       "TickerListing": {
         "properties": {

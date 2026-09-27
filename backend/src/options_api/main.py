@@ -5,10 +5,11 @@ import contextlib
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Annotated
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query, Request
@@ -20,7 +21,9 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from options_api.cache import TickerCache
 from options_api.chain import load_cash_secured_puts, load_covered_calls
 from options_api.greeks import empty_greeks
+from options_api.intraday_capture import capture_intraday_window
 from options_api.live_quant import quant_for_contract
+from options_api.market_calendar import first_session_after_completed
 from options_api.market_watch import MarketWatchOdds
 from options_api.models import (
     CashSecuredPutPage,
@@ -35,12 +38,16 @@ from options_api.models import (
 )
 from options_api.nasdaq import NasdaqError, create_http_client
 from options_api.outcomes import CloseProvider
+from options_api.physical_shadow_capture import PhysicalShadowCapture
 from options_api.predictive_watch import PredictiveWatchOdds
+from options_api.prospective_panel import ProspectivePanel
 from options_api.service import OptionChainService
 from options_api.universe import TickerUniverse
 from options_api.watchlist import WatchlistService, router as watchlist_router
 from stocksweeper.config import Settings, load_settings
+from stocksweeper.forecast.labels import collect_matured_labels
 from stocksweeper.forecast.predictive import PredictiveForecaster
+from stocksweeper.forecast.promotion import PromotionRegistry
 from stocksweeper.pipeline.jobs import JobManager
 from stocksweeper.storage.db import single_instance
 
@@ -49,6 +56,8 @@ ALLOWED_ORIGINS = {ALLOWED_ORIGIN, "http://127.0.0.1:5173"}
 ALLOWED_HOSTS = {"localhost", "127.0.0.1", "::1"}
 MAX_WRITE_BODY = 16 * 1024
 LOG = logging.getLogger(__name__)
+_NY = ZoneInfo("America/New_York")
+_INTRADAY_WINDOWS = {"10:00": time(10), "13:00": time(13), "15:30": time(15, 30)}
 
 
 def _allowed_host(value: str) -> bool:
@@ -242,6 +251,7 @@ async def _load_page(
             )
             predictive.schedule([normalized])
         side = "call" if isinstance(page, CoveredCallPage) else "put"
+        issuances = []
         # A dated Treasury curve varies by expiry; the old page-wide default
         # rate cannot describe the live per-contract Greek calculations.
         page.risk_free_rate_pct_tenths = None
@@ -272,6 +282,8 @@ async def _load_page(
                         displayed_chain_fetched_at=page.chain_fetched_at,
                         displayed_chain_source=page.chain_source,
                     )
+                    if result.issuance is not None:
+                        issuances.append(result.issuance)
                     contract.market_odds = (
                         result.market
                         if market_snapshot_matches
@@ -291,6 +303,28 @@ async def _load_page(
                 contract.vega_e4 = greeks.vega_e4
                 contract.rho_e4 = greeks.rho_e4
                 contract.greeks_source = greeks.source
+        if issuances:
+            try:
+                await asyncio.to_thread(predictive.ledger.record_batch, issuances)
+            except Exception:
+                LOG.exception("forecast issuance ledger unavailable for %s", normalized)
+                for expiration in page.expirations:
+                    for contract in expiration.contracts:
+                        if contract.predictive_odds.status == "available":
+                            contract.predictive_odds = contract.predictive_odds.model_copy(
+                                update={
+                                    "status": "unavailable",
+                                    "reason": "Forecast evidence unavailable",
+                                    "itm_pct_tenths": None,
+                                    "otm_pct_tenths": None,
+                                    "atm_pct_tenths": None,
+                                }
+                            )
+                            contract.hypothetical_risk = HypotheticalRiskView(
+                                reason="Forecast evidence unavailable"
+                            )
+            else:
+                request.app.state.physical_shadow.submit(issuances)
         return page
     except NasdaqError as exc:
         raise _http_nasdaq_error(exc) from exc
@@ -349,6 +383,8 @@ def create_app(
                 predictive_forecaster,
                 refresh_enabled=predictive_refresh,
             )
+            app.state.promotion_registry = PromotionRegistry(settings.resolved_data_dir())
+            app.state.physical_shadow = PhysicalShadowCapture(app.state.predictive_odds)
             app.state.market_odds = MarketWatchOdds(
                 app.state.service,
                 client,
@@ -358,6 +394,13 @@ def create_app(
                     (record.watch_key, record.created_at)
                     for record in app.state.watchlist.store.list()
                 ),
+            )
+            app.state.prospective_panel = ProspectivePanel(
+                settings.resolved_data_dir(),
+                app.state.service,
+                app.state.market_odds,
+                app.state.predictive_odds,
+                app.state.physical_shadow,
             )
             app.state.prefetch_universe = prefetch_universe
             prefetch: asyncio.Task[bool] | None = None
@@ -377,12 +420,113 @@ def create_app(
                         first = False
                     except Exception:
                         LOG.exception("outcome refresh scheduler failed")
+                    try:
+                        await collect_matured_labels(
+                            app.state.predictive_odds.ledger,
+                            app.state.service,
+                            as_of=_page_now(app),
+                        )
+                    except Exception:
+                        LOG.exception("forecast label collector failed")
+                    app.state.predictive_odds.schedule_calibration()
+                    try:
+                        await asyncio.to_thread(
+                            app.state.promotion_registry.post_release_check,
+                            app.state.predictive_odds.ledger,
+                            as_of=datetime.now(UTC),
+                        )
+                    except Exception:
+                        LOG.exception("forecast quality rollback check failed")
                     await asyncio.sleep(300)
 
+            async def capture_intraday() -> None:
+                prepared: set[tuple[date, str]] = set()
+                captured: set[tuple[date, str]] = set()
+                while True:
+                    now = datetime.now(UTC)
+                    day = now.astimezone(_NY).date()
+                    prepared = {key for key in prepared if key[0] == day}
+                    captured = {key for key in captured if key[0] == day}
+                    for window, local_time in _INTRADAY_WINDOWS.items():
+                        target = datetime.combine(day, local_time, _NY).astimezone(UTC)
+                        key = (day, window)
+                        if target - timedelta(minutes=2) <= now < target and key not in prepared:
+                            try:
+                                watched = await asyncio.to_thread(app.state.watchlist.store.list)
+                                symbols = {
+                                    item.ticker
+                                    for item in watched
+                                    if item.created_at <= target and item.expiration >= day
+                                }
+                                app.state.market_odds.schedule(symbols)
+                                app.state.predictive_odds.schedule(symbols)
+                                prepared.add(key)
+                            except Exception:
+                                LOG.exception("intraday snapshot preparation failed")
+                        if not target + timedelta(minutes=1) <= now < target + timedelta(minutes=5):
+                            continue
+                        if key in captured:
+                            continue
+                        try:
+                            watched = await asyncio.to_thread(app.state.watchlist.store.list)
+                            issuances = []
+                            for item in watched:
+                                if item.created_at > target or item.expiration < day:
+                                    continue
+                                result = quant_for_contract(
+                                    app.state.market_odds,
+                                    app.state.predictive_odds,
+                                    ticker=item.ticker,
+                                    root=item.root,
+                                    side=item.side,
+                                    expiry=item.expiration,
+                                    strike=item.strike,
+                                    contract_since=first_session_after_completed(item.created_at),
+                                    watched=True,
+                                    terms_note=item.terms_note,
+                                )
+                                if result.issuance is not None:
+                                    issuances.append(result.issuance)
+                            if issuances:
+                                await asyncio.to_thread(
+                                    app.state.predictive_odds.ledger.record_batch, issuances
+                                )
+                                await asyncio.to_thread(
+                                    capture_intraday_window,
+                                    app.state.predictive_odds.ledger,
+                                    app.state.predictive_odds.forecaster,
+                                    app.state.market_odds,
+                                    issuances,
+                                    now=now,
+                                    window=window,
+                                )
+                            captured.add(key)
+                        except Exception:
+                            LOG.exception("intraday snapshot capture failed for %s", window)
+                    await asyncio.sleep(30)
+
+            async def capture_panel() -> None:
+                while True:
+                    try:
+                        await app.state.prospective_panel.tick()
+                    except Exception:
+                        LOG.exception("prospective forecast panel failed")
+                    await asyncio.sleep(30)
+
             watch_poll = asyncio.create_task(refresh_outcomes()) if prefetch_universe else None
+            intraday_poll = asyncio.create_task(capture_intraday()) if prefetch_universe else None
+            panel_poll = asyncio.create_task(capture_panel()) if prefetch_universe else None
             try:
                 yield
             finally:
+                if panel_poll is not None:
+                    panel_poll.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await panel_poll
+                if intraday_poll is not None:
+                    intraday_poll.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await intraday_poll
                 if watch_poll is not None:
                     watch_poll.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
@@ -390,6 +534,7 @@ def create_app(
                 if prefetch is not None and not prefetch.done():
                     prefetch.cancel()
                 await app.state.market_odds.close()
+                await app.state.physical_shadow.close()
                 await app.state.predictive_odds.close()
                 app.state.jobs.stop_accepting()
                 drained = await asyncio.to_thread(app.state.jobs.wait, 2.0)

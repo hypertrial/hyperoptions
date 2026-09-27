@@ -164,7 +164,7 @@ export default function Watchlist({ chainUrl = "/" }: { chainUrl?: string }) {
           <p className="eyebrow">Selected option contracts</p>
           <h1>Watchlist</h1>
           <p>Watches are for tracking contracts, not trades or positions. No holdings or premiums are tracked.</p>
-          <p>Choose contracts from the <Link to={chainUrl}>option chain</Link>. Current option quotes provide market-implied odds when reliable; otherwise a separately labeled historical stock-close forecast may be shown. Estimates and hypothetical risk use dated public data.</p>
+          <p>Track contracts from the <Link to={chainUrl}>option chain</Link>. Real-world expiry-close forecasts come first; separate market-implied odds are risk-neutral. All estimates use dated public data.</p>
         </div>
         <Button type="button" variant="outline" disabled={refreshing || jobBusy} onClick={() => { void refresh() }}>
           {refreshing ? "Starting…" : jobBusy ? "Check running" : "Check expiry results"}

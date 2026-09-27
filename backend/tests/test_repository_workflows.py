@@ -62,9 +62,9 @@ def test_dev_repairs_an_existing_incomplete_node_modules(tmp_path: Path) -> None
 
     calls = log.read_text().splitlines()
     install = f"{tmp_path / 'frontend'}|npm install"
-    backend_sync = f"{tmp_path / 'backend'}|uv sync --group dev"
+    backend_sync = f"{tmp_path / 'backend'}|uv sync --group dev --group research"
     backend_start = (
-        f"{tmp_path / 'backend'}|uv run uvicorn options_api.main:app "
+        f"{tmp_path / 'backend'}|uv run --group research uvicorn options_api.main:app "
         "--reload --no-access-log --host 127.0.0.1 --port 8000"
     )
     assert backend_sync in calls
@@ -308,7 +308,7 @@ def test_readme_test_block_runs_from_repository_root(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert log.read_text().splitlines() == [
-        "uv run pytest -q",
+        "uv run --group research pytest -q",
         "npm test",
         "npx --no-install playwright install chromium",
         "npx --no-install playwright test",
@@ -394,7 +394,7 @@ def test_verify_runs_backend_lint() -> None:
     verify = (ROOT / "scripts" / "verify").read_text()
     fast = (ROOT / "scripts" / "verify-fast").read_text()
 
-    assert "uv run ruff check ." in verify
+    assert "uv run --group research ruff check ." in verify
     assert "ruff check" not in fast
 
 

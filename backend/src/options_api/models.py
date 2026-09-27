@@ -121,6 +121,19 @@ class MarketOddsView(BaseModel):
     quote_support_score: int | None = None
 
 
+class PredictiveValidationEvidence(BaseModel):
+    """Comparable calibration from independent, prospective as-issued forecasts."""
+
+    source: Literal["prospective_as_issued"]
+    model_version: str
+    horizon_band: str
+    moneyness_band: str
+    independent_units: int = Field(ge=1)
+    predicted_itm_pct_tenths: int = Field(ge=0, le=1000)
+    observed_itm_pct_tenths: int = Field(ge=0, le=1000)
+    through_session: date
+
+
 class PredictiveOddsView(BaseModel):
     """Physical expiry-close forecast, distinct from risk-neutral option odds."""
 
@@ -135,6 +148,9 @@ class PredictiveOddsView(BaseModel):
     model_version: str | None = None
     support: int | None = None
     data_hash: str | None = None
+    price_basis: Literal["completed_close", "validated_underlying_quote"] | None = None
+    price_as_of: datetime | None = None
+    validation_evidence: PredictiveValidationEvidence | None = None
 
 
 class HypotheticalRiskView(BaseModel):
@@ -146,6 +162,7 @@ class HypotheticalRiskView(BaseModel):
     assumed_bid_cents: int | None = None
     quote_source: MarketSource | None = None
     quote_session: date | None = None
+    forecast_price_basis: Literal["completed_close", "intraday_quote"] | None = None
     expected_pnl_cents: int | None = None
     expected_return_pct_tenths: int | None = None
     loss_pct_tenths: int | None = None

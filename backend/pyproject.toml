@@ -14,6 +14,7 @@ dependencies = [
     "pyarrow>=18",
     "pydantic>=2.13",
     "regimelib==0.1.0",
+    "scipy>=1.18,<2",
     "uvicorn[standard]>=0.32",
     "yfinance>=1.7",
 ]
@@ -25,6 +26,9 @@ dev = [
     # starlette.testclient imports httpx2 dynamically; filterwarnings turns its absence into collection errors.
     "httpx2>=2.9",
     "ruff>=0.15",
+]
+research = [
+    "arch>=8,<9",
 ]
 
 [tool.ruff]

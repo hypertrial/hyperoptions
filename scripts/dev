@@ -115,7 +115,7 @@ if port_in_use "$FRONTEND_PORT"; then
 fi
 
 printf 'syncing backend deps...\n'
-(cd "$ROOT/backend" && uv sync --group dev)
+(cd "$ROOT/backend" && uv sync --group dev --group research)
 
 printf 'installing frontend deps...\n'
 (cd "$ROOT/frontend" && npm install)
@@ -124,7 +124,7 @@ printf 'starting backend on 127.0.0.1:%s\n' "$BACKEND_PORT"
 (
   cd "$ROOT/backend"
   exec python3 -c 'import os, sys; os.setpgrp(); os.execvp(sys.argv[1], sys.argv[1:])' \
-    uv run uvicorn options_api.main:app --reload --no-access-log --host 127.0.0.1 --port "$BACKEND_PORT"
+    uv run --group research uvicorn options_api.main:app --reload --no-access-log --host 127.0.0.1 --port "$BACKEND_PORT"
 ) &
 BACKEND_PID=$!
 while ! /bin/kill -0 -- "-$BACKEND_PID" 2>/dev/null; do

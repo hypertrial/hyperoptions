@@ -72,6 +72,9 @@ def test_chain_serializes_predictive_fallback_and_coherent_payoff(
         monkeypatch.setattr(app.state.market_odds, "entry_quote", lambda *_identity: quote)
         monkeypatch.setattr(app.state.predictive_odds, "schedule", lambda _tickers: None)
         monkeypatch.setattr(
+            app.state.predictive_odds, "cache_retrieved_at", lambda *_args: now
+        )
+        monkeypatch.setattr(
             app.state.predictive_odds,
             "lookup",
             lambda *_args, **_kwargs: (
@@ -81,11 +84,19 @@ def test_chain_serializes_predictive_fallback_and_coherent_payoff(
                     as_of_session=distribution.as_of,
                     expiry_session=distribution.expiry_session,
                     model_version="test-v1", support=3, data_hash="abc123",
+                    price_basis="completed_close",
                 ),
                 distribution,
             ),
         )
         response = client.get("/api/covered-calls/IREN?moneyness=all")
+        page = assemble_covered_calls(chain, info, history, today, now, "all")
+
+        def failed_evidence(_entries):
+            raise OSError("evidence disk unavailable")
+
+        monkeypatch.setattr(app.state.predictive_odds.ledger, "record_batch", failed_evidence)
+        degraded = client.get("/api/covered-calls/IREN?moneyness=all")
 
     assert response.status_code == 200
     body = response.json()
@@ -103,3 +114,14 @@ def test_chain_serializes_predictive_fallback_and_coherent_payoff(
     assert row["hypothetical_risk"]["assumed_bid_cents"] == int(quoted.call_bid * 100)
     assert row["hypothetical_risk"]["quote_session"] == today.isoformat()
     assert body["chain_fetched_at"] == now.isoformat().replace("+00:00", "Z")
+    assert degraded.status_code == 200
+    degraded_row = next(
+        contract
+        for group in degraded.json()["expirations"]
+        for contract in group["contracts"]
+        if contract["watch_key"] is not None
+    )
+    assert degraded_row["market_odds"]["status"] == "unavailable"
+    assert degraded_row["predictive_odds"]["status"] == "unavailable"
+    assert degraded_row["predictive_odds"]["reason"] == "Forecast evidence unavailable"
+    assert degraded_row["hypothetical_risk"]["status"] == "unavailable"

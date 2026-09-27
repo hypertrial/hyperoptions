@@ -9,9 +9,10 @@ from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
 from collections import Counter, OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+import logging
 from math import exp, isfinite, log, sqrt
 from pathlib import Path
 from statistics import NormalDist
@@ -29,6 +30,7 @@ from stocksweeper.forecast.market import (
     clean_completed,
     price_hash,
 )
+from stocksweeper.forecast.promotion import PromotionRegistry
 
 Side = Literal["call", "put"]
 _NORMAL = NormalDist()
@@ -41,6 +43,7 @@ _SCORE_GRID = (-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5)
 _BASELINE_QUANTILES = tuple(_NORMAL.inv_cdf((i + 0.5) / 1024) for i in range(1024))
 BASELINE_VERSION = "lognormal-ewma60-v1"
 EMPIRICAL_VERSION = "empirical-ewma60-rolling-v1"
+LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -86,7 +89,12 @@ class PredictiveDistribution:
     ticker: str
     status: Literal["available", "unavailable"]
     reason: str | None
-    method: Literal["lognormal_ewma", "empirical_scaled"] | None
+    method: (
+        Literal[
+            "lognormal_ewma", "empirical_scaled", "student_t_ewma", "gjr_garch_t", "intraday_shadow"
+        ]
+        | None
+    )
     as_of: date
     expiry_session: date
     horizon_sessions: int
@@ -141,8 +149,7 @@ class PredictiveDistribution:
             ]
         else:
             values = [
-                premium_value - max(strike_value - price, 0.0)
-                for price in self.terminal_prices
+                premium_value - max(strike_value - price, 0.0) for price in self.terminal_prices
             ]
         pairs = sorted(zip(values, self.weights, strict=True))
         cumulative = 0.0
@@ -233,12 +240,18 @@ def _validation_records(
             records.extend(
                 (
                     _ValidationRecord(
-                        threshold, "call", outcome > threshold,
-                        _NORMAL.cdf(-threshold), call_empirical,
+                        threshold,
+                        "call",
+                        outcome > threshold,
+                        _NORMAL.cdf(-threshold),
+                        call_empirical,
                     ),
                     _ValidationRecord(
-                        threshold, "put", outcome < threshold,
-                        _NORMAL.cdf(threshold), put_empirical,
+                        threshold,
+                        "put",
+                        outcome < threshold,
+                        _NORMAL.cdf(threshold),
+                        put_empirical,
                     ),
                 )
             )
@@ -291,8 +304,12 @@ def _empirical_evidence(
 
 
 def _samples(
-    bars: pl.DataFrame, as_of: date, horizon: int, calendar: SessionCalendar,
-    *, lookback_days: int = 1096,
+    bars: pl.DataFrame,
+    as_of: date,
+    horizon: int,
+    calendar: SessionCalendar,
+    *,
+    lookback_days: int = 1096,
 ) -> list[tuple[int, int, float]]:
     """Matured, volatility-scaled returns from the requested bounded window."""
     sessions = calendar.sessions(bars["ts"][0], as_of)
@@ -312,9 +329,7 @@ def _samples(
         maturity = origin + horizon
         if volatility is None or not isfinite(closes[maturity]):
             continue
-        standardized = log(closes[maturity] / closes[origin]) / (
-            volatility * sqrt(horizon)
-        )
+        standardized = log(closes[maturity] / closes[origin]) / (volatility * sqrt(horizon))
         if isfinite(standardized):
             result.append((origin, maturity, standardized))
     return result
@@ -391,10 +406,7 @@ def _prior_samples(
     matured: list[tuple[int, int, float]], sessions: tuple[date, ...], origin: int
 ) -> list[tuple[int, int, float]]:
     lower = sessions[origin] - timedelta(days=1096)
-    return [
-        sample for sample in matured
-        if sessions[sample[0]] >= lower and sample[1] < origin
-    ]
+    return [sample for sample in matured if sessions[sample[0]] >= lower and sample[1] < origin]
 
 
 def evaluate_predictive_history(
@@ -449,9 +461,9 @@ def evaluate_predictive_history(
                 if evidence.rejection_reason is not None:
                     selection_reasons[evidence.rejection_reason] += 1
                 outcome = (
-                    log(closes[origin + horizon] / closes[origin]) /
-                    (volatility * sqrt(horizon))
-                    if isfinite(closes[origin + horizon]) else None
+                    log(closes[origin + horizon] / closes[origin]) / (volatility * sqrt(horizon))
+                    if isfinite(closes[origin + horizon])
+                    else None
                 )
                 empirical_values = list(empirical) if empirical is not None else None
             for threshold in _SCORE_GRID:
@@ -475,33 +487,40 @@ def evaluate_predictive_history(
                             probability = bisect_left(empirical_values, threshold) / len(
                                 empirical_values
                             )
-                        bucket["records"].append(_IssuedRecord(
-                            threshold, side,
-                            outcome > threshold if side == "call" else outcome < threshold,
-                            probability, baseline, method,
-                        ))
+                        bucket["records"].append(
+                            _IssuedRecord(
+                                threshold,
+                                side,
+                                outcome > threshold if side == "call" else outcome < threshold,
+                                probability,
+                                baseline,
+                                method,
+                            )
+                        )
         all_records = buckets["all"]["records"]
         empirical_records = [
             record for record in all_records if record.method == "empirical_scaled"
         ]
-        horizons.append({
-            "horizon_sessions": horizon,
-            "forecast_coverage": _coverage_summary(buckets["all"]),
-            "by_moneyness": {
-                name: {
-                    **_coverage_summary(buckets[name]),
-                    "model_scores": _score_summary(buckets[name]["records"]),
-                }
-                for name in ("near_atm", "moderate", "tail")
-            },
-            "model_scores": _score_summary(all_records),
-            "baseline_comparator": _score_summary(all_records, baseline=True),
-            "empirical_selected_origin_scores": _score_summary(empirical_records),
-            "baseline_on_empirical_origins": _score_summary(empirical_records, baseline=True),
-            "calibration": _calibration(all_records),
-            "method_origins": dict(sorted(method_origins.items())),
-            "selection_rejection_reasons": dict(sorted(selection_reasons.items())),
-        })
+        horizons.append(
+            {
+                "horizon_sessions": horizon,
+                "forecast_coverage": _coverage_summary(buckets["all"]),
+                "by_moneyness": {
+                    name: {
+                        **_coverage_summary(buckets[name]),
+                        "model_scores": _score_summary(buckets[name]["records"]),
+                    }
+                    for name in ("near_atm", "moderate", "tail")
+                },
+                "model_scores": _score_summary(all_records),
+                "baseline_comparator": _score_summary(all_records, baseline=True),
+                "empirical_selected_origin_scores": _score_summary(empirical_records),
+                "baseline_on_empirical_origins": _score_summary(empirical_records, baseline=True),
+                "calibration": _calibration(all_records),
+                "method_origins": dict(sorted(method_origins.items())),
+                "selection_rejection_reasons": dict(sorted(selection_reasons.items())),
+            }
+        )
     return {
         "ticker_data_hash": price_hash(clean),
         "as_of": as_of.isoformat(),
@@ -526,13 +545,18 @@ class PredictiveForecaster:
         data_dir: Path,
         provider: ForecastProvider | None = None,
         calendar: SessionCalendar | None = None,
+        *,
+        enable_promotions: bool = True,
     ) -> None:
+        self.data_dir = data_dir
         self.calendar = calendar or SessionCalendar()
         self.prices = ForecastPriceStore(data_dir, provider or YahooForecastProvider())
+        self._enable_promotions = enable_promotions
+        self._promotions = PromotionRegistry(data_dir) if enable_promotions else None
+        self._shadow = None
+        self._promoted_ready: set[tuple[str, date, str]] = set()
         self._prepared: dict[tuple[str, date], pl.DataFrame] = {}
-        self._inputs: dict[
-            tuple[str, date], tuple[pl.DataFrame, float, float, str] | str
-        ] = {}
+        self._inputs: dict[tuple[str, date], tuple[pl.DataFrame, float, float, str] | str] = {}
         self._candidates: dict[
             tuple[str, date, int], tuple[SelectionEvidence, tuple[float, ...] | None]
         ] = {}
@@ -543,6 +567,23 @@ class PredictiveForecaster:
             for key in tuple(cache):
                 if key[0] == ticker:
                     del cache[key]
+        self._promoted_ready = {key for key in self._promoted_ready if key[0] != ticker}
+
+    def _shadow_forecaster(self):
+        from stocksweeper.forecast.physical_contest import PhysicalShadowForecaster
+
+        if self._shadow is None:
+            # The shadow calls forecast(); its base remains frozen to avoid recursion.
+            base = PredictiveForecaster(
+                self.data_dir, self.prices.provider, self.calendar, enable_promotions=False
+            )
+            base.prices = self.prices
+            self._shadow = PhysicalShadowForecaster(base)
+        return self._shadow
+
+    def champion_method(self, horizon: int) -> str | None:
+        """None means the frozen selection remains in effect for this band."""
+        return self._promotions.method(horizon) if self._promotions is not None else None
 
     def _touch_cache(self, ticker: str, completed: date) -> None:
         previous = self._ticker_sessions.pop(ticker, None)
@@ -570,6 +611,21 @@ class PredictiveForecaster:
         for key in list(self._candidates):
             if key[:2] == (ticker, completed):
                 del self._candidates[key]
+        if self._promotions is not None and any(
+            self._promotions.method(horizon) not in (None, "lognormal_ewma")
+            for horizon in (1, 2, 6)
+        ):
+            # This runs in the existing background refresh, never in an HTTP lookup.
+            try:
+                clean = clean_completed(verified, completed, self.calendar)
+                if clean.is_empty() or clean["ts"][-1] != completed:
+                    return
+                digest = price_hash(clean)
+                self._shadow_forecaster()._fit(ticker, completed, clean, digest)
+                self._promoted_ready.add((ticker, completed, digest))
+            except Exception:
+                # Forecast lookup uses EWMA until a later successful preparation.
+                LOG.warning("champion preparation failed for %s", ticker, exc_info=True)
 
     def forecast(
         self,
@@ -686,7 +742,7 @@ class PredictiveForecaster:
             if not all(isfinite(price) and price > 0 for price in terminal):
                 return unavailable("volatility_unusable")
             weights = (1.0 / len(terminal),) * len(terminal)
-            return PredictiveDistribution(
+            result = PredictiveDistribution(
                 ticker=ticker,
                 status="available",
                 reason=None,
@@ -703,5 +759,62 @@ class PredictiveForecaster:
                 weights=weights,
                 selection=evidence,
             )
+            return self._select_promoted(result)
         except (OSError, ValueError, OverflowError, pl.exceptions.PolarsError):
             return unavailable("market_data_invalid")
+
+    def _select_promoted(
+        self,
+        frozen: PredictiveDistribution,
+    ) -> PredictiveDistribution:
+        if self._promotions is None:
+            return frozen
+        choice = self.champion_method(frozen.horizon_sessions)
+        if choice is None:
+            return frozen
+        assert frozen.spot is not None and frozen.daily_volatility is not None
+        baseline_prices = tuple(
+            frozen.spot * exp(frozen.daily_volatility * sqrt(frozen.horizon_sessions) * z)
+            for z in _BASELINE_QUANTILES
+        )
+        baseline = replace(
+            frozen,
+            method="lognormal_ewma",
+            model_version=BASELINE_VERSION,
+            support=_EWMA_LOOKBACK,
+            terminal_prices=baseline_prices,
+            weights=(1 / len(baseline_prices),) * len(baseline_prices),
+            selection=SelectionEvidence(rejection_reason="band_baseline"),
+        )
+        if choice == "lognormal_ewma":
+            return baseline
+        from stocksweeper.forecast.promotion import _version
+
+        fit_key = (frozen.ticker, frozen.as_of, frozen.data_hash)
+        if (
+            fit_key not in self._promoted_ready
+            or self._shadow is None
+            or fit_key not in self._shadow._fits
+        ):
+            return replace(
+                baseline,
+                selection=SelectionEvidence(rejection_reason="band_champion_not_prepared"),
+            )
+        try:
+            inputs = self._inputs.get((frozen.ticker, frozen.as_of))
+            clean = inputs[0] if isinstance(inputs, tuple) else None
+            candidate = self._shadow.cached_candidate(frozen, choice, clean=clean).distribution
+        except Exception:
+            LOG.warning("champion lookup failed for %s", frozen.ticker, exc_info=True)
+            candidate = None
+        if (
+            candidate is None
+            or candidate.status != "available"
+            or candidate.data_hash != frozen.data_hash
+            or candidate.model_version != _version(choice)
+        ):
+            return replace(
+                baseline,
+                selection=SelectionEvidence(rejection_reason="band_champion_unavailable"),
+            )
+        return replace(candidate, selection=SelectionEvidence())

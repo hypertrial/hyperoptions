@@ -1,26 +1,25 @@
 import { Button } from "@/components/ui/button"
 import { dateTime, moneyCents, percentTenths, unsignedPercentTenths } from "../format"
-import { oddsAvailable, oddsProvenance, predictiveProvenance, preferredOddsKind, quoteSupportLabel } from "../marketOdds"
+import { oddsAvailable, oddsProvenance, predictiveProvenance, quoteSupportLabel } from "../marketOdds"
 import OddsValues from "../OddsValues"
 import type { WatchItem, WatchOutcome } from "./types"
 
 function OddsSection({ item }: { item: WatchItem }) {
-  const kind = preferredOddsKind(item.market_odds, item.predictive_odds)
-  const provenance = kind === "market" ? oddsProvenance(item.market_odds) : predictiveProvenance(item.predictive_odds)
+  const predictiveSource = predictiveProvenance(item.predictive_odds)
+  const marketSource = oddsProvenance(item.market_odds)
   const prior = item.last_available_market_odds
   return (
     <section className="watch-card-section" aria-label="Odds estimates">
       <h3>Expiry-close odds</h3>
-      <p className="watch-muted">{kind === "predictive" ? "Historical stock-close forecast for the expiry trading session. It is distinct from risk-neutral option-implied odds." : kind === "market" ? "Risk-neutral estimate from option quotes for the regular-session close on expiry." : "No validated current estimate is available; see the reasons below."}</p>
       <p className="watch-odds"><OddsValues odds={item.market_odds} predictiveOdds={item.predictive_odds} /></p>
-      {provenance ? <p className="watch-provenance">{provenance}</p> : null}
-      {kind === "predictive" && item.market_odds?.reason ? <p className="watch-muted">Current market-implied odds unavailable: {item.market_odds.reason}</p> : null}
+      {predictiveSource ? <p className="watch-provenance">Forecast: {predictiveSource}</p> : null}
+      {marketSource ? <p className="watch-provenance">Market odds: {marketSource}</p> : null}
       {!oddsAvailable(item.market_odds) && prior && oddsAvailable(prior) ? (
         <details className="watch-prior-odds">
           <summary>Previous market-implied estimate · {prior.session_date ?? "dated quote"}</summary>
           <p>{unsignedPercentTenths(prior.itm_pct_tenths)} ITM · {unsignedPercentTenths(prior.otm_pct_tenths)} OTM</p>
-          <p>{quoteSupportLabel(prior) ?? "Quote tightness was not recorded for this earlier estimate."}</p>
-          <p>{oddsProvenance(prior)}</p>
+          <p>{quoteSupportLabel(prior) ?? "Quote bounds not recorded."}</p>
+          <p>{prior.source === "nasdaq" ? "Nasdaq" : prior.source === "yahoo" ? "Yahoo Finance" : "Public quotes"} · dated estimate</p>
         </details>
       ) : null}
     </section>
@@ -37,7 +36,7 @@ function HypotheticalRiskSection({ risk, side }: { risk: WatchItem["hypothetical
       <h3>Hypothetical hold-to-expiry risk</h3>
       {available ? (
         <>
-          <p className="watch-muted">One standard 100-share contract. Hypothetical hold-to-expiry; model returns adjusted to quote time. Excludes dividends, fees, assignment. No trade or position is recorded.</p>
+          <p className="watch-muted">One 100-share contract · {risk.forecast_price_basis === "intraday_quote" ? "validated intraday quote" : "completed-close forecast"}. Hypothetical hold-to-expiry; excludes dividends, fees, assignment. No trade or position is recorded.</p>
           <dl className="watch-facts">
             <div><dt>{side === "call" ? "Assumed stock entry" : "Underlying quote used"}</dt><dd>{moneyCents(risk.assumed_spot_cents)} per share</dd></div>
             <div><dt>Assumed option bid</dt><dd>{moneyCents(risk.assumed_bid_cents)} per share</dd></div>

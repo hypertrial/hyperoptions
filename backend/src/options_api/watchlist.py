@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import uuid
@@ -330,9 +331,7 @@ class WatchlistService:
             outcomes = self.store.latest_outcomes()
         outcome = outcomes.get(record.id)
         if outcome is None:
-            completed = expiry_session_completed(
-                record.expiration, as_of or datetime.now(UTC)
-            )
+            completed = expiry_session_completed(record.expiration, as_of or datetime.now(UTC))
             outcome = OutcomeView(
                 status="pending",
                 reason=(
@@ -424,7 +423,9 @@ class WatchlistService:
                 except Exception:
                     LOG.exception("outcome refresh failed for %s", item.id)
                     self.store.mark_attempted(
-                        item.id, item_session, "Outcome refresh failed",
+                        item.id,
+                        item_session,
+                        "Outcome refresh failed",
                         attempted_at=clock() if clock is not None else item_as_of,
                     )
                 progress((index + 1) / len(due), f"Checked {index + 1}/{len(due)} expiries")
@@ -475,6 +476,7 @@ async def get_watchlist(request: Request) -> WatchListResponse:
     odds.schedule(item.ticker for item in active)
     predictive = request.app.state.predictive_odds
     predictive.schedule(item.ticker for item in active)
+    issuances = []
     for item in items:
         if expiry_session_completed(item.expiration, now):
             item.market_odds = MarketOddsView(
@@ -483,9 +485,7 @@ async def get_watchlist(request: Request) -> WatchListResponse:
             item.predictive_odds = PredictiveOddsView(
                 status="unavailable", reason="expiry_completed"
             )
-            item.hypothetical_risk = HypotheticalRiskView(
-                reason="Expiry session completed"
-            )
+            item.hypothetical_risk = HypotheticalRiskView(reason="Expiry session completed")
             continue
         result = quant_for_contract(
             odds,
@@ -497,11 +497,35 @@ async def get_watchlist(request: Request) -> WatchListResponse:
             strike=Decimal(item.strike_exact),
             contract_since=first_session_after_completed(item.created_at),
             watched=True,
+            terms_note=item.terms_note,
         )
+        if result.issuance is not None:
+            issuances.append(result.issuance)
         item.market_odds = result.market
         item.last_available_market_odds = result.last_available_market
         item.predictive_odds = result.predictive
         item.hypothetical_risk = result.risk
+    if issuances:
+        try:
+            await asyncio.to_thread(predictive.ledger.record_batch, issuances)
+        except Exception:
+            LOG.exception("forecast issuance ledger unavailable for watchlist")
+            for item in items:
+                if item.predictive_odds.status == "available":
+                    item.predictive_odds = item.predictive_odds.model_copy(
+                        update={
+                            "status": "unavailable",
+                            "reason": "Forecast evidence unavailable",
+                            "itm_pct_tenths": None,
+                            "otm_pct_tenths": None,
+                            "atm_pct_tenths": None,
+                        }
+                    )
+                    item.hypothetical_risk = HypotheticalRiskView(
+                        reason="Forecast evidence unavailable"
+                    )
+        else:
+            request.app.state.physical_shadow.submit(issuances)
     return WatchListResponse(
         items=items,
         active_job=request.app.state.jobs.active("watch_refresh"),
@@ -560,11 +584,28 @@ async def add_watch(request: Request, body: WatchCreate) -> WatchCreateResponse:
         strike=strike,
         contract_since=first_session_after_completed(record.created_at),
         watched=True,
+        terms_note=item.terms_note,
     )
+    ledger_failed = False
+    if result.issuance is not None:
+        try:
+            await asyncio.to_thread(
+                request.app.state.predictive_odds.ledger.record_batch, [result.issuance]
+            )
+            request.app.state.physical_shadow.submit([result.issuance])
+        except Exception:
+            LOG.exception("forecast issuance ledger unavailable for new watch")
+            ledger_failed = True
     item.market_odds = result.market
     item.last_available_market_odds = result.last_available_market
-    item.predictive_odds = result.predictive
-    item.hypothetical_risk = result.risk
+    if ledger_failed:
+        item.predictive_odds = PredictiveOddsView(
+            status="unavailable", reason="Forecast evidence unavailable"
+        )
+        item.hypothetical_risk = HypotheticalRiskView(reason="Forecast evidence unavailable")
+    else:
+        item.predictive_odds = result.predictive
+        item.hypothetical_risk = result.risk
     return WatchCreateResponse(
         item=item,
         created=created,

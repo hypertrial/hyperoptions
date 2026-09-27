@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -14,6 +15,7 @@ from options_api.market_calendar import session_close
 from options_api.market_odds import OddsEstimate
 from options_api.market_sources import DividendStatus, TreasuryCurve
 from options_api.market_watch import MarketWatchOdds, _MODEL_VERSION
+from options_api.market_curve_shadow import CurveShadowResult
 from options_api.service import OptionChainService
 from options_api.watchlist import WatchStore
 from options_api.models import (
@@ -32,7 +34,10 @@ EXPIRY = "2026-11-20"
 
 class FakeService:
     def __init__(
-        self, *, expiration: str = EXPIRY, spot_time: str = "Sep 11, 2026 10:00 AM ET",
+        self,
+        *,
+        expiration: str = EXPIRY,
+        spot_time: str = "Sep 11, 2026 10:00 AM ET",
         truncated: bool = False,
     ) -> None:
         self.calls = 0
@@ -43,20 +48,38 @@ class FakeService:
     async def get_chain(self, ticker: str) -> OptionChainResponse:
         self.calls += 1
         return OptionChainResponse(
-            ticker=ticker, fetched_at=NOW, from_cache=False, last_trade=None,
-            source="nasdaq", truncated=self.truncated, rows=[OptionQuote(
-                ticker=ticker, root=ticker, expiration=self.expiration,
-                strike=Decimal("100"), call_bid=Decimal("3"), call_ask=Decimal("3.1"),
-                call_open_interest=50, put_bid=Decimal("2"), put_ask=Decimal("2.1"),
-                put_open_interest=50,
-            )],
+            ticker=ticker,
+            fetched_at=NOW,
+            from_cache=False,
+            last_trade=None,
+            source="nasdaq",
+            truncated=self.truncated,
+            rows=[
+                OptionQuote(
+                    ticker=ticker,
+                    root=ticker,
+                    expiration=self.expiration,
+                    strike=Decimal("100"),
+                    call_bid=Decimal("3"),
+                    call_ask=Decimal("3.1"),
+                    call_open_interest=50,
+                    put_bid=Decimal("2"),
+                    put_ask=Decimal("2.1"),
+                    put_open_interest=50,
+                )
+            ],
         )
 
     async def get_info(self, ticker: str, now: datetime) -> StockInfoResponse:
         return StockInfoResponse(
-            ticker=ticker, fetched_at=NOW, from_cache=False, bid=Decimal("99.99"),
-            ask=Decimal("100.01"), quote_timestamp=self.spot_time,
-            is_real_time=True, market_session="Market",
+            ticker=ticker,
+            fetched_at=NOW,
+            from_cache=False,
+            bid=Decimal("99.99"),
+            ask=Decimal("100.01"),
+            quote_timestamp=self.spot_time,
+            is_real_time=True,
+            market_session="Market",
         )
 
 
@@ -65,8 +88,11 @@ def _curve(as_of: date = date(2026, 9, 11)) -> TreasuryCurve:
 
 
 def _install_inputs(
-    monkeypatch: pytest.MonkeyPatch, *, dividends: DividendStatus | None = None,
-    curve: TreasuryCurve | None = None, probability: float = 0.4,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    dividends: DividendStatus | None = None,
+    curve: TreasuryCurve | None = None,
+    probability: float = 0.4,
     bounds: tuple[float, float] | None = None,
     spots: list[Decimal] | None = None,
     valuation_times: list[datetime] | None = None,
@@ -86,8 +112,7 @@ def _install_inputs(
         if valuation_times is not None:
             valuation_times.append(as_of)
         return {
-            (row.expiration, row.strike): OddsEstimate(probability, bounds=bounds)
-            for row in rows
+            (row.expiration, row.strike): OddsEstimate(probability, bounds=bounds) for row in rows
         }
 
     monkeypatch.setattr("options_api.market_watch.fetch_treasury_curve", treasury)
@@ -128,6 +153,33 @@ async def test_one_ticker_refresh_is_shared_by_calls_puts_and_concurrent_request
         moment[0] = datetime(2026, 9, 14, 14, tzinfo=UTC)
         assert odds.lookup("TEST", "call", EXPIRY, Decimal("100")).status == "pending"
         await odds.close()
+
+
+@pytest.mark.asyncio
+async def test_slow_research_curve_cannot_hold_live_market_refresh_slots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_inputs(monkeypatch)
+    entered = threading.Event()
+    release = threading.Event()
+
+    def slow_curve(*_args: object, **_kwargs: object) -> CurveShadowResult:
+        entered.set()
+        release.wait(timeout=5)
+        return CurveShadowResult({}, 0, 0, 0.0, {})
+
+    monkeypatch.setattr("options_api.market_watch.calculate_curve_shadow", slow_curve)
+    async with httpx.AsyncClient() as client:
+        odds = MarketWatchOdds(FakeService(), client, lambda: NOW)
+        try:
+            odds.schedule(["TEST0", "TEST1", "TEST2"])
+            await asyncio.wait_for(asyncio.gather(*list(odds._tasks.values())), timeout=1)
+            assert entered.is_set()
+            for ticker in ("TEST0", "TEST1", "TEST2"):
+                assert odds.lookup(ticker, "call", EXPIRY, Decimal("100")).status == "available"
+        finally:
+            release.set()
+            await odds.close()
 
 
 @pytest.mark.asyncio
@@ -198,7 +250,9 @@ THURSDAY = date(2026, 9, 24)
 
 class BlankQuoteService(FakeService):
     def __init__(
-        self, bars: list[HistoricalBar], fetched_at: datetime = SATURDAY,
+        self,
+        bars: list[HistoricalBar],
+        fetched_at: datetime = SATURDAY,
     ) -> None:
         super().__init__()
         self.bars = bars
@@ -213,15 +267,24 @@ class BlankQuoteService(FakeService):
 
     async def get_info(self, ticker: str, now: datetime) -> StockInfoResponse:
         return StockInfoResponse(
-            ticker=ticker, fetched_at=now, from_cache=False, bid=None, ask=None,
-            quote_timestamp="Sep 24, 2026", is_real_time=False, market_session="Closed",
+            ticker=ticker,
+            fetched_at=now,
+            from_cache=False,
+            bid=None,
+            ask=None,
+            quote_timestamp="Sep 24, 2026",
+            is_real_time=False,
+            market_session="Closed",
         )
 
     async def get_history(self, ticker: str, from_date: str) -> HistoricalResponse:
         self.history_calls += 1
         self.history_from.append(from_date)
         return HistoricalResponse(
-            ticker=ticker, fetched_at=SATURDAY, from_cache=False, bars=self.bars,
+            ticker=ticker,
+            fetched_at=SATURDAY,
+            from_cache=False,
+            bars=self.bars,
         )
 
     def release_history(self, ticker: str, from_date: str) -> None:
@@ -239,7 +302,9 @@ async def test_closed_session_uses_official_close_when_bid_and_ask_are_blank(
     spots: list[Decimal] = []
     valuation_times: list[datetime] = []
     calculations = _install_inputs(
-        monkeypatch, curve=_curve(FRIDAY), spots=spots,
+        monkeypatch,
+        curve=_curve(FRIDAY),
+        spots=spots,
         valuation_times=valuation_times,
     )
     service = BlankQuoteService([_bar(THURSDAY, "46.15"), _bar(FRIDAY, "44.125")])
@@ -264,7 +329,11 @@ def _watch_store(data_dir: Path, side: str = "call") -> WatchStore:
     store = WatchStore(data_dir)
     store.add(
         make_watch_key("TEST", "TEST", side, EXPIRY, Decimal("100")),
-        "TEST", "TEST", side, date.fromisoformat(EXPIRY), Decimal("100"),
+        "TEST",
+        "TEST",
+        side,
+        date.fromisoformat(EXPIRY),
+        Decimal("100"),
         NOW - timedelta(minutes=1),
     )
     return store
@@ -272,17 +341,21 @@ def _watch_store(data_dir: Path, side: str = "call") -> WatchStore:
 
 @pytest.mark.asyncio
 async def test_last_good_survives_refresh_failure_and_restart_but_expires_with_session(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     _install_inputs(monkeypatch, bounds=(0.2, 0.7))
     store = _watch_store(tmp_path)
     service = FakeService()
     moment = [NOW]
+
     def watched():
         return [(record.watch_key, record.created_at) for record in store.list()]
+
     async with httpx.AsyncClient() as client:
-        odds = MarketWatchOdds(service, client, lambda: moment[0],
-                               data_dir=tmp_path, watched_contracts=watched)
+        odds = MarketWatchOdds(
+            service, client, lambda: moment[0], data_dir=tmp_path, watched_contracts=watched
+        )
         odds.schedule(["TEST"])
         await asyncio.gather(*odds._tasks.values())
         assert odds.lookup_last_good("TEST", "call", EXPIRY, Decimal("100"), "TEST") is None
@@ -294,13 +367,17 @@ async def test_last_good_survives_refresh_failure_and_restart_but_expires_with_s
         prior = odds.lookup_last_good("TEST", "call", EXPIRY, Decimal("100"), "TEST")
         assert prior is not None and prior.status == "available"
         assert prior.itm_pct_tenths == 400
-        assert (prior.bound_low_pct_tenths, prior.bound_high_pct_tenths,
-                prior.quote_support_score) == (200, 700, 50)
+        assert (
+            prior.bound_low_pct_tenths,
+            prior.bound_high_pct_tenths,
+            prior.quote_support_score,
+        ) == (200, 700, 50)
         assert prior.fetched_at == NOW and prior.session_date == NOW.date()
         await odds.close()
 
-        restarted = MarketWatchOdds(service, client, lambda: moment[0],
-                                    data_dir=tmp_path, watched_contracts=watched)
+        restarted = MarketWatchOdds(
+            service, client, lambda: moment[0], data_dir=tmp_path, watched_contracts=watched
+        )
         assert restarted.lookup_last_good("TEST", "put", EXPIRY, Decimal("100")) is None
         assert restarted.lookup_last_good("TEST", "call", EXPIRY, Decimal("100")) == prior
         moment[0] = datetime(2026, 9, 14, 14, tzinfo=UTC)
@@ -308,8 +385,13 @@ async def test_last_good_survives_refresh_failure_and_restart_but_expires_with_s
         record = store.list()[0]
         assert store.delete(record.id)
         store.add(
-            record.watch_key, "TEST", "TEST", "call", date.fromisoformat(EXPIRY),
-            Decimal("100"), moment[0],
+            record.watch_key,
+            "TEST",
+            "TEST",
+            "call",
+            date.fromisoformat(EXPIRY),
+            Decimal("100"),
+            moment[0],
         )
         restarted.schedule([])
         assert restarted.lookup_last_good("TEST", "call", EXPIRY, Decimal("100")) is None
@@ -334,12 +416,13 @@ async def test_existing_last_good_table_gains_nullable_support_columns(tmp_path:
         )
         connection.execute(
             "INSERT INTO market_odds_last_good VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [record.watch_key, record.created_at, _MODEL_VERSION, NOW.date(), NOW,
-             "nasdaq", 400],
+            [record.watch_key, record.created_at, _MODEL_VERSION, NOW.date(), NOW, "nasdaq", 400],
         )
     async with httpx.AsyncClient() as client:
         odds = MarketWatchOdds(
-            FakeService(), client, lambda: datetime(2026, 9, 11, 21, tzinfo=UTC),
+            FakeService(),
+            client,
+            lambda: datetime(2026, 9, 11, 21, tzinfo=UTC),
             data_dir=tmp_path,
             watched_contracts=lambda: [(record.watch_key, record.created_at)],
         )
@@ -351,26 +434,50 @@ async def test_existing_last_good_table_gains_nullable_support_columns(tmp_path:
 
 @pytest.mark.asyncio
 async def test_entry_quote_and_rate_require_validated_current_contract(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     _install_inputs(monkeypatch, curve=_curve(date(2026, 9, 9)))
     store = _watch_store(tmp_path)
+
     def watched():
         return [(record.watch_key, record.created_at) for record in store.list()]
+
     async with httpx.AsyncClient() as client:
         service = FakeService()
-        odds = MarketWatchOdds(service, client, lambda: NOW,
-                               data_dir=tmp_path, watched_contracts=watched)
+        odds = MarketWatchOdds(
+            service, client, lambda: NOW, data_dir=tmp_path, watched_contracts=watched
+        )
         odds.schedule(["TEST"])
         await asyncio.gather(*odds._tasks.values())
         quote = odds.entry_quote("TEST", "call", EXPIRY, Decimal("100"), "TEST")
         assert quote is not None
         assert (quote.spot, quote.stock_ask, quote.bid, quote.ask) == (
-            Decimal("100"), Decimal("100.01"), Decimal("3"), Decimal("3.1")
+            Decimal("100"),
+            Decimal("100.01"),
+            Decimal("3"),
+            Decimal("3.1"),
         )
         assert odds.rate_for("TEST", EXPIRY) == (Decimal("0.04"), NOW)
         assert quote.session_date == date(2026, 9, 11)
         assert quote.rate_as_of_session == date(2026, 9, 9)
+        stock = odds.underlying_quote("TEST")
+        assert stock is not None
+        assert stock.spot == Decimal("100")
+        assert stock.quote_time == NOW
+        await asyncio.gather(*odds._shadow_tasks)
+        shadow = odds.curve_shadow_report("TEST")
+        assert shadow is not None
+        assert shadow["model_version"] == "constrained-call-curve-shadow-v2"
+        assert shadow["benchmark_ms"] >= 0
+        assert shadow["live_refresh_ms"] >= shadow["benchmark_ms"]
+        with connect(tmp_path / "results.duckdb") as connection:
+            assert (
+                connection.execute(
+                    "SELECT count(*) FROM market_curve_shadow_runs WHERE ticker = 'TEST'"
+                ).fetchone()[0]
+                == 1
+            )
         assert odds.entry_quote("TEST", "call", EXPIRY, Decimal("100"), "OTHER") is None
         await odds.close()
 
@@ -384,12 +491,20 @@ async def test_entry_quote_and_rate_require_validated_current_contract(
 
     async with httpx.AsyncClient() as client:
         moment = [NOW]
-        adjusted = MarketWatchOdds(AdjustedService(), client, lambda: moment[0],
-                                   data_dir=tmp_path, watched_contracts=watched)
+        adjusted = MarketWatchOdds(
+            AdjustedService(),
+            client,
+            lambda: moment[0],
+            data_dir=tmp_path,
+            watched_contracts=watched,
+        )
         adjusted.schedule(["TEST"])
         await asyncio.gather(*adjusted._tasks.values())
         assert adjusted.entry_quote("TEST", "call", EXPIRY, Decimal("100")) is None
+        # Stock quote validation is independent of the option's bid/ask or terms.
+        assert adjusted.underlying_quote("TEST") is not None
         moment[0] = datetime(2026, 9, 11, 21, tzinfo=UTC)
+        assert adjusted.underlying_quote("TEST") is None
         assert adjusted.lookup_last_good("TEST", "call", EXPIRY, Decimal("100")) is None
         await adjusted.close()
 
@@ -435,21 +550,25 @@ async def test_unwatched_chain_contract_has_coherent_entry_quote(
         await asyncio.gather(*odds._tasks.values())
         quote = odds.entry_quote("TEST", "put", EXPIRY, Decimal("100"), "TEST")
         assert quote is not None
-        assert (quote.bid, quote.ask, quote.spot) == (
-            Decimal("2"), Decimal("2.1"), Decimal("100")
-        )
+        assert (quote.bid, quote.ask, quote.spot) == (Decimal("2"), Decimal("2.1"), Decimal("100"))
         assert quote.fetched_at == NOW and quote.source == "nasdaq"
         await odds.close()
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("quote_stamp", [
-    "Sep 25, 2026 10:00 AM ET", "Sep 25, 2026 03:59 PM ET",
-])
+@pytest.mark.parametrize(
+    "quote_stamp",
+    [
+        "Sep 25, 2026 10:00 AM ET",
+        "Sep 25, 2026 03:59 PM ET",
+    ],
+)
 @pytest.mark.parametrize("has_close", [False, True])
 async def test_after_hours_old_stock_ask_is_not_used_as_covered_call_entry(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
-    quote_stamp: str, has_close: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    quote_stamp: str,
+    has_close: bool,
 ) -> None:
     spots: list[Decimal] = []
     _install_inputs(monkeypatch, curve=_curve(FRIDAY), spots=spots)
@@ -473,7 +592,10 @@ async def test_after_hours_old_stock_ask_is_not_used_as_covered_call_entry(
             self.history_calls += 1
             bar = _bar(FRIDAY, "44.125") if has_close else _bar(THURSDAY, "46.15")
             return HistoricalResponse(
-                ticker=ticker, fetched_at=SATURDAY, from_cache=False, bars=[bar],
+                ticker=ticker,
+                fetched_at=SATURDAY,
+                from_cache=False,
+                bars=[bar],
             )
 
         def release_history(self, ticker: str, from_date: str) -> None:
@@ -481,9 +603,9 @@ async def test_after_hours_old_stock_ask_is_not_used_as_covered_call_entry(
 
     async with httpx.AsyncClient() as client:
         service = AfterHoursService(spot_time=quote_stamp)
-        odds = MarketWatchOdds(service,
-                               client, lambda: SATURDAY, data_dir=tmp_path,
-                               watched_contracts=watched)
+        odds = MarketWatchOdds(
+            service, client, lambda: SATURDAY, data_dir=tmp_path, watched_contracts=watched
+        )
         odds.schedule(["TEST"])
         await asyncio.gather(*odds._tasks.values())
         quote = odds.entry_quote("TEST", "call", EXPIRY, Decimal("100"))
@@ -523,13 +645,13 @@ async def test_early_close_valuation_uses_exchange_close_not_wall_clock(
 
         async def get_history(self, ticker: str, from_date: str) -> HistoricalResponse:
             return HistoricalResponse(
-                ticker=ticker, fetched_at=later, from_cache=False,
+                ticker=ticker,
+                fetched_at=later,
+                from_cache=False,
                 bars=[_bar(early_day, "100")],
             )
 
-    service = EarlyCloseService(
-        expiration="2027-01-08", spot_time="Nov 27, 2026 12:59 PM ET"
-    )
+    service = EarlyCloseService(expiration="2027-01-08", spot_time="Nov 27, 2026 12:59 PM ET")
     async with httpx.AsyncClient() as client:
         odds = MarketWatchOdds(service, client, lambda: later)
         odds.schedule(["TEST"])
@@ -570,10 +692,13 @@ async def test_chain_mismatch_does_not_loop_on_same_target_or_source_fallback(
     class YahooService(FakeService):
         async def get_chain(self, ticker: str) -> OptionChainResponse:
             chain = await super().get_chain(ticker)
-            return chain.model_copy(update={
-                "source": "yahoo", "spot": Decimal("100"),
-                "last_trade_timestamp": NOW.isoformat(),
-            })
+            return chain.model_copy(
+                update={
+                    "source": "yahoo",
+                    "spot": Decimal("100"),
+                    "last_trade_timestamp": NOW.isoformat(),
+                }
+            )
 
     service = YahooService()
     async with httpx.AsyncClient() as client:
@@ -663,6 +788,7 @@ async def test_slow_yahoo_snapshot_checks_underlying_freshness_at_completion(
     calculations = _install_inputs(monkeypatch)
     completed = NOW + timedelta(seconds=75)
     quote_time = completed - timedelta(seconds=5)
+    assert NOW < quote_time < completed
     moment = [NOW]
 
     class SlowYahooService(FakeService):
@@ -670,10 +796,14 @@ async def test_slow_yahoo_snapshot_checks_underlying_freshness_at_completion(
             await asyncio.sleep(0)
             moment[0] = completed
             chain = await super().get_chain(ticker)
-            return chain.model_copy(update={
-                "source": "yahoo", "fetched_at": completed,
-                "spot": Decimal("100"), "last_trade_timestamp": quote_time.isoformat(),
-            })
+            return chain.model_copy(
+                update={
+                    "source": "yahoo",
+                    "fetched_at": completed,
+                    "spot": Decimal("100"),
+                    "last_trade_timestamp": quote_time.isoformat(),
+                }
+            )
 
     async with httpx.AsyncClient() as client:
         odds = MarketWatchOdds(SlowYahooService(), client, lambda: moment[0])
@@ -683,6 +813,14 @@ async def test_slow_yahoo_snapshot_checks_underlying_freshness_at_completion(
         assert view.status == "available"
         assert view.itm_pct_tenths == 400
         assert view.fetched_at == completed
+        stock = odds.underlying_quote("TEST")
+        assert stock is not None
+        assert (stock.source, stock.spot, stock.quote_time, stock.fetched_at) == (
+            "yahoo",
+            Decimal("100"),
+            quote_time,
+            completed,
+        )
         assert calculations == [1]
         await odds.close()
 

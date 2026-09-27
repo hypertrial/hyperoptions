@@ -1,4 +1,4 @@
-"""Indicative option moneyness from dated, unadjusted-request Yahoo Close."""
+"""Indicative watch outcomes and exact expiry labels for forecast evaluation."""
 
 from __future__ import annotations
 
@@ -101,6 +101,92 @@ class OutcomeResult:
     close_price: Decimal | None
     terms_note: str = TERMS_NOTE
     preserve_prior: bool = False
+
+
+@dataclass(frozen=True)
+class ForecastLabelResolution:
+    """A scored label uses Nasdaq's decimal close, never a binary Yahoo float."""
+
+    status: Literal["valid", "pending", "excluded"]
+    reason: str | None
+    source: str | None
+    expiry_session: date
+    nasdaq_close: Decimal | None
+    yahoo_close: Decimal | None
+    selected_close: Decimal | None
+    classification: Literal["itm", "atm", "otm"] | None
+
+
+def resolve_forecast_label(
+    *,
+    ticker: str,
+    root: str,
+    side: Literal["call", "put"],
+    strike: Decimal,
+    expiration: date,
+    contract_since: date | None,
+    as_of: datetime,
+    nasdaq_close: Decimal | None,
+    yahoo_history: CloseHistory | None,
+    standard_terms: bool = True,
+) -> ForecastLabelResolution:
+    """Prefer an exact Nasdaq close; record why a contract cannot be scored."""
+    target = session_on_or_before(expiration)
+
+    def unresolved(
+        status: Literal["pending", "excluded"], reason: str, yahoo_close: Decimal | None = None
+    ) -> ForecastLabelResolution:
+        return ForecastLabelResolution(
+            status, reason, None, target, nasdaq_close, yahoo_close, None, None
+        )
+
+    if as_of.tzinfo is None:
+        raise ValueError("as_of must have a timezone")
+    if latest_completed_session(as_of) < target:
+        return unresolved("pending", "expiry_session_not_completed")
+    if root != ticker or not standard_terms or contract_since is None:
+        return unresolved("excluded", "contract_terms_unverified")
+    if contract_since > target:
+        return unresolved("excluded", "contract_watched_after_expiry")
+    if (as_of.astimezone(_NY).date() - contract_since).days > MAX_OUTCOME_HISTORY_DAYS:
+        return unresolved("excluded", "corporate_action_history_too_old")
+    if yahoo_history is None or not yahoo_history.actions_verified:
+        return unresolved("pending", "corporate_action_history_unavailable")
+    if any(
+        contract_since <= day <= as_of.astimezone(_NY).date() for day in yahoo_history.split_dates
+    ):
+        return unresolved("excluded", "split_affected")
+    if any(
+        contract_since <= day <= as_of.astimezone(_NY).date()
+        for day in yahoo_history.ambiguous_action_dates
+    ):
+        return unresolved("excluded", "ambiguous_corporate_action")
+    yahoo_close = yahoo_history.closes.get(target)
+    if yahoo_close is None:
+        return unresolved("pending", "yahoo_close_missing")
+    if nasdaq_close is None:
+        return unresolved("pending", "nasdaq_close_missing", yahoo_close)
+    if not nasdaq_close.is_finite() or nasdaq_close <= 0:
+        return unresolved("excluded", "nasdaq_close_invalid", yahoo_close)
+    if yahoo_close is not None and (
+        not yahoo_close.is_finite()
+        or yahoo_close <= 0
+        or abs(nasdaq_close - yahoo_close) > Decimal("0.005")
+    ):
+        return unresolved("excluded", "close_sources_conflict", yahoo_close)
+    source = "Nasdaq historical Close"
+    if yahoo_close is not None:
+        source += " (Yahoo cross-check)"
+    return ForecastLabelResolution(
+        "valid",
+        None,
+        source,
+        target,
+        nasdaq_close,
+        yahoo_close,
+        nasdaq_close,
+        classify(side, nasdaq_close, strike),
+    )
 
 
 def classify(

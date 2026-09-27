@@ -21,6 +21,7 @@ export const zHypotheticalRiskView = z.object({
     assumed_bid_cents: z.int().nullish(),
     quote_source: z.enum(['nasdaq', 'yahoo']).nullish(),
     quote_session: z.iso.date().nullish(),
+    forecast_price_basis: z.enum(['completed_close', 'intraday_quote']).nullish(),
     expected_pnl_cents: z.int().nullish(),
     expected_return_pct_tenths: z.int().nullish(),
     loss_pct_tenths: z.int().nullish(),
@@ -100,6 +101,22 @@ export const zPeriodLows = z.object({
 });
 
 /**
+ * PredictiveValidationEvidence
+ *
+ * Comparable calibration from independent, prospective as-issued forecasts.
+ */
+export const zPredictiveValidationEvidence = z.object({
+    source: z.literal('prospective_as_issued'),
+    model_version: z.string(),
+    horizon_band: z.string(),
+    moneyness_band: z.string(),
+    independent_units: z.int().gte(1),
+    predicted_itm_pct_tenths: z.int().gte(0).lte(1000),
+    observed_itm_pct_tenths: z.int().gte(0).lte(1000),
+    through_session: z.iso.date()
+});
+
+/**
  * PredictiveOddsView
  *
  * Physical expiry-close forecast, distinct from risk-neutral option odds.
@@ -119,7 +136,10 @@ export const zPredictiveOddsView = z.object({
     expiry_session: z.iso.date().nullish(),
     model_version: z.string().nullish(),
     support: z.int().nullish(),
-    data_hash: z.string().nullish()
+    data_hash: z.string().nullish(),
+    price_basis: z.enum(['completed_close', 'validated_underlying_quote']).nullish(),
+    price_as_of: z.iso.datetime().nullish(),
+    validation_evidence: zPredictiveValidationEvidence.nullish()
 });
 
 /**

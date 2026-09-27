@@ -3,8 +3,8 @@
     ".agents/skills/pad-engineering/SKILL.md": "3cb5185116663c2f8ee58764a4180784ff2604b05e2e75b2b6f13cc1ccfd0071",
     "AGENTS.md": "8e0e7df28f0df8d847f4981da0978c28c2c9615b0382c3bfc62c6af90a52f6b1",
     "PROJECT_AGENT.md": "137cf1c743c9ebff76b29bd29e6562e6a1ead7a8ab26ecf6a339f4990acc927c",
-    "scripts/verify": "b4a6363897d9488c95cf1877235496e1075b41385d8adac4708be9dc85d5678c",
-    "scripts/verify-fast": "a4723a638ace93e4c999ae76cfe87820a51208244a3833cf654e265857ecdc41"
+    "scripts/verify": "9e2c5df8e92f39bc01d0b1ba360908488bd2bdcc56dfdc2e3017236c3d9c3ecc",
+    "scripts/verify-fast": "73bd2132f6d91bbb4205d74da220b55688dff910ebd662908f08ada16513ac58"
   },
   "repository": "hyperoptions",
   "version": "1.1.0",

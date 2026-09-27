@@ -76,6 +76,36 @@ def connect(path: Path) -> Iterator[duckdb.DuckDBPyConnection]:
             inode = path.stat().st_ino
             if _INITIALIZED.get(path) != inode:
                 connection.execute(SCHEMA)
+                # Additive upgrades for development DBs created before the
+                # forecast evidence tables gained distribution/terms metadata.
+                for table, additions in {
+                    "forecast_issuances": (
+                        ("distribution_hash", "VARCHAR"),
+                        ("volatility_regime", "VARCHAR"),
+                        ("known_event_status", "VARCHAR"),
+                        ("quote_time", "TIMESTAMPTZ"),
+                        ("quote_source", "VARCHAR"),
+                        ("quote_fetched_at", "TIMESTAMPTZ"),
+                        ("quote_digest", "VARCHAR"),
+                        ("snapshot_window", "VARCHAR"),
+                        ("prepare_ms", "DOUBLE"),
+                        ("lookup_ms", "DOUBLE"),
+                    ),
+                    "forecast_labels": (("terms_note", "VARCHAR"),),
+                }.items():
+                    existing = {
+                        row[1]
+                        for row in connection.execute(f"PRAGMA table_info('{table}')").fetchall()
+                    }
+                    for column, kind in additions:
+                        if column not in existing:
+                            connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
+                connection.execute(
+                    """CREATE INDEX IF NOT EXISTS forecast_issuances_by_window
+                       ON forecast_issuances (
+                         contract_key, input_session, snapshot_window, model_version
+                       )"""
+                )
                 _INITIALIZED[path] = inode
             yield connection
         finally:

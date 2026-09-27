@@ -1,34 +1,39 @@
 import { unsignedPercentTenths } from "./format"
-import { oddsAvailable, predictiveAvailable, predictiveSupportLabel, quoteSupportLabel, unavailableReasons, type MarketOdds, type PredictiveOdds } from "./marketOdds"
+import { oddsAvailable, oddsMessage, predictiveAvailable, predictiveBasisLabel, predictiveReliabilityLabel, quoteSupportLabel, type MarketOdds, type PredictiveOdds } from "./marketOdds"
 
 export default function OddsValues({ odds, predictiveOdds, compact = false }: {
   odds: MarketOdds | null | undefined
   predictiveOdds?: PredictiveOdds | null
   compact?: boolean
 }) {
+  const predictive = predictiveAvailable(predictiveOdds)
   const market = oddsAvailable(odds)
-  const predictive = !market && predictiveAvailable(predictiveOdds)
-  if (!market && !predictive) {
-    const pending = odds?.status === "pending" || predictiveOdds?.status === "pending"
-    const status = pending ? "Calculating odds…" : "Odds unavailable"
-    return compact
-      ? <span className="odds-unavailable compact" aria-label={pending ? status : `${status}: ${unavailableReasons(odds, predictiveOdds)}`}>{status}</span>
-      : <span className="odds-unavailable"><strong>{status}</strong>{!pending ? <span>{unavailableReasons(odds, predictiveOdds)}</span> : null}</span>
-  }
-  const values = market ? odds! : predictiveOdds!
-  const support = market ? quoteSupportLabel(odds) : compact ? predictiveSupportLabel(predictiveOdds) : null
-  const supportTitle = market
-    ? "Quote-bound tightness equals 100 minus the ITM bound width in percentage points. It is not forecast confidence."
-    : predictiveOdds?.method === "empirical_scaled"
-      ? "Model support counts overlapping matured horizon-return samples. Selection requires independent blocks. It is not forecast confidence."
-      : "Model support counts daily returns for EWMA. It is not forecast confidence."
+  const physicalStatus = predictiveOdds?.status === "pending" ? "Forecast pending" : "Forecast unavailable"
   return (
     <span className={compact ? "odds-values compact" : "odds-values"}>
-      <span className="odds-method">{market ? "Market-implied" : "Historical predictive"}</span>
-      <span><strong>{unsignedPercentTenths(values.itm_pct_tenths)}</strong> ITM</span>
-      <span><strong>{unsignedPercentTenths(values.otm_pct_tenths)}</strong> OTM</span>
-      {predictive ? <span><strong>{unsignedPercentTenths(predictiveOdds!.atm_pct_tenths)}</strong> ATM</span> : null}
-      {support ? <span className="odds-support" title={supportTitle}>{support}</span> : null}
+      <span className="odds-physical">
+        <span className="odds-method">Real-world forecast</span>
+        {predictive ? (
+          <>
+            <span className="odds-numbers">
+              <span><strong>{unsignedPercentTenths(predictiveOdds!.itm_pct_tenths)}</strong> ITM</span>
+              <span><strong>{unsignedPercentTenths(predictiveOdds!.otm_pct_tenths)}</strong> OTM</span>
+              <span><strong>{unsignedPercentTenths(predictiveOdds!.atm_pct_tenths)}</strong> ATM</span>
+            </span>
+            <span className="odds-basis">{predictiveBasisLabel(predictiveOdds)}</span>
+            <span className="odds-reliability">{predictiveReliabilityLabel(predictiveOdds)}</span>
+          </>
+        ) : <span className="odds-unavailable" aria-label={`${physicalStatus}: ${predictiveOdds?.reason || "No validated forecast"}`}>{physicalStatus}{!compact && predictiveOdds?.reason ? ` · ${predictiveOdds.reason}` : ""}</span>}
+      </span>
+      <span className="odds-market">
+        <span className="odds-method">Market-implied · risk-neutral</span>
+        {market ? (
+          <>
+            <span className="odds-market-numbers">{unsignedPercentTenths(odds!.itm_pct_tenths)} ITM · {unsignedPercentTenths(odds!.otm_pct_tenths)} OTM</span>
+            {quoteSupportLabel(odds) ? <span className="odds-market-bounds" title="Quote-bound width measures option-price uncertainty, not forecast confidence.">{quoteSupportLabel(odds)}</span> : null}
+          </>
+        ) : <span className="odds-market-unavailable" title={oddsMessage(odds)}>{odds?.status === "pending" ? "Refreshing market odds" : `Market odds unavailable${!compact && odds?.reason ? `: ${odds.reason}` : ""}`}</span>}
+      </span>
     </span>
   )
 }

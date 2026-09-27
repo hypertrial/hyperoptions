@@ -40,7 +40,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install backend dependencies
-        run: uv sync --frozen --group dev
+        run: uv sync --frozen --group dev --group research
         working-directory: backend
 
       - name: Install frontend dependencies

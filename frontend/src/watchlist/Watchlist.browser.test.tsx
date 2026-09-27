@@ -53,11 +53,33 @@ it("shows dated market-implied ITM and OTM odds beside the expiry result", async
   expect(odds.textContent).toContain("63.8% ITM")
   expect(odds.textContent).toContain("36.2% OTM")
   expect(odds.textContent).toContain("Quote tightness 70/100 · ITM bounds 50.0%–80.0%")
-  expect(odds.textContent).toContain("Risk-neutral")
+  expect(odds.textContent).toContain("risk-neutral")
   expect(odds.textContent).toContain("Nasdaq")
   expect(odds.textContent).toContain("Sep 17, 2026")
   expect(odds.textContent).not.toContain("regimelib-0.1.0")
   expect(screen.getByRole("region", { name: "Expiry result" }).textContent).toContain("Not expired yet")
+})
+
+it("puts the real-world forecast before separate market-implied odds", async () => {
+  window.history.replaceState(null, "", "/watchlist")
+  const item = {
+    ...watched,
+    predictive_odds: {
+      status: "available", method: "lognormal_ewma", itm_pct_tenths: 520,
+      otm_pct_tenths: 480, atm_pct_tenths: 0, as_of_session: "2026-09-18",
+      expiry_session: "2026-10-16", price_basis: "completed_close",
+      price_as_of: "2026-09-18T20:00:00Z", model_version: "ewma-v1", support: 60,
+    },
+  }
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ items: [item] }))))
+  render(<App />)
+  const odds = await screen.findByRole("region", { name: "Odds estimates" })
+  const values = odds.querySelector(".odds-values")!
+  expect(values.firstElementChild?.className).toBe("odds-physical")
+  expect(values.querySelector(".odds-physical")?.textContent).toContain("52.0% ITM")
+  expect(values.querySelector(".odds-market")?.textContent).toContain("63.8% ITM")
+  expect(values.textContent).toContain("Reliability not yet established")
+  expect(values.textContent).not.toContain("support 60")
 })
 
 it("shows a reason without inventing odds and keeps the manual expiry check", async () => {
@@ -83,7 +105,7 @@ it("shows a reason without inventing odds and keeps the manual expiry check", as
 
   render(<App />)
   const odds = await screen.findByRole("region", { name: "Odds estimates" })
-  expect(odds.textContent).toContain("Odds unavailable")
+  expect(odds.textContent).toContain("Forecast unavailable")
   expect(odds.textContent).toContain("Too few reliable option quotes")
   expect(odds.textContent).not.toContain("63.8%")
   fireEvent.click(screen.getByRole("button", { name: "Check expiry results" }))
@@ -105,7 +127,7 @@ it("updates pending odds from the visible watchlist poll", async () => {
   }))
 
   render(<App />)
-  expect(await screen.findByText(/Calculating odds/)).toBeTruthy()
+  expect(await screen.findByText(/Refreshing market odds/)).toBeTruthy()
   document.dispatchEvent(new Event("visibilitychange"))
   await waitFor(() => expect(screen.getByRole("region", { name: "Odds estimates" }).textContent).toContain("63.8% ITM"))
   expect(reads).toBeGreaterThanOrEqual(2)
@@ -197,14 +219,15 @@ it("uses a dated historical forecast when market bounds conflict and keeps prior
 
   render(<App />)
   const odds = await screen.findByRole("region", { name: "Odds estimates" })
-  expect(odds.querySelector(".watch-odds")?.textContent).toContain("Historical predictive")
+  expect(odds.querySelector(".watch-odds")?.textContent).toContain("Real-world forecast")
   expect(odds.querySelector(".watch-odds")?.textContent).toContain("52.0% ITM")
   expect(odds.querySelector(".watch-odds")?.textContent).not.toContain("63.8%")
-  expect(odds.textContent).toContain("completed stock closes through 2026-09-18")
+  expect(odds.textContent).toContain("Completed stock close · 2026-09-18")
+  expect(odds.textContent).toContain("Reliability not yet established")
   expect(odds.textContent).toContain("Quote bounds inconsistent")
   const prior = odds.querySelector(".watch-prior-odds") as HTMLDetailsElement
   expect(prior.open).toBe(false)
-  expect(prior.textContent).toContain("session 2026-09-17")
+  expect(prior.textContent).toContain("Previous market-implied estimate · 2026-09-17")
   expect(prior.textContent).toContain("Quote tightness 70/100")
 
   const risk = screen.getByRole("region", { name: "Hypothetical expiry risk" })

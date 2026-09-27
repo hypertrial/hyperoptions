@@ -587,6 +587,10 @@ export type HypotheticalRiskView = {
      */
     quote_session?: string | null;
     /**
+     * Forecast Price Basis
+     */
+    forecast_price_basis?: 'completed_close' | 'intraday_quote' | null;
+    /**
      * Expected Pnl Cents
      */
     expected_pnl_cents?: number | null;
@@ -802,6 +806,55 @@ export type PredictiveOddsView = {
      * Data Hash
      */
     data_hash?: string | null;
+    /**
+     * Price Basis
+     */
+    price_basis?: 'completed_close' | 'validated_underlying_quote' | null;
+    /**
+     * Price As Of
+     */
+    price_as_of?: string | null;
+    validation_evidence?: PredictiveValidationEvidence | null;
+};
+
+/**
+ * PredictiveValidationEvidence
+ *
+ * Comparable calibration from independent, prospective as-issued forecasts.
+ */
+export type PredictiveValidationEvidence = {
+    /**
+     * Source
+     */
+    source: 'prospective_as_issued';
+    /**
+     * Model Version
+     */
+    model_version: string;
+    /**
+     * Horizon Band
+     */
+    horizon_band: string;
+    /**
+     * Moneyness Band
+     */
+    moneyness_band: string;
+    /**
+     * Independent Units
+     */
+    independent_units: number;
+    /**
+     * Predicted Itm Pct Tenths
+     */
+    predicted_itm_pct_tenths: number;
+    /**
+     * Observed Itm Pct Tenths
+     */
+    observed_itm_pct_tenths: number;
+    /**
+     * Through Session
+     */
+    through_session: string;
 };
 
 /**

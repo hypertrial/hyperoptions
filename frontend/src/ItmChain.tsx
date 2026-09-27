@@ -18,7 +18,7 @@ import { useChainFilters } from "./useChainFilters"
 import { useExpansion } from "./useExpansion"
 import { useRevealLimit } from "./useRevealLimit"
 import { defaultMoneyness, useUrlState } from "./useUrlState"
-import { DEFAULT_SORT, deriveChainView, INITIAL_REVEAL, type SortState } from "./viewModel"
+import { DEFAULT_SORT, deriveChainView, INITIAL_REVEAL, PREDICTIVE_ODDS_SORT_ID, type SortState } from "./viewModel"
 import type { ChainPage, Moneyness, Side } from "./types"
 import { addWatch, WATCH_JOB_KEY } from "./watchlist/api"
 import type { WatchActionState } from "./watchlist/WatchButton"
@@ -75,7 +75,7 @@ export default function ItmChain() {
   const columns = visibleColumns(side, cols)
   const filterKey = `${identityKey}|${filtersState.key}`
   const reveal = useRevealLimit(filterKey)
-  const effectiveSort = columns.some((column) => column.id === sort.id) ? sort : fallbackSort(columns)
+  const effectiveSort = sort.id === PREDICTIVE_ODDS_SORT_ID || columns.some((column) => column.id === sort.id) ? sort : fallbackSort(columns)
 
   useEffect(() => () => {
     if (copiedClear.current != null) window.clearTimeout(copiedClear.current)
@@ -141,16 +141,16 @@ export default function ItmChain() {
 
   const selectSort = (id: string) => {
     setSort((current) => {
-      const normalized = columns.some((column) => column.id === current.id) ? current : fallbackSort(columns)
+      const normalized = current.id === PREDICTIVE_ODDS_SORT_ID || columns.some((column) => column.id === current.id) ? current : fallbackSort(columns)
       return normalized.id === id
         ? { id, dir: normalized.dir === "desc" ? "asc" : "desc" }
-        : { id, dir: id === "strike_cents" ? "desc" : "asc" }
+        : { id, dir: id === "strike_cents" || id === PREDICTIVE_ODDS_SORT_ID ? "desc" : "asc" }
     })
   }
 
   const selectColumns = (next: string[] | null) => {
     const nextColumns = visibleColumns(side, next)
-    if (!nextColumns.some((column) => column.id === sort.id)) setSort(fallbackSort(nextColumns))
+    if (sort.id !== PREDICTIVE_ODDS_SORT_ID && !nextColumns.some((column) => column.id === sort.id)) setSort(fallbackSort(nextColumns))
     setState({ ...state, cols: next })
   }
 
@@ -236,7 +236,7 @@ export default function ItmChain() {
               </>
             )}
           </p>
-          {page ? <p className="odds-context">Market-implied odds are risk-neutral; historical predictive odds use completed stock closes. Both target the regular-session expiry close. {oddsStamp ? `Market quote: ${oddsStamp}.` : ""}</p> : null}
+          {page ? <p className="odds-context">Real-world expiry-close forecasts use completed stock closes. Option-price-implied odds are separate risk-neutral estimates. {oddsStamp ? `Market quote: ${oddsStamp}.` : ""}</p> : null}
           {page && columns.some((column) => column.greek) ? <p className="odds-context">Greeks use the dated quote midpoint, Treasury rate, and time to the expiry-session close. European Black-Scholes estimates omit dividends and only approximate American equity options.</p> : null}
         </header>
 

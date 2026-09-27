@@ -4,11 +4,13 @@ import { parseExactDecimal } from "./decimal"
 import { STRATEGIES } from "./strategy"
 import { invertedDteRange, passesFilters, type FilterState } from "./filters"
 import { metricRanges, type MetricRanges } from "./heatmap"
+import { predictiveAvailable } from "./marketOdds"
 import type { ChainPage, Side } from "./types"
 
 export type SortState = { id: ColumnId; dir: "asc" | "desc" }
 
 export const DEFAULT_SORT: SortState = { id: "strike_cents", dir: "desc" }
+export const PREDICTIVE_ODDS_SORT_ID = "predictive_itm_pct_tenths"
 
 export const INITIAL_REVEAL = 250
 
@@ -75,7 +77,7 @@ export function nearestMatchingExpiration(
 
 function sortRows(rows: SizedContract[], columns: ColumnDef[], sort: SortState): SizedContract[] {
   const column = columns.find((item) => item.id === sort.id)
-  if (!column) return rows
+  if (!column && sort.id !== PREDICTIVE_ODDS_SORT_ID) return rows
   return [...rows].sort((left, right) => {
     if (sort.id === "strike_cents") {
       const leftStrike = parseExactDecimal(left.strike_exact ?? "")
@@ -87,8 +89,12 @@ function sortRows(rows: SizedContract[], columns: ColumnDef[], sort: SortState):
         return sort.dir === "asc" ? compared : -compared
       }
     }
-    const leftValue = column.accessor(left)
-    const rightValue = column.accessor(right)
+    const leftValue = sort.id === PREDICTIVE_ODDS_SORT_ID
+      ? predictiveAvailable(left.predictive_odds) ? left.predictive_odds!.itm_pct_tenths : null
+      : column!.accessor(left)
+    const rightValue = sort.id === PREDICTIVE_ODDS_SORT_ID
+      ? predictiveAvailable(right.predictive_odds) ? right.predictive_odds!.itm_pct_tenths : null
+      : column!.accessor(right)
     if (leftValue == null && rightValue == null) return 0
     if (leftValue == null) return 1
     if (rightValue == null) return -1

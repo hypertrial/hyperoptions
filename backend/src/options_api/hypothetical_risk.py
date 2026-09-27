@@ -28,10 +28,13 @@ def compute_hypothetical_risk(
     quote_source: MarketSource,
     quote_session: date,
     remaining_variance_fraction: Decimal = Decimal(1),
+    reanchor: bool = True,
 ) -> HypotheticalRiskView:
     """Reanchor forecast returns to a quoted entry spot, then value expiry P&L.
 
-    Log returns are scaled to the remaining expiry time before reanchoring.
+    The default reanchors and scales modeled returns. ``reanchor=False``
+    uses the published completed-close terminal distribution for P&L while
+    still taking the actual quoted entry prices as hypothetical costs.
     The call assumes one lot of stock bought at ``spot`` and one call sold at
     ``bid``. The put assumes one cash-secured put sold at ``bid``. Neither
     formula models assignment, dividends, fees, or an actual portfolio.
@@ -68,7 +71,9 @@ def compute_hypothetical_risk(
         weight = Decimal(str(raw_weight))
         if not price.is_finite() or price <= 0 or not weight.is_finite() or weight < 0:
             return HypotheticalRiskView(reason="Predictive distribution is invalid")
-        if remaining_variance_fraction == 1:
+        if not reanchor:
+            terminal = price
+        elif remaining_variance_fraction == 1:
             terminal = price * spot / anchor
         else:
             scaled_ratio = exp(
@@ -107,6 +112,7 @@ def compute_hypothetical_risk(
         assumed_bid_cents=to_cents(bid),
         quote_source=quote_source,
         quote_session=quote_session,
+        forecast_price_basis="intraday_quote" if reanchor else "completed_close",
         expected_pnl_cents=to_cents(expected_per_share * shares),
         expected_return_pct_tenths=to_pct_tenths(expected_per_share / capital * 100),
         loss_pct_tenths=to_pct_tenths(loss_weight / total_weight * 100),

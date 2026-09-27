@@ -139,7 +139,7 @@ describe("chain interactions", () => {
     const headers = within(first!).getAllByRole("columnheader")
     expect(headers.map((header) => header.textContent)).toEqual([
       "Strike",
-      "ITM / OTM odds",
+      "Expiry odds",
       "Bid",
       "Sprd %",
       "OI",
@@ -227,9 +227,10 @@ describe("chain interactions", () => {
     render(<ItmChain />)
 
     const rows = await screen.findAllByRole("row")
-    expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("Historical predictive")
+    expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("Real-world forecast")
     expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("52.1% ITM")
-    expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("Closes through 2026-09-18 · model support 60")
+    expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("Completed stock close · 2026-09-18")
+    expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("Reliability not yet established")
     expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("Why market odds unavailable?")
     expect(screen.getByRole("columnheader", { name: "Est P&L" })).toBeTruthy()
     expect(screen.getByRole("columnheader", { name: "Loss odds" })).toBeTruthy()
@@ -238,6 +239,31 @@ describe("chain interactions", () => {
     expect((await screen.findAllByRole("row"))[1].firstChild?.textContent).toBe("$40.50")
     fireEvent.change(screen.getByLabelText("Contracts"), { target: { value: "2" } })
     expect((await screen.findAllByRole("row"))[1].textContent).toContain("-$20.00")
+  })
+
+  it("sorts expiry odds by real-world ITM probability rather than market-implied ITM", async () => {
+    const oddsPage = page()
+    oddsPage.expirations[0].contracts.forEach((row, index) => Object.assign(row, {
+      predictive_odds: {
+        status: "available", method: "lognormal_ewma", itm_pct_tenths: index === 0 ? 200 : 700,
+        otm_pct_tenths: index === 0 ? 800 : 300, atm_pct_tenths: 0,
+        as_of_session: "2026-09-17", expiry_session: "2026-09-18",
+        model_version: "lognormal-ewma60-v1",
+      },
+      market_odds: {
+        status: "available", itm_pct_tenths: index === 0 ? 900 : 100,
+        otm_pct_tenths: index === 0 ? 100 : 900,
+      },
+    }))
+    fetchMock.mockResolvedValue(oddsPage)
+    render(<ItmChain />)
+    await screen.findByRole("button", { name: "Expiry odds" })
+    fireEvent.click(screen.getByRole("button", { name: "Expiry odds" }))
+    const rows = screen.getAllByRole("row")
+    expect(rows[1].firstChild?.textContent).toBe("$40.50")
+    expect(rows[1].querySelector(".odds-physical")?.textContent).toContain("70.0% ITM")
+    expect(rows[1].querySelector(".odds-market")?.textContent).toContain("10.0% ITM")
+    expect(screen.getByRole("columnheader", { name: "Expiry odds" }).getAttribute("aria-sort")).toBe("descending")
   })
 
   it("includes odds in the mobile contract summary before expanding details", async () => {
@@ -954,12 +980,12 @@ describe("chain interactions", () => {
     render(<ItmChain />)
 
     await waitFor(() => expect(screen.getByRole("columnheader", { name: "IV" })).toBeTruthy())
-    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["Strike", "ITM / OTM odds", "IV", "Watch", "Copy"])
+    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["Strike", "Expiry odds", "IV", "Watch", "Copy"])
     fireEvent.click(screen.getByRole("radio", { name: "Cash-secured puts" }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "put", "otm"))
     expect(screen.queryByRole("columnheader", { name: "IV" })).toBeNull()
     expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
-      "Strike", "ITM / OTM odds", "Bid", "Sprd %", "OI", "Premium", "Breakeven", "APR (net)", "Cushion (BE)", "Watch", "Copy",
+      "Strike", "Expiry odds", "Bid", "Sprd %", "OI", "Premium", "Breakeven", "APR (net)", "Cushion (BE)", "Watch", "Copy",
     ])
     expect(window.location.search).not.toContain("cols=")
   })
@@ -984,7 +1010,7 @@ describe("chain interactions", () => {
 
     await screen.findByRole("columnheader", { name: "IV" })
     expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
-      "Strike", "ITM / OTM odds", "IV", "Watch", "Copy",
+      "Strike", "Expiry odds", "IV", "Watch", "Copy",
     ])
     expect(screen.getByRole("button", { name: "Columns2" })).toBeTruthy()
     expect(window.location.search).toContain("cols=strike_cents%2Civ_pct_tenths")

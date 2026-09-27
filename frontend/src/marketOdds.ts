@@ -33,21 +33,39 @@ export function quoteSupportLabel(odds: MarketOdds | null | undefined): string |
   const low = odds?.bound_low_pct_tenths
   const high = odds?.bound_high_pct_tenths
   const score = odds?.quote_support_score
-  if (!oddsAvailable(odds) || low == null || high == null || score == null
-    || !Number.isInteger(low) || !Number.isInteger(high) || !Number.isInteger(score)
-    || low < 0 || low > high || high > 1000 || score < 0 || score > 100) return null
-  return `Quote tightness ${score}/100 · ITM bounds ${unsignedPercentTenths(low)}–${unsignedPercentTenths(high)}`
+  if (!oddsAvailable(odds) || low == null || high == null
+    || !Number.isInteger(low) || !Number.isInteger(high)
+    || low < 0 || low > high || high > 1000) return null
+  const tightness = score != null && Number.isInteger(score) && score >= 0 && score <= 100
+    ? `Quote tightness ${score}/100 · ` : ""
+  return `${tightness}ITM bounds ${unsignedPercentTenths(low)}–${unsignedPercentTenths(high)}`
 }
 
-export function predictiveSupportLabel(odds: PredictiveOdds | null | undefined): string | null {
+export function predictiveBasisLabel(odds: PredictiveOdds | null | undefined): string | null {
   if (!predictiveAvailable(odds)) return null
-  return `Closes through ${odds!.as_of_session ?? "date unavailable"} · model support ${odds!.support ?? "unavailable"}`
+  const basis = odds!.price_basis === "validated_underlying_quote"
+    ? "Validated underlying quote"
+    : "Completed stock close"
+  const time = odds!.price_as_of && !Number.isNaN(new Date(odds!.price_as_of).valueOf())
+    ? oddsTime.format(new Date(odds!.price_as_of))
+    : odds!.as_of_session ?? "date unavailable"
+  return `${basis} · ${time}`
 }
 
-export function preferredOddsKind(market: MarketOdds | null | undefined, predictive: PredictiveOdds | null | undefined): "market" | "predictive" | null {
-  if (oddsAvailable(market)) return "market"
-  if (predictiveAvailable(predictive)) return "predictive"
-  return null
+export function predictiveReliabilityLabel(odds: PredictiveOdds | null | undefined): string {
+  const evidence = odds?.validation_evidence
+  if (!predictiveAvailable(odds) || !evidence
+    || evidence.source !== "prospective_as_issued"
+    || evidence.model_version !== odds?.model_version
+    || !Number.isInteger(evidence.independent_units) || evidence.independent_units < 500
+    || !Number.isInteger(evidence.predicted_itm_pct_tenths)
+    || !Number.isInteger(evidence.observed_itm_pct_tenths)
+    || evidence.predicted_itm_pct_tenths < 0 || evidence.predicted_itm_pct_tenths > 1000
+    || evidence.observed_itm_pct_tenths < 0 || evidence.observed_itm_pct_tenths > 1000
+    || !evidence.horizon_band || !evidence.moneyness_band || !evidence.through_session) {
+    return "Reliability not yet established"
+  }
+  return `Comparable prospective calibration (${evidence.horizon_band}, ${evidence.moneyness_band}): ${unsignedPercentTenths(evidence.predicted_itm_pct_tenths)} forecast vs ${unsignedPercentTenths(evidence.observed_itm_pct_tenths)} observed ITM · ${evidence.independent_units} independent units through ${evidence.through_session}`
 }
 
 export function oddsMessage(odds: MarketOdds | null | undefined): string {
@@ -56,15 +74,11 @@ export function oddsMessage(odds: MarketOdds | null | undefined): string {
 }
 
 export function oddsLabel(market: MarketOdds | null | undefined, predictive?: PredictiveOdds | null): string {
-  if (oddsAvailable(market)) return `Market-implied ${unsignedPercentTenths(market!.itm_pct_tenths)} ITM, ${unsignedPercentTenths(market!.otm_pct_tenths)} OTM${quoteSupportLabel(market) ? `, ${quoteSupportLabel(market)}` : ""}`
-  if (predictiveAvailable(predictive)) return `Historical predictive ${unsignedPercentTenths(predictive!.itm_pct_tenths)} ITM, ${unsignedPercentTenths(predictive!.otm_pct_tenths)} OTM, ${unsignedPercentTenths(predictive!.atm_pct_tenths)} ATM, ${predictiveSupportLabel(predictive)}`
-  return unavailableReasons(market, predictive)
-}
-
-export function unavailableReasons(market: MarketOdds | null | undefined, predictive: PredictiveOdds | null | undefined): string {
-  const reasons = [oddsMessage(market)]
-  if (predictive?.status === "unavailable") reasons.push(`Historical forecast: ${predictive.reason || "unavailable"}`)
-  return reasons.join(" ")
+  const physical = predictiveAvailable(predictive)
+    ? `Real-world forecast ${unsignedPercentTenths(predictive!.itm_pct_tenths)} ITM, ${unsignedPercentTenths(predictive!.otm_pct_tenths)} OTM, ${unsignedPercentTenths(predictive!.atm_pct_tenths)} ATM, ${predictiveBasisLabel(predictive)}, ${predictiveReliabilityLabel(predictive)}`
+    : `Real-world forecast ${predictive?.status === "pending" ? "pending" : `unavailable: ${predictive?.reason || "no validated forecast"}`}`
+  if (oddsAvailable(market)) return `${physical}. Market-implied risk-neutral ${unsignedPercentTenths(market!.itm_pct_tenths)} ITM, ${unsignedPercentTenths(market!.otm_pct_tenths)} OTM${quoteSupportLabel(market) ? `, ${quoteSupportLabel(market)}` : ""}`
+  return `${physical}. ${oddsMessage(market)}`
 }
 
 export function predictiveProvenance(odds: PredictiveOdds | null | undefined): string | null {
@@ -74,7 +88,7 @@ export function predictiveProvenance(odds: PredictiveOdds | null | undefined): s
     : odds!.method === "lognormal_ewma"
       ? "EWMA lognormal model"
       : "Historical predictive model"
-  return `${method} · completed stock closes through ${odds!.as_of_session ?? "unknown session"} · expiry session ${odds!.expiry_session ?? "unknown"}${odds!.support != null ? ` · support ${odds!.support}` : ""}`
+  return `${method} · expiry session ${odds!.expiry_session ?? "unknown"}`
 }
 
 export function oddsProvenance(odds: MarketOdds | null | undefined): string | null {
