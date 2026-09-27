@@ -121,6 +121,10 @@ def test_current_version_coverage_excludes_old_candidate_attempts() -> None:
     rows.append({
         **rows[-1], "contract_key": "candidate-only", "idempotency_key": "candidate-only",
     })
+    rows.append({
+        **rows[-1], "ticker": "OTHER", "contract_key": "orphan-unit",
+        "idempotency_key": "orphan-unit",
+    })
 
     class Ledger:
         def iter_evaluation_rows(self, **_kwargs):
@@ -130,9 +134,12 @@ def test_current_version_coverage_excludes_old_candidate_attempts() -> None:
         Ledger(), SessionCalendar(), "as_issued", "student_t_ewma", None, "all", "1",
         current_version_only=True,
     )
-    assert {row.contract_id for row in current} == {"current", "candidate-only"}
-    report = evaluate_band(current, "student_t_ewma", "1", bootstrap_samples=100)
-    assert report["contract_cells_attempted"] == 2
-    assert report["rejection_reasons"] == {
-        "student_fit_failed": 1, "baseline_not_issued": 1,
+    assert {row.contract_id for row in current} == {
+        "current", "candidate-only", "orphan-unit",
     }
+    report = evaluate_band(current, "student_t_ewma", "1", bootstrap_samples=100)
+    assert report["contract_cells_attempted"] == 3
+    assert report["rejection_reasons"] == {
+        "student_fit_failed": 1, "baseline_not_issued": 2,
+    }
+    assert report["later_vintage_attempts_excluded"] == 0
