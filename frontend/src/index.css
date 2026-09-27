@@ -919,6 +919,7 @@
     color: var(--foreground);
     font-weight: 720;
     text-align: left;
+    white-space: nowrap;
   }
   .expiry-chevron { width: 16px; flex: none; transition: transform 160ms ease; }
   .expiry-trigger[aria-expanded="true"] .expiry-chevron { transform: rotate(90deg); }
