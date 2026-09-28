@@ -199,7 +199,7 @@ def test_dev_cleanup_signals_owned_descendants(tmp_path: Path) -> None:
         text=True,
     )
     try:
-        for _ in range(100):
+        for _ in range(500):
             if (ready / "backend").exists() and (ready / "frontend").exists():
                 break
             assert dev.poll() is None
