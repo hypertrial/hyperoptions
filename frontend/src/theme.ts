@@ -4,6 +4,8 @@ export type ThemePreference = "light" | "dark" | "system"
 
 const STORAGE_KEY = "theme"
 const listeners = new Set<() => void>()
+let sessionPreference: ThemePreference | null = null
+let storageWriteFailed = false
 
 function emit() {
   for (const listener of listeners) listener()
@@ -11,8 +13,12 @@ function emit() {
 
 function readPreference(): ThemePreference {
   if (typeof window === "undefined") return "system"
-  const stored = window.localStorage.getItem(STORAGE_KEY)
-  if (stored === "light" || stored === "dark" || stored === "system") return stored
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY)
+    if (storageWriteFailed && sessionPreference !== null) return sessionPreference
+    sessionPreference = null
+    if (stored === "light" || stored === "dark" || stored === "system") return stored
+  } catch { return sessionPreference ?? "system" }
   return "system"
 }
 
@@ -36,7 +42,11 @@ export function getThemePreference(): ThemePreference {
 
 export function setThemePreference(preference: ThemePreference) {
   if (typeof window === "undefined") return
-  window.localStorage.setItem(STORAGE_KEY, preference)
+  sessionPreference = preference
+  try {
+    window.localStorage.setItem(STORAGE_KEY, preference)
+    storageWriteFailed = false
+  } catch { storageWriteFailed = true }
   applyClass(preference)
   emit()
 }
@@ -57,6 +67,8 @@ function subscribe(listener: () => void) {
   }
   const onStorage = (event: StorageEvent) => {
     if (event.key === STORAGE_KEY) {
+      sessionPreference = null
+      storageWriteFailed = false
       applyClass(readPreference())
       emit()
     }

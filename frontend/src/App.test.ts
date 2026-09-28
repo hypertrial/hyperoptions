@@ -86,6 +86,8 @@ describe("formatters", () => {
     expect(moneyCents(Number.NaN)).toBe("—")
     expect(moneyCents(0)).toBe("$0.00")
     expect(moneyCents(-15601)).toBe("-$156.01")
+    expect(moneyCents(Number.MAX_SAFE_INTEGER)).toBe("$90,071,992,547,409.91")
+    expect(moneyCents(-Number.MAX_SAFE_INTEGER)).toBe("-$90,071,992,547,409.91")
     expect(percentTenths(null)).toBe("—")
     expect(percentTenths(0)).toBe("0.0%")
     expect(percentTenths(Number.POSITIVE_INFINITY)).toBe("—")

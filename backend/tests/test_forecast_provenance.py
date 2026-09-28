@@ -377,6 +377,45 @@ def _results(day: str) -> bytes:
     ).encode()
 
 
+def test_sec_sept_abbreviation_is_accepted_for_schedule_and_actual():
+    accepted = datetime(2026, 9, 1, 16, tzinfo=UTC)
+    schedule = parse_forward_schedule(
+        "ACME", 12345, "0000012345-26-000001", accepted,
+        accepted + timedelta(minutes=5), "ex99-1.htm", _announcement("Sept. 30, 2026"),
+    )
+    assert schedule is not None and schedule.event_date == date(2026, 9, 30)
+    actual_accepted = datetime(2026, 10, 1, 16, tzinfo=UTC)
+    actual = parse_actual_results(
+        "ACME", 12345, "0000012345-26-000002", actual_accepted,
+        actual_accepted + timedelta(minutes=5), "ex99-1.htm", _results("Sept. 30, 2026"),
+    )
+    assert actual is not None and actual.event_date == date(2026, 9, 30)
+
+
+def test_sec_dotted_meridiem_preserves_announced_time():
+    accepted = datetime(2026, 9, 28, 16, tzinfo=UTC)
+    for meridiem, hour in (("a.m.", 9), ("p.m.", 21)):
+        schedule = parse_forward_schedule(
+            "ACME", 12345, "0000012345-26-000001", accepted,
+            accepted + timedelta(minutes=5), "ex99-1.htm",
+            _announcement("November 5, 2026").replace(b"PM", meridiem.encode()),
+        )
+        assert schedule is not None
+        assert schedule.event_at == datetime(2026, 11, 5, hour, 30, tzinfo=UTC)
+
+
+def test_sec_dotted_meridiem_does_not_take_next_sentence_time():
+    accepted = datetime(2026, 9, 28, 16, tzinfo=UTC)
+    for separator in (b" ", b""):
+        schedule = parse_forward_schedule(
+            "ACME", 12345, "0000012345-26-000001", accepted,
+            accepted + timedelta(minutes=5), "ex99-1.htm",
+            b"<p>Acme will report earnings on November 5, 2026 at 4 p.m."
+            + separator + b"Conference call at 8:00 AM ET.</p>",
+        )
+        assert schedule is not None and schedule.event_at is None
+
+
 def test_sec_schedule_revisions_obey_retrieval_knowledge_time(tmp_path):
     accepted = datetime(2026, 9, 28, 16, tzinfo=UTC)
     first = parse_forward_schedule(

@@ -8,7 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ApiError, fetchChain, fetchTickers } from "./api"
 import { formatContractValues } from "./columns"
 import { formatRowClipboard } from "./copyRow"
+import { setDensity } from "./density"
 import ItmChain from "./ItmChain"
+import { setThemePreference } from "./theme"
 import { COLUMN_HEADERS, COPY_HEADERS, largeChainPage, sampleContract, samplePage, samplePutPage } from "./testFixtures"
 import type { CoveredCallPage } from "./types"
 import { addWatch } from "./watchlist/api"
@@ -1158,6 +1160,51 @@ describe("chain interactions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Theme: dark" }))
     expect(document.documentElement.classList.contains("dark")).toBe(false)
     expect(window.localStorage.getItem("theme")).toBe("light")
+  })
+
+  it("keeps theme and density usable when localStorage is denied", async () => {
+    const original = Object.getOwnPropertyDescriptor(window, "localStorage")!
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      get() { throw new DOMException("Storage blocked", "SecurityError") },
+    })
+    try {
+      render(<ItmChain />)
+      await waitFor(() => expect(screen.getByRole("heading", { name: /2026-09-18/ })).toBeTruthy())
+      fireEvent.click(screen.getByRole("button", { name: "Theme: system" }))
+      expect(screen.getByRole("button", { name: "Theme: dark" })).toBeTruthy()
+      fireEvent.click(screen.getByRole("button", { name: "Density: comfortable" }))
+      expect(document.querySelector("table")?.getAttribute("data-density")).toBe("compact")
+    } finally {
+      cleanup()
+      Object.defineProperty(window, "localStorage", original)
+      setThemePreference("system")
+      setDensity("comfortable")
+    }
+  })
+
+  it("keeps preference changes when localStorage writes fail", async () => {
+    const original = Object.getOwnPropertyDescriptor(window, "localStorage")!
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem(key: string) { return key === "theme" ? "system" : null },
+        setItem() { throw new DOMException("Storage full", "QuotaExceededError") },
+      },
+    })
+    try {
+      render(<ItmChain />)
+      await waitFor(() => expect(screen.getByRole("heading", { name: /2026-09-18/ })).toBeTruthy())
+      fireEvent.click(screen.getByRole("button", { name: "Theme: system" }))
+      expect(screen.getByRole("button", { name: "Theme: dark" })).toBeTruthy()
+      fireEvent.click(screen.getByRole("button", { name: "Density: comfortable" }))
+      expect(document.querySelector("table")?.getAttribute("data-density")).toBe("compact")
+    } finally {
+      cleanup()
+      Object.defineProperty(window, "localStorage", original)
+      setThemePreference("system")
+      setDensity("comfortable")
+    }
   })
 
   it("selects a ticker from the keyboard", async () => {

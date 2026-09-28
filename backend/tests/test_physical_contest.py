@@ -20,11 +20,13 @@ from stocksweeper.forecast.audit import AuditCohort, AuditMember
 from stocksweeper.forecast.physical_contest import (
     PhysicalShadowForecaster,
     ShadowForecast,
+    STUDENT_VERSION,
     _fit_gjr,
     _fit_har,
     _fit_arch_skew,
     _fit_markov,
     _gjr_terminal,
+    _seed,
     _student_terminal,
 )
 from stocksweeper.forecast.physical_evaluation import ContestRow, crps, evaluate_band
@@ -159,6 +161,21 @@ def test_gjr_requires_long_split_safe_history_and_scenarios_are_seeded():
     assert _student_terminal(100, 0.02, 3, (5, 0.8), 4) == _student_terminal(
         100, 0.02, 3, (5, 0.8), 4
     )
+
+
+def test_student_tail_scenarios_are_bounded_and_versioned():
+    # Parameters from frozen HSDT history at the 2024-01-17 origin.
+    spot = 5400.0
+    prices = _student_terminal(
+        spot,
+        0.05511406276449384,
+        25,
+        (2.5562815487166555, 0.6221084805818157),
+        _seed("HSDT", date(2024, 1, 17), "student_t_ewma", 25),
+    )
+    assert prices[0] >= spot / 100 * (1 - 1e-12)
+    assert prices[-1] <= spot * 100 * (1 + 1e-12)
+    assert STUDENT_VERSION == "student-t-ewma60-shadow-v2"
 
 
 def test_singular_candidate_fit_reports_only_that_model_unavailable(monkeypatch):

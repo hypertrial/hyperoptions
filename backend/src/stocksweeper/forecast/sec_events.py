@@ -160,6 +160,7 @@ def _document_text(content: bytes) -> str:
 
 def _event_date(text: str) -> date | None:
     normalized = text.replace(".", "").replace(",", "")
+    normalized = re.sub(r"^sept(?=\s)", "Sep", normalized, flags=re.IGNORECASE)
     for layout in ("%B %d %Y", "%b %d %Y"):
         try:
             return datetime.strptime(normalized, layout).date()
@@ -199,8 +200,10 @@ def parse_forward_schedule(
         return None
     context = text[max(0, match.start() - 100) : min(len(text), match.end() + 100)]
     # A nearby filing timestamp must not become the announced event time.
-    after_date = text[match.end() : min(len(text), match.end() + 100)].split(".", 1)[0]
+    after_date = text[match.end() : min(len(text), match.end() + 100)]
     local_time = _TIME.search(after_date)
+    if local_time and "." in after_date[: local_time.start()]:
+        local_time = None
     event_at = None
     if local_time:
         hour = int(local_time.group(1)) % 12 + (

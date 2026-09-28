@@ -38,7 +38,7 @@ from stocksweeper.forecast.provenance import SourceRightsUnverified
 
 SCENARIOS = 4096
 MAX_HORIZON = 25
-STUDENT_VERSION = "student-t-ewma60-shadow-v1"
+STUDENT_VERSION = "student-t-ewma60-shadow-v2"
 GJR_VERSION = "gjr-garch11-t-shadow-v1"
 EMPIRICAL_SHADOW_VERSION = "empirical-ewma60-shadow-v1"
 HAR_VERSION = "ohlc-har-proxy-v1"
@@ -182,6 +182,10 @@ def _student_terminal(
         realized = daily * shock
         total += realized
         daily = np.sqrt(_EWMA_DECAY * daily**2 + (1 - _EWMA_DECAY) * realized**2)
+    if not np.isfinite(total).all():
+        raise ValueError("student scenarios invalid")
+    # The unbounded t tail has no finite price mean after exponentiation.
+    total = np.clip(total, -log(100), log(100))
     with np.errstate(over="ignore", invalid="ignore", under="ignore"):
         terminal = spot * np.exp(total)
     if not np.isfinite(terminal).all() or np.any(terminal <= 0):

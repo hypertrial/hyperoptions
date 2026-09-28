@@ -1,6 +1,7 @@
 const dollars = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
+  maximumFractionDigits: 0,
 })
 
 export function moneyCents(value: number | null | undefined): string {
@@ -9,7 +10,7 @@ export function moneyCents(value: number | null | undefined): string {
   const abs = Math.abs(value)
   const whole = Math.trunc(abs / 100)
   const frac = abs % 100
-  const formatted = dollars.format(whole + frac / 100)
+  const formatted = `${dollars.format(whole)}.${String(frac).padStart(2, "0")}`
   if (!sign) return formatted
   return formatted.startsWith("-") ? formatted : `-${formatted}`
 }
