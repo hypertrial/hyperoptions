@@ -158,6 +158,47 @@ def _handler(fail_info: bool = False, fail_history: bool = False, fail_chain: bo
     return handler
 
 
+@pytest.mark.asyncio
+async def test_current_chain_bypasses_inflight_display_fetch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    display_started = asyncio.Event()
+    release_display = asyncio.Event()
+    calls = 0
+
+    async def fetch(_ticker: str, _client: httpx.AsyncClient) -> dict:
+        nonlocal calls
+        calls += 1
+        payload = load_fixture("nasdaq_iren_sample.json")
+        if calls == 1:
+            display_started.set()
+            await release_display.wait()
+        else:
+            payload["data"]["lastTrade"] = "LAST TRADE: $44.93 (AS OF SEP 10, 2026 3:37 PM ET)"
+        return payload
+
+    monkeypatch.setattr("options_api.service.fetch_option_chain_payload", fetch)
+    async with _offline_client() as client:
+        service = OptionChainService(client)
+        display = asyncio.create_task(service.get_chain("IREN"))
+        try:
+            await asyncio.wait_for(display_started.wait(), timeout=2)
+            current = await asyncio.wait_for(service.get_current_chain("IREN"), timeout=2)
+            assert calls == 2
+            assert current.from_cache is False
+            assert current.last_trade.startswith("LAST TRADE: $44.93")
+        finally:
+            release_display.set()
+            await display
+
+        cached = await service.get_chain("IREN")
+        assert cached.from_cache is True
+        assert calls == 2
+        current = await service.get_current_chain("IREN")
+        assert calls == 3
+        assert current.from_cache is False
+
+
 def test_health_and_unknown_or_invalid_tickers(api: TestClient) -> None:
     assert api.get("/api/health").json() == {"ok": True}
     app.state.universe = _seed_universe()

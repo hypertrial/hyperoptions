@@ -46,44 +46,46 @@ class OptionChainService:
         self._history_cache = history_cache or TickerCache(ttl_seconds=86_400.0)
 
     async def get_chain(self, ticker: Ticker) -> OptionChainResponse:
-        async def fetch() -> OptionChainResponse:
-            payload = await fetch_option_chain_payload(ticker, self._client)
-            if symbol_not_exists(payload):
-                raise NasdaqError.not_found()
-            if not nasdaq_status_ok(payload):
-                raise NasdaqError.malformed()
-            try:
-                rows, truncated, last_trade, options_available = parse_option_chain(ticker, payload)
-            except ValueError as exc:
-                raise NasdaqError.malformed() from exc
-            if not rows and options_available:
-                raise NasdaqError.malformed()
-            if truncated:
-                replacement = await fetch_yahoo_chain(
-                    ticker, frozenset(row.expiration for row in rows)
-                )
-                if replacement is not None:
-                    return replacement
-            return OptionChainResponse(
-                ticker=ticker,
-                fetched_at=datetime.now(UTC),
-                from_cache=False,
-                last_trade=last_trade,
-                last_trade_timestamp=extract_last_trade_timestamp(last_trade),
-                spot=extract_last_trade_price(last_trade),
-                source="nasdaq",
-                truncated=truncated,
-                options_available=options_available,
-                rows=rows,
-            )
-
-        response, from_cache = await self._chain_cache.get_or_fetch(ticker, fetch)
+        response, from_cache = await self._chain_cache.get_or_fetch(
+            ticker, lambda: self._fetch_chain(ticker)
+        )
         return response.model_copy(update={"from_cache": True}) if from_cache else response
 
     async def get_current_chain(self, ticker: Ticker) -> OptionChainResponse:
         """Recheck a selected contract against the provider at watch creation."""
         self._chain_cache.discard(ticker)
-        return await self.get_chain(ticker)
+        return await self._fetch_chain(ticker)
+
+    async def _fetch_chain(self, ticker: Ticker) -> OptionChainResponse:
+        payload = await fetch_option_chain_payload(ticker, self._client)
+        if symbol_not_exists(payload):
+            raise NasdaqError.not_found()
+        if not nasdaq_status_ok(payload):
+            raise NasdaqError.malformed()
+        try:
+            rows, truncated, last_trade, options_available = parse_option_chain(ticker, payload)
+        except ValueError as exc:
+            raise NasdaqError.malformed() from exc
+        if not rows and options_available:
+            raise NasdaqError.malformed()
+        if truncated:
+            replacement = await fetch_yahoo_chain(
+                ticker, frozenset(row.expiration for row in rows)
+            )
+            if replacement is not None:
+                return replacement
+        return OptionChainResponse(
+            ticker=ticker,
+            fetched_at=datetime.now(UTC),
+            from_cache=False,
+            last_trade=last_trade,
+            last_trade_timestamp=extract_last_trade_timestamp(last_trade),
+            spot=extract_last_trade_price(last_trade),
+            source="nasdaq",
+            truncated=truncated,
+            options_available=options_available,
+            rows=rows,
+        )
 
     async def get_info(
         self, ticker: Ticker, scan_time: datetime | None = None

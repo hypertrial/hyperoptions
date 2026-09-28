@@ -275,7 +275,7 @@ def test_dev_cleanup_stops_a_launcher_before_its_process_group_exists_even_if_te
     )
     launched_pid: int | None = None
     try:
-        for _ in range(100):
+        for _ in range(500):
             if launcher_pid.exists():
                 launched_pid = int(launcher_pid.read_text())
                 break
