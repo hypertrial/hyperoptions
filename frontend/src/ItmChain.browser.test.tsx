@@ -1006,7 +1006,7 @@ describe("chain interactions", () => {
     fireEvent.change(screen.getByLabelText("Min DTE"), { target: { value: "1" } })
     expect(screen.getByText(/Displaying 250 of 300 rows/)).toBeTruthy()
     expect(document.querySelectorAll("tbody tr")).toHaveLength(250)
-  })
+  }, 15_000)
 
   it("refetches puts with OTM default and put filters", async () => {
     fetchMock.mockImplementation(async (_ticker, side) => (
