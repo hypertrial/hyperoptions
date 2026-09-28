@@ -244,7 +244,7 @@ def calculate_curve_shadow(
                 (target.strike - train[left].strike) / (train[right].strike - train[left].strike)
             )
             estimate = train_fit[left] * (1 - weight) + train_fit[right] * weight
-            held_shadow[key] = target.bid <= estimate <= target.ask
+            held_shadow[key] = bool(target.bid <= estimate <= target.ask)
         if fitted is None:
             rejected["infeasible_curve"] += len(quotes)
             expiry_reasons[expiry] = "infeasible_curve"
@@ -297,7 +297,7 @@ def calculate_curve_shadow(
         estimate = benchmark_odds.get(key) if benchmark_odds is not None else None
         price = estimate.held_out_vanilla_price if estimate is not None else None
         if quote is not None and price is not None and math.isfinite(price):
-            held_benchmark[key] = quote.bid <= price <= quote.ask
+            held_benchmark[key] = bool(quote.bid <= price <= quote.ask)
     if benchmark_keys and not held_benchmark:
         rejected["benchmark_held_out_fit_unavailable"] += len(benchmark_keys)
     missing_cohort = len(benchmark_keys - held_quotes.keys())

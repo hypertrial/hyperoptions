@@ -109,6 +109,12 @@ def test_held_out_comparison_uses_benchmark_fit_cohort(
     assert result.held_out_count == len(held)
     assert result.benchmark_held_out_predicted == len(held)
     assert result.shadow_held_out_predicted == result.paired_held_out_count == len(held)
+    json.dumps({
+        "held_out_inside": result.held_out_inside,
+        "benchmark_held_out_inside": result.benchmark_held_out_inside,
+        "paired_shadow_inside": result.paired_shadow_inside,
+        "paired_benchmark_inside": result.paired_benchmark_inside,
+    })
     for expiry in allowed:
         excluded = {key for key in held if key[0] == expiry}
         assert any(
