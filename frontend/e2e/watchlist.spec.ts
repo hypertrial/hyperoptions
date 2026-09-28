@@ -122,12 +122,22 @@ test("compares all models in a bounded dialog on desktop and mobile", async ({ p
     ...item,
     physical_models: [
       { method: "lognormal_ewma", status: "available", itm_pct_tenths: 612, otm_pct_tenths: 388, atm_pct_tenths: 0, price_basis: "completed_close", support: 60 },
+      { method: "empirical_scaled", status: "available", itm_pct_tenths: 630, otm_pct_tenths: 370, atm_pct_tenths: 0, price_basis: "completed_close", support: 210 },
       { method: "student_t_ewma", status: "pending", reason: "candidate_not_prepared" },
       { method: "gjr_garch_t", status: "unavailable", reason: "gjr_parameters_invalid" },
+      { method: "ohlc_har", status: "available", itm_pct_tenths: 590, otm_pct_tenths: 410, atm_pct_tenths: 0, price_basis: "completed_close", support: 4096 },
+      { method: "skew_t_ewma", status: "pending", reason: "candidate_not_prepared" },
+      { method: "egarch_skew_t", status: "unavailable", reason: "egarch_parameters_invalid" },
+      { method: "markov_switching", status: "pending", reason: "candidate_not_prepared" },
+      { method: "ngboost_pooled", status: "pending", reason: "candidate_not_prepared" },
+      { method: "earnings_jump", status: "unavailable", reason: "verified_release_time_history_unavailable" },
+      { method: "iv_physical", status: "unavailable", reason: "rights_cleared_option_history_unavailable" },
+      { method: "intraday_shadow", status: "unavailable", reason: "underlying_quote_unavailable" },
     ],
     market_models: [
       { method: "regimelib", status: "available", itm_pct_tenths: 583, otm_pct_tenths: 417, bound_low_pct_tenths: 452, bound_high_pct_tenths: 753 },
       { method: "constrained_call_curve", status: "unavailable", reason: "clean_strikes_do_not_bracket_contract" },
+      { method: "ssvi", status: "unavailable", reason: "rights_cleared_option_history_unavailable" },
     ],
   }
   await page.route("**/api/watchlist**", (route) => route.fulfill({ json: { items: [comparisonItem] } }))
@@ -137,9 +147,11 @@ test("compares all models in a bounded dialog on desktop and mobile", async ({ p
     await page.getByRole("button", { name: "Compare models" }).click()
     const dialog = page.getByRole("dialog", { name: "Compare models" })
     await expect(dialog).toBeVisible()
-    await expect(dialog.locator(".model-result")).toHaveCount(5)
+    await expect(dialog.locator(".model-result")).toHaveCount(15)
     await expect(dialog.locator(".model-result details[open]")).toHaveCount(0)
     await expect(dialog).toContainText("gjr parameters invalid")
+    await expect(dialog.getByText("Daily OHLC range/HAR proxy")).toBeVisible()
+    await expect(dialog.getByText("SSVI volatility surface")).toBeVisible()
     const bounds = await dialog.evaluate((element) => {
       const rect = element.getBoundingClientRect()
       return { width: rect.width, height: rect.height, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth }

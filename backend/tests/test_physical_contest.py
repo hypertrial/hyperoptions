@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import builtins
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from importlib.util import module_from_spec, spec_from_file_location
 from math import isclose
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import polars as pl
@@ -19,6 +21,9 @@ from stocksweeper.forecast.physical_contest import (
     PhysicalShadowForecaster,
     ShadowForecast,
     _fit_gjr,
+    _fit_har,
+    _fit_arch_skew,
+    _fit_markov,
     _gjr_terminal,
     _student_terminal,
 )
@@ -92,6 +97,56 @@ def test_shadow_scenarios_are_deterministic_and_use_one_fit_per_input_session(
     assert first["lognormal_ewma"].distribution.method == "lognormal_ewma"
 
 
+def test_gjr_cold_import_is_outside_fit_limit_but_slow_fit_is_rejected(tmp_path, monkeypatch):
+    from stocksweeper.forecast import physical_contest
+
+    session = date(2026, 9, 25)
+    frame = _bars(700, session)
+    shadow = PhysicalShadowForecaster(PredictiveForecaster(tmp_path, _Prices(frame)))
+    clock = [0.0]
+    fit_seconds = [0.015]
+    imported = [False]
+    result = SimpleNamespace(
+        convergence_flag=0,
+        params={"omega": 0.01, "alpha[1]": 0.05, "gamma[1]": 0.04, "beta[1]": 0.9, "nu": 6.0},
+        conditional_volatility=np.ones(700),
+    )
+
+    def fit(**_kwargs):
+        clock[0] += fit_seconds[0]
+        return result
+
+    fake_arch = SimpleNamespace(arch_model=lambda *_args, **_kwargs: SimpleNamespace(fit=fit))
+    original_import = builtins.__import__
+
+    def timed_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "arch":
+            if not imported[0]:
+                clock[0] += 5.1
+                imported[0] = True
+            return fake_arch
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", timed_import)
+    monkeypatch.setattr(physical_contest, "perf_counter", lambda: clock[0])
+
+    def skip(*_args, **_kwargs):
+        return None, None
+
+    for name in ("_fit_student", "_fit_har", "_fit_arch_skew", "_fit_markov"):
+        monkeypatch.setattr(physical_contest, name, skip)
+
+    fast, _ = shadow._fit("TEST", session, frame, "cold")
+    assert fast.gjr_reason is None
+    assert fast.gjr_fit_ms == pytest.approx(15.0)
+    assert shadow._fit("TEST", session, frame, "cold")[0] is fast
+
+    fit_seconds[0] = 5.001
+    slow, _ = shadow._fit("TEST", session, frame, "slow")
+    assert slow.gjr_reason == "gjr_fit_latency_exceeded"
+    assert slow.gjr_parameters is None
+
+
 def test_gjr_requires_long_split_safe_history_and_scenarios_are_seeded():
     short = np.random.default_rng(0).normal(0, 0.01, 499)
     assert _fit_gjr(short, np.zeros(499, dtype=bool))[1] == "gjr_history_short"
@@ -104,6 +159,126 @@ def test_gjr_requires_long_split_safe_history_and_scenarios_are_seeded():
     assert _student_terminal(100, 0.02, 3, (5, 0.8), 4) == _student_terminal(
         100, 0.02, 3, (5, 0.8), 4
     )
+
+
+def test_singular_candidate_fit_reports_only_that_model_unavailable(monkeypatch):
+    import arch.univariate
+    import statsmodels.tsa.regime_switching.markov_regression as markov_regression
+
+    def singular(*_args, **_kwargs):
+        raise np.linalg.LinAlgError("singular history")
+
+    monkeypatch.setattr(arch.univariate, "ZeroMean", singular)
+    monkeypatch.setattr(markov_regression, "MarkovRegression", singular)
+    returns = np.random.default_rng(1).normal(0, 0.01, 500)
+    splits = np.zeros(500, dtype=bool)
+    assert _fit_arch_skew(returns, splits, egarch=False)[1] == "skew_ewma_fit_failed"
+    assert _fit_markov(returns, splits)[1] == "markov_fit_failed"
+
+
+def test_gjr_boundary_roundoff_is_accepted_but_material_violation_is_not(monkeypatch):
+    import arch
+
+    parameters = {
+        "omega": 0.01,
+        "alpha[1]": 0.1,
+        "gamma[1]": -0.1 - 8.58e-14,
+        "beta[1]": 0.8,
+        "nu": 6.0,
+    }
+    result = SimpleNamespace(
+        convergence_flag=0, params=parameters, conditional_volatility=np.ones(500)
+    )
+    monkeypatch.setattr(
+        arch, "arch_model", lambda *_args, **_kwargs: SimpleNamespace(fit=lambda **_kwargs: result)
+    )
+    returns = np.zeros(500)
+    splits = np.zeros(500, dtype=bool)
+    accepted, reason = _fit_gjr(returns, splits)
+    assert reason is None
+    assert accepted is not None and accepted[1] + accepted[2] == 0
+    parameters["gamma[1]"] = -0.100001
+    assert _fit_gjr(returns, splits)[1] == "gjr_parameters_invalid"
+
+
+def test_added_completed_close_models_share_seeded_terminal_distribution(tmp_path):
+    session = date(2026, 9, 25)
+    frame = _bars(700, session)
+    forecaster = PredictiveForecaster(tmp_path, _Prices(frame))
+    forecaster.prepare("TEST", session)
+    shadow = PhysicalShadowForecaster(forecaster)
+    now = datetime(2026, 9, 26, 12, tzinfo=UTC)
+    expiry = date(2026, 10, 9)
+    first = shadow.forecast_candidates("TEST", now, expiry)
+    repeat = shadow.forecast_candidates("TEST", now, expiry)
+    for name in ("ohlc_har", "skew_t_ewma", "egarch_skew_t", "markov_switching"):
+        distribution = first[name].distribution
+        assert distribution is not None, (name, first[name].reason)
+        assert distribution.prices == repeat[name].distribution.prices
+        assert len(distribution.prices) == 4096
+        assert sum(distribution.weights) == pytest.approx(1)
+        assert distribution.probability("call", distribution.spot) + distribution.probability(
+            "put", distribution.spot
+        ) == pytest.approx(1)
+        assert distribution.probability("call", distribution.spot * 1.1) < distribution.probability(
+            "call", distribution.spot
+        )
+    assert first["ngboost_pooled"].distribution is None
+    assert first["ngboost_pooled"].reason == "training_source_rights_unverified"
+
+
+def test_added_models_reject_short_or_split_affected_history():
+    frame = _bars(220, date(2026, 9, 25))
+    returns = np.diff(np.log(np.asarray(frame["close"].to_list())))
+    splits = np.zeros(len(returns), dtype=bool)
+    assert _fit_har(frame)[1] == "har_history_short"
+    assert _fit_arch_skew(returns, splits, egarch=True)[1] == "egarch_history_short"
+    assert _fit_markov(returns, splits)[1] == "markov_history_short"
+    long = _bars(700, date(2026, 9, 25))
+    split = np.zeros(699, dtype=bool)
+    split[650] = True
+    long_returns = np.diff(np.log(np.asarray(long["close"].to_list())))
+    assert _fit_arch_skew(long_returns, split, egarch=False)[1] == (
+        "skew_ewma_split_safe_history_short"
+    )
+    assert _fit_markov(long_returns, split)[1] == "markov_split_safe_history_short"
+    split[:] = False
+    split[100] = True
+    assert _fit_arch_skew(long_returns, split, egarch=False)[1] is None
+    assert _fit_markov(long_returns, split)[1] is None
+    long = long.with_columns(
+        pl.when(pl.int_range(pl.len()) == 650).then(2.0).otherwise(0.0).alias("stock_splits")
+    )
+    assert _fit_har(long)[1] == "har_history_short"
+
+
+def test_qualified_pooled_artifact_stays_unavailable_without_issuance_identity(
+    tmp_path, monkeypatch
+):
+    session = date(2026, 9, 25)
+    forecaster = PredictiveForecaster(tmp_path, _Prices(_bars(220, session)))
+    forecaster.prepare("TEST", session)
+    shadow = PhysicalShadowForecaster(forecaster)
+    calls = {"load": 0, "predict": 0}
+
+    def load(_data_dir):
+        calls["load"] += 1
+        return {"qualified": True}
+
+    def predict(_artifact, _frame, horizon, as_of):
+        calls["predict"] += 1
+        raise AssertionError("untraceable pooled prediction must not be issued")
+
+    monkeypatch.setattr("stocksweeper.forecast.physical_contest.load_pooled_model", load)
+    monkeypatch.setattr("stocksweeper.forecast.physical_contest.predict_pooled_params", predict)
+    now = datetime(2026, 9, 26, 12, tzinfo=UTC)
+    first = shadow.forecast_candidates("TEST", now, date(2026, 10, 2))["ngboost_pooled"]
+    repeat = shadow.forecast_candidates("TEST", now, date(2026, 10, 2))["ngboost_pooled"]
+    other = shadow.forecast_candidates("TEST", now, date(2026, 10, 9))["ngboost_pooled"]
+    for result in (first, repeat, other):
+        assert result.distribution is None
+        assert result.reason == "training_artifact_traceability_unavailable"
+    assert calls == {"load": 1, "predict": 0}
 
 
 @pytest.mark.parametrize("horizon", (25, 26, 40))
@@ -122,7 +297,16 @@ def test_baseline_remains_available_beyond_challenger_horizon(tmp_path, horizon)
         assert all(
             forecasts[name].distribution is None
             and forecasts[name].reason == "shadow_horizon_unsupported"
-            for name in ("empirical_scaled", "student_t_ewma", "gjr_garch_t")
+            for name in (
+                "empirical_scaled",
+                "student_t_ewma",
+                "gjr_garch_t",
+                "ohlc_har",
+                "skew_t_ewma",
+                "egarch_skew_t",
+                "markov_switching",
+                "ngboost_pooled",
+            )
         )
 
 
@@ -386,7 +570,7 @@ def test_ledger_contest_uses_exact_joined_label_and_counts_failed_attempts():
                     "unavailable_reason": "gjr_nonconverged",
                     "distribution_hash": None,
                 },
-                ]
+            ]
 
         def iter_evaluation_rows(self, **kwargs):
             assert kwargs["methods"] == ("lognormal_ewma", "student_t_ewma")
@@ -399,9 +583,7 @@ def test_ledger_contest_uses_exact_joined_label_and_counts_failed_attempts():
         def evaluation_skipped_attempts(self, provenance):
             return {}
 
-    report = ledger_contest(
-        Ledger(), SessionCalendar(), "as_issued", "student_t_ewma", None, "all"
-    )
+    report = ledger_contest(Ledger(), SessionCalendar(), "as_issued", "student_t_ewma", None, "all")
     first = report["bands"]["1"]
     assert first["baseline_contract_forecasts_available"] == 1
     assert first["contract_forecasts_available"] == 0

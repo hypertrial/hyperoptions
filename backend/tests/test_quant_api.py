@@ -94,6 +94,9 @@ def test_chain_serializes_predictive_fallback_and_coherent_payoff(
         )
         default_response = client.get("/api/covered-calls/IREN?moneyness=all")
         invalid_response = client.get("/api/covered-calls/IREN?forecast_model=unknown")
+        rights_unavailable = client.get(
+            "/api/covered-calls/IREN?moneyness=all&forecast_model=iv_physical"
+        )
         page = assemble_covered_calls(chain, info, history, today, now, "all")
 
         def failed_evidence(_entries):
@@ -120,11 +123,26 @@ def test_chain_serializes_predictive_fallback_and_coherent_payoff(
     assert row["predictive_odds"]["method"] == "empirical_scaled"
     assert [view["method"] for view in row["physical_models"]] == [
         "lognormal_ewma", "empirical_scaled", "student_t_ewma",
-        "gjr_garch_t", "intraday_shadow",
+        "gjr_garch_t", "ohlc_har", "skew_t_ewma", "egarch_skew_t",
+        "markov_switching", "ngboost_pooled", "earnings_jump",
+        "iv_physical", "intraday_shadow",
     ]
     assert [view["method"] for view in row["market_models"]] == [
-        "regimelib", "constrained_call_curve",
+        "regimelib", "constrained_call_curve", "ssvi",
     ]
+    by_method = {view["method"]: view for view in row["physical_models"]}
+    assert by_method["iv_physical"]["status"] == "unavailable"
+    assert by_method["iv_physical"]["reason"] == (
+        "rights_cleared_option_history_unavailable"
+    )
+    assert by_method["earnings_jump"]["status"] == "unavailable"
+    assert by_method["earnings_jump"]["reason"] == (
+        "verified_release_time_history_unavailable"
+    )
+    assert row["market_models"][-1]["status"] == "unavailable"
+    assert row["market_models"][-1]["reason"] == (
+        "rights_cleared_option_history_unavailable"
+    )
     assert row["hypothetical_risk"]["forecast_method"] == "empirical_scaled"
     assert row["predictive_odds"]["model_version"] == "test-v1"
     assert row["hypothetical_risk"]["status"] == "available"
@@ -159,3 +177,19 @@ def test_chain_serializes_predictive_fallback_and_coherent_payoff(
     assert all(
         view["status"] == "unavailable" for view in unavailable_row["physical_models"]
     )
+    rights_row = next(
+        contract for group in rights_unavailable.json()["expirations"]
+        for contract in group["contracts"] if contract["watch_key"] is not None
+    )
+    assert rights_row["predictive_odds"]["method"] == "iv_physical"
+    assert rights_row["predictive_odds"]["status"] == "unavailable"
+    assert rights_row["predictive_odds"]["reason"] == (
+        "rights_cleared_option_history_unavailable"
+    )
+    assert rights_row["predictive_odds"]["itm_pct_tenths"] is None
+    assert rights_row["hypothetical_risk"]["status"] == "unavailable"
+    assert rights_row["hypothetical_risk"]["forecast_method"] == "iv_physical"
+    assert next(
+        view for view in rights_row["physical_models"]
+        if view["method"] == "empirical_scaled"
+    )["status"] == "available"

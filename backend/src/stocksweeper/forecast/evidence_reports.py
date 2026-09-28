@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from options_api.market_calendar import session_close
+from stocksweeper.forecast.capture_windows import capture_window_counts
 from options_api.intraday_capture import _COMPARATOR_VERSION
 from options_api.intraday_shadow import _VERSION as INTRADAY_VERSION
 from stocksweeper.forecast.calendar import SessionCalendar
@@ -25,6 +26,11 @@ from stocksweeper.forecast.physical_contest import (
     EMPIRICAL_SHADOW_VERSION,
     GJR_VERSION,
     STUDENT_VERSION,
+    HAR_VERSION,
+    SKEW_T_VERSION,
+    EGARCH_VERSION,
+    MARKOV_VERSION,
+    NGBOOST_VERSION,
 )
 from stocksweeper.forecast.physical_evaluation import ContestRow, evaluate_band
 from stocksweeper.forecast.predictive import BASELINE_VERSION
@@ -33,6 +39,13 @@ CANDIDATE_VERSIONS = {
     "empirical_scaled": EMPIRICAL_SHADOW_VERSION,
     "student_t_ewma": STUDENT_VERSION,
     "gjr_garch_t": GJR_VERSION,
+    "ohlc_har": HAR_VERSION,
+    "skew_t_ewma": SKEW_T_VERSION,
+    "egarch_skew_t": EGARCH_VERSION,
+    "markov_switching": MARKOV_VERSION,
+    "ngboost_pooled": NGBOOST_VERSION,
+    "earnings_jump": "earnings-jump-v1",
+    "iv_physical": "iv-physical-v1",
 }
 BANDS = {"1": range(1, 2), "2-5": range(2, 6), "6-25": range(6, 26)}
 
@@ -232,10 +245,12 @@ def _summary(
     log_loss = dict(band_report["log_loss"])
     if dates < 20:
         brier["bootstrap_95"] = None
+        brier["bootstrap_familywise_95"] = None
         log_loss["bootstrap_95"] = None
     if reference_only:
         brier["paired_delta"] = None
         brier["bootstrap_95"] = None
+        brier["bootstrap_familywise_95"] = None
         log_loss["paired_delta"] = None
         log_loss["bootstrap_95"] = None
     return {
@@ -291,6 +306,7 @@ def build_model_evidence(
     calendar = SessionCalendar()
     # ponytail: cap the daily ledger scan at three years; use offline grouped reports if it grows.
     since = as_of.date() - timedelta(days=1096)
+    capture_counts = capture_window_counts(data_dir, as_of - timedelta(days=35), as_of)
     result: dict[tuple[str, str], dict[str, Any]] = {}
     for band in BANDS:
         baseline_rows = ledger_band_rows(
@@ -379,6 +395,7 @@ def build_model_evidence(
                 ),
                 "coverage_basis": "recorded_intraday_contract_windows",
                 "coverage_limit": report["denominator_limit"],
+                "capture_windows_all_horizons": capture_counts,
                 "rejection_reasons": summary["rejection_reasons"],
                 "brier": {
                     "baseline": summary["mean"]["brier"]["dated_close"],

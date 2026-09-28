@@ -18,6 +18,7 @@ from options_api.predictive_watch import PredictiveWatchOdds
 from stocksweeper.forecast.ledger import ForecastIssuance
 from stocksweeper.forecast.physical_contest import (
     EMPIRICAL_SHADOW_VERSION, GJR_VERSION, STUDENT_VERSION,
+    HAR_VERSION, SKEW_T_VERSION, EGARCH_VERSION, MARKOV_VERSION, NGBOOST_VERSION,
     PhysicalShadowForecaster, ShadowForecast,
 )
 from stocksweeper.forecast.predictive import BASELINE_VERSION, PredictiveDistribution
@@ -25,15 +26,23 @@ from stocksweeper.forecast.predictive import BASELINE_VERSION, PredictiveDistrib
 LOG = logging.getLogger(__name__)
 _MAX_BATCH_CONTRACTS = 512
 _MAX_PENDING_BATCHES = 4
-_MAX_CACHED_GROUPS = 512
+_MAX_CACHED_GROUPS = 96
 _RETRY_SECONDS = 30
 MODEL_VERSIONS = {
     "lognormal_ewma": BASELINE_VERSION,
     "empirical_scaled": EMPIRICAL_SHADOW_VERSION,
     "student_t_ewma": STUDENT_VERSION,
     "gjr_garch_t": GJR_VERSION,
+    "ohlc_har": HAR_VERSION,
+    "skew_t_ewma": SKEW_T_VERSION,
+    "egarch_skew_t": EGARCH_VERSION,
+    "markov_switching": MARKOV_VERSION,
+    "ngboost_pooled": NGBOOST_VERSION,
+    "earnings_jump": "earnings-jump-v1",
+    "iv_physical": "iv-physical-v1",
     "intraday_shadow": INTRADAY_VERSION,
 }
+CLOSE_METHODS = tuple(method for method in MODEL_VERSIONS if method != "intraday_shadow")
 
 Entry = tuple[ForecastIssuance, PredictiveDistribution | None]
 
@@ -69,6 +78,10 @@ class PhysicalShadowCapture:
             return ShadowForecast(None, base.reason or "completed_close_forecast_unavailable", 0, 0)
         if base.horizon_sessions > 25 and method != "lognormal_ewma":
             return ShadowForecast(None, "candidate_horizon_unsupported", 0, 0)
+        if method == "iv_physical":
+            return ShadowForecast(None, "rights_cleared_option_history_unavailable", 0, 0)
+        if method == "earnings_jump":
+            return ShadowForecast(None, "verified_release_time_history_unavailable", 0, 0)
         if method == base.method and method != "intraday_shadow":
             return ShadowForecast(base, None, 0, 0)
         key = base.ticker, base.as_of, expiry, contract_since, base.data_hash
@@ -157,7 +170,7 @@ class PhysicalShadowCapture:
                 None,
             )
             for issue, _ in entries
-            for method in ("lognormal_ewma", "empirical_scaled", "student_t_ewma", "gjr_garch_t")
+            for method in CLOSE_METHODS
         ]
 
     def _record_capacity(self, entries: list[Entry]) -> None:
@@ -181,10 +194,7 @@ class PhysicalShadowCapture:
                 continue
             rejected = {
                 method: ShadowForecast(None, "shadow_capacity_exceeded", 0, 0)
-                for method in (
-                    "lognormal_ewma", "empirical_scaled", "student_t_ewma",
-                    "gjr_garch_t", "intraday_shadow",
-                )
+                for method in MODEL_VERSIONS
             }
             if distribution is not None and distribution.method == "lognormal_ewma":
                 rejected["lognormal_ewma"] = ShadowForecast(distribution, None, 0, 0)
@@ -286,12 +296,7 @@ class PhysicalShadowCapture:
                 regime = (
                     "low" if volatility < 0.02 else "medium" if volatility < 0.05 else "high"
                 ) if volatility is not None else "unknown"
-                for method in (
-                    "lognormal_ewma",
-                    "empirical_scaled",
-                    "student_t_ewma",
-                    "gjr_garch_t",
-                ):
+                for method in CLOSE_METHODS:
                     candidate = candidates.get(method) if candidates is not None else None
                     distribution = candidate.distribution if candidate is not None else None
                     reason = (
@@ -303,6 +308,10 @@ class PhysicalShadowCapture:
                     )
                     if candidate is not None:
                         reason = candidate.reason or "candidate_unavailable"
+                    elif method == "iv_physical":
+                        reason = "rights_cleared_option_history_unavailable"
+                    elif method == "earnings_jump":
+                        reason = "verified_release_time_history_unavailable"
                     if distribution is not None and (
                         issue.status != "available"
                         or distribution.data_hash != issue.data_hash

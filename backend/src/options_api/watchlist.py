@@ -16,7 +16,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from options_api.contract_identity import make_watch_key, parse_watch_key, strike_exact
-from options_api.live_quant import MODEL_VERSIONS, quant_for_contract
+from options_api.live_quant import MODEL_VERSIONS, SSVI_VERSION, quant_for_contract
 from options_api.market_calendar import (
     expiry_session_completed,
     first_session_after_completed,
@@ -40,6 +40,7 @@ from options_api.outcomes import (
     YahooCloseProvider,
     resolve_outcome,
 )
+from stocksweeper.forecast.capture_windows import reconcile_capture_windows
 from stocksweeper.pipeline.jobs import Job, JobBusy, JobManager
 from stocksweeper.storage.db import connect, rows
 
@@ -204,7 +205,13 @@ class WatchStore:
         assert item is not None
         return item, created
 
-    def delete(self, watch_id: str) -> bool:
+    def delete(self, watch_id: str, *, now: datetime | None = None) -> bool:
+        watched = next((item for item in self.list() if item.id == watch_id), None)
+        if watched is None:
+            return False
+        reconcile_capture_windows(
+            self.path.parent, [watched], now or datetime.now(UTC), contract_key=watched.watch_key
+        )
         with connect(self.path) as connection:
             found = rows(connection, "SELECT id FROM watches WHERE id = ?", [watch_id])
             if not found:
@@ -509,6 +516,7 @@ async def get_watchlist(
                 for method, version in (
                     ("regimelib", _MODEL_VERSION),
                     ("constrained_call_curve", _CURVE_VERSION),
+                    ("ssvi", SSVI_VERSION),
                 )
             ]
             item.hypothetical_risk = HypotheticalRiskView(
@@ -675,7 +683,7 @@ async def add_watch(
 async def delete_watch(request: Request, watch_id: str) -> None:
     if len(watch_id) != 32 or any(char not in "0123456789abcdef" for char in watch_id):
         raise HTTPException(status_code=404, detail="Watch not found")
-    if not request.app.state.watchlist.store.delete(watch_id):
+    if not await asyncio.to_thread(request.app.state.watchlist.store.delete, watch_id):
         raise HTTPException(status_code=404, detail="Watch not found")
 
 

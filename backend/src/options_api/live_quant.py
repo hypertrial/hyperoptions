@@ -33,6 +33,8 @@ from stocksweeper.forecast.calibration import horizon_band
 from stocksweeper.forecast.ledger import ForecastIssuance
 from stocksweeper.forecast.predictive import PredictiveDistribution
 
+SSVI_VERSION = "ssvi-market-v1"
+
 
 @dataclass(frozen=True)
 class LiveQuant:
@@ -160,10 +162,7 @@ def quant_for_contract(
     if physical_shadow is not None:
         model_views = []
         quote_for_model = market_odds.underlying_quote(ticker)
-        for method in (
-            "lognormal_ewma", "empirical_scaled", "student_t_ewma", "gjr_garch_t",
-            "intraday_shadow",
-        ):
+        for method in MODEL_VERSIONS:
             if predictive.status == "unavailable":
                 view = PredictiveOddsView(
                     method=method, status="unavailable", reason=predictive.reason,
@@ -248,8 +247,15 @@ def quant_for_contract(
         "bid_ask_fit": None,
     }})
     market_models = (
-        (market, market_odds.lookup_curve(ticker, side, expiry_text, strike, root))
-        if physical_shadow is not None else (market,)
+        (
+            market,
+            market_odds.lookup_curve(ticker, side, expiry_text, strike, root),
+            MarketOddsView(
+                method="ssvi", status="unavailable",
+                reason="rights_cleared_option_history_unavailable",
+                model_version=SSVI_VERSION,
+            ),
+        ) if physical_shadow is not None else (market,)
     )
     last_good = (
         market_odds.lookup_last_good(ticker, side, expiry_text, strike, root)

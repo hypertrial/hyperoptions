@@ -22,7 +22,7 @@ from options_api.cache import TickerCache
 from options_api.chain import load_cash_secured_puts, load_covered_calls
 from options_api.greeks import empty_greeks
 from options_api.intraday_capture import capture_intraday_window
-from options_api.live_quant import quant_for_contract
+from options_api.live_quant import SSVI_VERSION, quant_for_contract
 from options_api.market_calendar import first_session_after_completed
 from options_api.market_watch import MarketWatchOdds
 from options_api.models import (
@@ -39,7 +39,7 @@ from options_api.models import (
 )
 from options_api.nasdaq import NasdaqError, create_http_client
 from options_api.outcomes import CloseProvider
-from options_api.physical_shadow_capture import PhysicalShadowCapture
+from options_api.physical_shadow_capture import MODEL_VERSIONS, PhysicalShadowCapture
 from options_api.predictive_watch import PredictiveWatchOdds
 from options_api.prospective_panel import ProspectivePanel
 from options_api.service import OptionChainService
@@ -48,6 +48,7 @@ from options_api.version import router as version_router
 from options_api.watchlist import WatchlistService, router as watchlist_router
 from stocksweeper.config import Settings, load_settings
 from stocksweeper.forecast.labels import collect_matured_labels
+from stocksweeper.forecast.capture_windows import reconcile_capture_windows
 from stocksweeper.forecast.predictive import PredictiveForecaster
 from stocksweeper.pipeline.jobs import JobManager
 from stocksweeper.storage.db import single_instance
@@ -270,17 +271,14 @@ async def _load_page(
                         PredictiveOddsView(
                             method=method, status="unavailable", reason="contract_terms_ambiguous"
                         )
-                        for method in (
-                            "lognormal_ewma", "empirical_scaled", "student_t_ewma",
-                            "gjr_garch_t", "intraday_shadow",
-                        )
+                        for method in MODEL_VERSIONS
                     ]
                     contract.market_models = [
                         MarketOddsView(
                             method=method, status="unavailable",
                             reason="Contract terms cannot be verified",
                         )
-                        for method in ("regimelib", "constrained_call_curve")
+                        for method in ("regimelib", "constrained_call_curve", "ssvi")
                     ]
                     contract.hypothetical_risk = HypotheticalRiskView(
                         reason="Contract terms cannot be verified"
@@ -322,6 +320,12 @@ async def _load_page(
                                 reason="Refreshing odds for displayed quotes",
                             )
                             for method in ("regimelib", "constrained_call_curve")
+                        ] + [
+                            MarketOddsView(
+                                method="ssvi", status="unavailable",
+                                reason="rights_cleared_option_history_unavailable",
+                                model_version=SSVI_VERSION,
+                            )
                         ]
                     )
                     contract.hypothetical_risk = result.risk
@@ -484,11 +488,28 @@ def create_app(
             async def capture_intraday() -> None:
                 prepared: set[tuple[date, str]] = set()
                 captured: set[tuple[date, str]] = set()
+                reconciled: set[tuple[date, str]] = set()
+                try:
+                    now = datetime.now(UTC)
+                    watched = await asyncio.to_thread(app.state.watchlist.store.list)
+                    await asyncio.to_thread(
+                        reconcile_capture_windows, settings.resolved_data_dir(), watched, now
+                    )
+                    day = now.astimezone(_NY).date()
+                    reconciled = {
+                        (day, window)
+                        for window, local_time in _INTRADAY_WINDOWS.items()
+                        if datetime.combine(day, local_time, _NY).astimezone(UTC)
+                        + timedelta(minutes=5) <= now
+                    }
+                except Exception:
+                    LOG.exception("intraday capture-window reconciliation failed")
                 while True:
                     now = datetime.now(UTC)
                     day = now.astimezone(_NY).date()
                     prepared = {key for key in prepared if key[0] == day}
                     captured = {key for key in captured if key[0] == day}
+                    reconciled = {key for key in reconciled if key[0] == day}
                     for window, local_time in _INTRADAY_WINDOWS.items():
                         target = datetime.combine(day, local_time, _NY).astimezone(UTC)
                         key = (day, window)
@@ -545,6 +566,22 @@ def create_app(
                             captured.add(key)
                         except Exception:
                             LOG.exception("intraday snapshot capture failed for %s", window)
+                    ended = {
+                        (day, window)
+                        for window, local_time in _INTRADAY_WINDOWS.items()
+                        if datetime.combine(day, local_time, _NY).astimezone(UTC)
+                        + timedelta(minutes=5) <= now
+                    }
+                    if ended - reconciled:
+                        try:
+                            watched = await asyncio.to_thread(app.state.watchlist.store.list)
+                            await asyncio.to_thread(
+                                reconcile_capture_windows,
+                                settings.resolved_data_dir(), watched, now,
+                            )
+                            reconciled.update(ended)
+                        except Exception:
+                            LOG.exception("intraday capture-window reconciliation failed")
                     await asyncio.sleep(30)
 
             async def capture_panel() -> None:

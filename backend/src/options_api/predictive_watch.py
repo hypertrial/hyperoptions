@@ -337,7 +337,9 @@ class PredictiveWatchOdds:
             atm_pct_tenths=1000 - itm - otm,
             simulation_error_95_pct_tenths=(
                 ceil(980 / sqrt(distribution.support))
-                if distribution.method in {"student_t_ewma", "gjr_garch_t"}
+                if distribution.method not in {
+                    "lognormal_ewma", "empirical_scaled", "intraday_shadow"
+                }
                 and distribution.support > 0
                 else None
             ),

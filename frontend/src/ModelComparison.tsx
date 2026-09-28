@@ -51,11 +51,16 @@ function evidencePanel(title: string, value: unknown) {
   if (!report) return <p className="model-evidence-empty">{title}: no report available</p>
   const brier = data(report.brier)
   const logLoss = data(report.log_loss)
+  const crps = data(report.crps)
   const blocks = number(report.independent_date_blocks) ?? 0
   const units = number(report.ticker_origin_horizon_units) ?? 0
   const attempted = number(report.contract_cells_attempted) ?? 0
   const available = number(report.contract_forecasts_available) ?? 0
-  const interval = brier?.bootstrap_95
+  const adjustedInterval = brier?.bootstrap_familywise_95
+  const interval = Array.isArray(adjustedInterval) ? adjustedInterval : brier?.bootstrap_95
+  const intervalLabel = Array.isArray(adjustedInterval)
+    ? `Bonferroni-adjusted 95% within-band calendar-block interval (${count(brier?.comparison_count)} methods)`
+    : "exploratory 95% calendar-block interval"
   const intervalText = report.significance === "not_applicable" ? "not applicable for the baseline"
     : blocks >= 20 && Array.isArray(interval) && interval.length === 2
       ? `[${score(interval[0])}, ${score(interval[1])}]` : "significance not estimable"
@@ -72,10 +77,12 @@ function evidencePanel(title: string, value: unknown) {
     {report.coverage_basis === "recorded_contract_cells_with_baseline_issuance" ? <p>This coverage is conditional on recorded cells with an EWMA issuance; it does not cover every scheduled origin.</p> : null}
     {report.coverage_basis === "recorded_current_version_baseline_attempts" ? <p>Coverage counts recorded current-version EWMA attempts; older unversioned attempts and missed origins are excluded.</p> : null}
     {report.coverage_basis === "recorded_current_version_candidate_cells" ? <p>Availability counts recorded current-version candidate cells, including cells without EWMA as failures. Older unversioned attempts and missed origins are excluded.</p> : null}
-    {typeof report.coverage_basis === "string" && report.coverage_basis.includes("window") ? <p>This coverage counts recorded timestamped windows only; missed windows are not in the ledger.</p> : null}
+    {typeof report.coverage_basis === "string" && report.coverage_basis.includes("window") ? <p>Matched-score coverage counts recorded timestamped windows only.</p> : null}
+    {data(report.capture_windows_all_horizons) ? <p>Capture windows, all horizons (last 35 days): {count(data(report.capture_windows_all_horizons)?.captured)}/{count(data(report.capture_windows_all_horizons)?.expected)} captured · {count(data(report.capture_windows_all_horizons)?.missed)} missed · {count(data(report.capture_windows_all_horizons)?.pending)} pending.</p> : null}
     {report.replay_scheduled_units != null ? <p>Replay fit coverage {count(report.replay_baseline_available_units)}/{count(report.replay_scheduled_units)} scheduled units ({percent(report.replay_fit_coverage)}) · skipped before strikes: {reasonList(report.replay_rejection_reasons)}</p> : null}
-    <p>Brier {units ? score(brier?.candidate) : "N/A"} (EWMA {units ? score(brier?.baseline) : "N/A"}); paired change {units ? score(brier?.paired_delta) : "N/A"}; 95% calendar-block interval {intervalText}</p>
+    <p>Brier {units ? score(brier?.candidate) : "N/A"} (EWMA {units ? score(brier?.baseline) : "N/A"}); paired change {units ? score(brier?.paired_delta) : "N/A"}; {intervalLabel} {intervalText}</p>
     <p>Log loss {units ? score(logLoss?.candidate) : "N/A"} (EWMA {units ? score(logLoss?.baseline) : "N/A"}); paired change {units ? score(logLoss?.paired_delta) : "N/A"}</p>
+    <p>CRPS {count(crps?.scored_units)} scored units · model {score(crps?.candidate)} · EWMA {score(crps?.baseline)}</p>
     {data(report.quote_reanchored_comparator) ? <p>Matched quote-reanchored comparator: Brier {score(data(report.quote_reanchored_comparator)?.brier)} · log loss {score(data(report.quote_reanchored_comparator)?.log_loss)}</p> : null}
     {data(report.by_window) ? <p>Matched intraday windows: {Object.entries(data(report.by_window)!).map(([window, value]) => `${window} N=${count(data(value)?.scored_ticker_date_window_expiry_units)}`).join(" · ")}</p> : null}
     {(["call", "put"] as const).map((side) => {
@@ -95,9 +102,9 @@ function PhysicalResult({ model, selected, evidenceIndex }: { model: PredictiveO
   const evidence = data(model.model_evidence) ?? data(model.evidence_key ? evidenceIndex?.[model.evidence_key] : null)
   const support = model.support == null ? "support N/A" : model.method === "empirical_scaled"
     ? `${count(model.support)} historical horizon samples (overlapping)`
-    : model.method === "student_t_ewma" || model.method === "gjr_garch_t"
-      ? `${count(model.support)} simulated paths`
-      : `${count(model.support)} completed returns`
+    : model.method === "lognormal_ewma" || model.method === "intraday_shadow"
+      ? `${count(model.support)} completed returns`
+      : `${count(model.support)} terminal-price scenarios`
   return <li className="model-result"><details>
     <summary className="model-result-heading"><strong>{physicalModelName(model.method)}{model.method === selected ? <span className="model-tag">Selected</span> : null}</strong><span className={valid ? "model-result-value" : "model-result-unavailable"}>{valid ? `${unsignedPercentTenths(model.itm_pct_tenths)} ITM · ${unsignedPercentTenths(model.otm_pct_tenths)} OTM` : `${model.status === "pending" ? "Pending" : "Unavailable"} · ${reasonLabel(model.reason)}`}</span></summary>
     <div className="model-result-details">
@@ -145,6 +152,16 @@ export default function ModelComparison({ physical, market, selected, evidenceIn
   const disagreement = comparable.length >= 2
     ? ((Math.max(...comparable.map((model) => model.itm_pct_tenths!)) - Math.min(...comparable.map((model) => model.itm_pct_tenths!))) / 10).toFixed(1)
     : null
+  const orderedPhysical = [...(physical ?? [])].sort((a, b) => {
+    const rank = (model: PredictiveOddsView) => model.method === selected ? 0
+      : predictiveAvailable(model) ? 1 : model.status === "pending" ? 2 : 3
+    return rank(a) - rank(b)
+  })
+  const orderedMarket = [...(market ?? [])].sort((a, b) => {
+    const rank = (model: MarketOddsView) => oddsAvailable(model) ? 0
+      : model.status === "pending" ? 1 : 2
+    return rank(a) - rank(b)
+  })
   return <>
     <button ref={trigger} type="button" className="model-comparison-trigger" onClick={() => setOpen(true)}>Compare models</button>
     {open ? createPortal(<dialog ref={dialog} className="model-comparison-dialog" aria-labelledby={titleId} onClose={() => { setOpen(false); trigger.current?.focus() }}>
@@ -152,10 +169,10 @@ export default function ModelComparison({ physical, market, selected, evidenceIn
       <div className="model-comparison-body">
         <section aria-label="Physical forecast models"><h3>Stock-close forecasts <span>Real-world expiry-close odds</span></h3><p>Your selection sets the compact odds and hypothetical risk.</p>
           <p className="model-spread">Model spread: {disagreement == null ? "N/A (fewer than two comparable estimates)" : `${disagreement} percentage points across ${comparable.length} completed-close models`}</p>
-          <ul>{physical?.length ? physical.map((model, index) => <PhysicalResult key={model.method ?? index} model={model} selected={selected} evidenceIndex={evidenceIndex} />) : <li>No physical model results yet.</li>}</ul>
+          <ul>{orderedPhysical.length ? orderedPhysical.map((model, index) => <PhysicalResult key={model.method ?? index} model={model} selected={selected} evidenceIndex={evidenceIndex} />) : <li>No physical model results yet.</li>}</ul>
         </section>
         <section aria-label="Risk-neutral market models"><h3>Option-price estimates <span>Risk-neutral odds</span></h3><p>Quote fit does not measure realized forecast accuracy.</p>
-          <ul>{market?.length ? market.map((model, index) => <MarketResult key={model.method ?? index} model={model} />) : <li>No market model results yet.</li>}</ul>
+          <ul>{orderedMarket.length ? orderedMarket.map((model, index) => <MarketResult key={model.method ?? index} model={model} />) : <li>No market model results yet.</li>}</ul>
         </section>
       </div>
     </dialog>, document.body) : null}

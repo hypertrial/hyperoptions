@@ -597,7 +597,7 @@ export type HypotheticalRiskView = {
     /**
      * Forecast Method
      */
-    forecast_method?: 'lognormal_ewma' | 'empirical_scaled' | 'student_t_ewma' | 'gjr_garch_t' | 'intraday_shadow' | null;
+    forecast_method?: 'lognormal_ewma' | 'empirical_scaled' | 'student_t_ewma' | 'gjr_garch_t' | 'ohlc_har' | 'skew_t_ewma' | 'egarch_skew_t' | 'markov_switching' | 'ngboost_pooled' | 'earnings_jump' | 'iv_physical' | 'intraday_shadow' | null;
     /**
      * Reason
      */
@@ -681,7 +681,7 @@ export type MarketOddsView = {
     /**
      * Method
      */
-    method?: 'regimelib' | 'constrained_call_curve' | null;
+    method?: 'regimelib' | 'constrained_call_curve' | 'ssvi' | null;
     /**
      * Status
      */
@@ -811,7 +811,7 @@ export type PredictiveOddsView = {
     /**
      * Method
      */
-    method?: 'lognormal_ewma' | 'empirical_scaled' | 'student_t_ewma' | 'gjr_garch_t' | 'intraday_shadow' | null;
+    method?: 'lognormal_ewma' | 'empirical_scaled' | 'student_t_ewma' | 'gjr_garch_t' | 'ohlc_har' | 'skew_t_ewma' | 'egarch_skew_t' | 'markov_switching' | 'ngboost_pooled' | 'earnings_jump' | 'iv_physical' | 'intraday_shadow' | null;
     /**
      * Reason
      */
@@ -1196,7 +1196,7 @@ export type GetCoveredCallsApiCoveredCallsTickerGetData = {
         /**
          * Forecast Model
          */
-        forecast_model?: 'lognormal_ewma' | 'empirical_scaled' | 'student_t_ewma' | 'gjr_garch_t' | 'intraday_shadow';
+        forecast_model?: 'lognormal_ewma' | 'empirical_scaled' | 'student_t_ewma' | 'gjr_garch_t' | 'ohlc_har' | 'skew_t_ewma' | 'egarch_skew_t' | 'markov_switching' | 'ngboost_pooled' | 'earnings_jump' | 'iv_physical' | 'intraday_shadow';
     };
     url: '/api/covered-calls/{ticker}';
 };
@@ -1235,7 +1235,7 @@ export type GetCashSecuredPutsApiCashSecuredPutsTickerGetData = {
         /**
          * Forecast Model
          */
-        forecast_model?: 'lognormal_ewma' | 'empirical_scaled' | 'student_t_ewma' | 'gjr_garch_t' | 'intraday_shadow';
+        forecast_model?: 'lognormal_ewma' | 'empirical_scaled' | 'student_t_ewma' | 'gjr_garch_t' | 'ohlc_har' | 'skew_t_ewma' | 'egarch_skew_t' | 'markov_switching' | 'ngboost_pooled' | 'earnings_jump' | 'iv_physical' | 'intraday_shadow';
     };
     url: '/api/cash-secured-puts/{ticker}';
 };
@@ -1325,7 +1325,7 @@ export type GetWatchlistApiWatchlistGetData = {
         /**
          * Forecast Model
          */
-        forecast_model?: 'lognormal_ewma' | 'empirical_scaled' | 'student_t_ewma' | 'gjr_garch_t' | 'intraday_shadow';
+        forecast_model?: 'lognormal_ewma' | 'empirical_scaled' | 'student_t_ewma' | 'gjr_garch_t' | 'ohlc_har' | 'skew_t_ewma' | 'egarch_skew_t' | 'markov_switching' | 'ngboost_pooled' | 'earnings_jump' | 'iv_physical' | 'intraday_shadow';
     };
     url: '/api/watchlist';
 };
@@ -1355,7 +1355,7 @@ export type AddWatchApiWatchlistPostData = {
         /**
          * Forecast Model
          */
-        forecast_model?: 'lognormal_ewma' | 'empirical_scaled' | 'student_t_ewma' | 'gjr_garch_t' | 'intraday_shadow';
+        forecast_model?: 'lognormal_ewma' | 'empirical_scaled' | 'student_t_ewma' | 'gjr_garch_t' | 'ohlc_har' | 'skew_t_ewma' | 'egarch_skew_t' | 'markov_switching' | 'ngboost_pooled' | 'earnings_jump' | 'iv_physical' | 'intraday_shadow';
     };
     url: '/api/watchlist';
 };

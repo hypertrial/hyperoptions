@@ -14,6 +14,7 @@ from options_api.intraday_capture import capture_intraday_window
 from options_api.intraday_capture import _COMPARATOR_VERSION
 from options_api.intraday_shadow import _VERSION as INTRADAY_VERSION
 from options_api.predictive_watch import PredictiveWatchOdds
+from options_api.physical_shadow_capture import MODEL_VERSIONS
 from options_api.watchlist import OutcomeView, WatchItem, get_watchlist
 from stocksweeper.forecast.calendar import SessionCalendar
 from stocksweeper.forecast.calibration import build_calibration
@@ -166,7 +167,7 @@ def test_overlapping_expiries_do_not_create_intraday_significance(tmp_path) -> N
 
 
 @pytest.mark.asyncio
-async def test_expired_watch_keeps_five_physical_two_market_and_selected_risk() -> None:
+async def test_expired_watch_keeps_all_models_and_selected_risk() -> None:
     expiry = date(2026, 9, 25)
     report = {"prospective": {"ticker_origin_horizon_units": 0}}
     item = WatchItem(
@@ -191,12 +192,9 @@ async def test_expired_watch_keeps_five_physical_two_market_and_selected_risk() 
     body = response.model_dump(mode="json")
     saved = body["items"][0]
     assert body["model_evidence"] == {"student_t_ewma:1": report}
-    assert [model["method"] for model in saved["physical_models"]] == [
-        "lognormal_ewma", "empirical_scaled", "student_t_ewma", "gjr_garch_t",
-        "intraday_shadow",
-    ]
+    assert [model["method"] for model in saved["physical_models"]] == list(MODEL_VERSIONS)
     assert [model["method"] for model in saved["market_models"]] == [
-        "regimelib", "constrained_call_curve",
+        "regimelib", "constrained_call_curve", "ssvi",
     ]
     assert all(model["status"] == "unavailable" for model in saved["physical_models"])
     assert all(model["status"] == "unavailable" for model in saved["market_models"])

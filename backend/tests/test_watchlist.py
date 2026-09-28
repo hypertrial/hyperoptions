@@ -21,6 +21,7 @@ from options_api.market_calendar import (
 from options_api.models import MarketOddsView, OptionChainResponse, OptionQuote, StockInfoResponse
 from options_api.models import TickerListing
 from options_api.main import create_app
+from options_api.physical_shadow_capture import MODEL_VERSIONS
 from options_api.outcomes import (
     CloseHistory,
     OutcomeResult,
@@ -31,6 +32,8 @@ from options_api.outcomes import (
 from options_api.parser import parse_option_chain
 from options_api.watchlist import WatchStore, WatchlistService
 from stocksweeper.config import Settings
+from stocksweeper.forecast.physical_contest import ShadowForecast
+from stocksweeper.forecast.capture_windows import reconcile_capture_windows
 from stocksweeper.forecast.predictive import PredictiveDistribution
 from stocksweeper.pipeline.jobs import JobBusy, JobManager
 from stocksweeper.storage.db import connect
@@ -39,6 +42,124 @@ from .conftest import load_fixture
 from .synthetic import synthetic_context
 
 D = Decimal
+
+
+def test_removing_watch_preserves_due_capture_window(tmp_path: Path) -> None:
+    store = WatchStore(tmp_path)
+    expiry = date(2026, 10, 30)
+    key = make_watch_key("AAPL", "AAPL", "call", expiry.isoformat(), D("100"))
+    watch, _ = store.add(
+        key, "AAPL", "AAPL", "call", expiry, D("100"),
+        datetime(2026, 9, 28, 13, 59, tzinfo=UTC),
+    )
+    assert store.delete(watch.id, now=datetime(2026, 9, 28, 14, 2, tzinfo=UTC))
+    assert store.list() == []
+    reconcile_capture_windows(tmp_path, [], datetime(2026, 9, 28, 14, 6, tzinfo=UTC))
+    with connect(tmp_path / "results.duckdb") as connection:
+        events = connection.execute(
+            """SELECT event FROM forecast_capture_window_events
+               WHERE contract_key = ? AND snapshot_window = '10:00' ORDER BY event""",
+            [key],
+        ).fetchall()
+    assert [event for (event,) in events] == ["expected", "missed"]
+
+
+def test_removing_watch_reconciles_only_that_contract(tmp_path: Path) -> None:
+    store = WatchStore(tmp_path)
+    created = datetime(2026, 9, 28, 13, 59, tzinfo=UTC)
+    keys = [
+        make_watch_key("AAPL", "AAPL", "call", "2026-10-30", D(str(strike)))
+        for strike in (100, 105)
+    ]
+    watches = [
+        store.add(key, "AAPL", "AAPL", "call", date(2026, 10, 30), D(str(strike)), created)[0]
+        for key, strike in zip(keys, (100, 105), strict=True)
+    ]
+    reconcile_capture_windows(tmp_path, watches, datetime(2026, 9, 28, 14, 2, tzinfo=UTC))
+    assert store.delete(watches[0].id, now=datetime(2026, 9, 28, 14, 6, tzinfo=UTC))
+    with connect(tmp_path / "results.duckdb") as connection:
+        events = connection.execute(
+            """SELECT contract_key, event FROM forecast_capture_window_events
+               WHERE contract_key IN (?, ?) ORDER BY contract_key, event""",
+            keys,
+        ).fetchall()
+    assert set(events) == {
+        (keys[0], "expected"), (keys[0], "missed"), (keys[1], "expected")
+    }
+
+
+def test_watchlist_selects_each_new_method_without_substituting_ewma(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = datetime(2026, 9, 25, 21, tzinfo=UTC)
+    expiry = date(2026, 10, 2)
+    base = PredictiveDistribution(
+        ticker="IREN", status="available", reason=None, method="lognormal_ewma",
+        as_of=date(2026, 9, 25), expiry_session=expiry, horizon_sessions=5,
+        spot=100.0, daily_volatility=0.02,
+        model_version=MODEL_VERSIONS["lognormal_ewma"], support=60,
+        data_hash="verified-input", terminal_prices=(80.0, 120.0), weights=(0.5, 0.5),
+    )
+    fitted = (
+        "ohlc_har", "skew_t_ewma", "egarch_skew_t", "markov_switching",
+        "ngboost_pooled",
+    )
+    qualified_reasons = {
+        "earnings_jump": "verified_release_time_history_unavailable",
+        "iv_physical": "rights_cleared_option_history_unavailable",
+    }
+    app = create_app(
+        clock=lambda: now, prefetch_universe=False, predictive_refresh=False,
+        research_settings=Settings(data_dir=tmp_path),
+    )
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        app.state.watchlist.store.add(
+            make_watch_key("IREN", "IREN", "call", expiry.isoformat(), D("100")),
+            "IREN", "IREN", "call", expiry, D("100"),
+            datetime(2026, 9, 24, 18, tzinfo=UTC),
+        )
+        market = app.state.market_odds
+        monkeypatch.setattr(market, "schedule", lambda _tickers: None)
+        monkeypatch.setattr(market, "lookup", lambda *_args: MarketOddsView(status="unavailable"))
+        monkeypatch.setattr(market, "lookup_last_good", lambda *_args: None)
+        monkeypatch.setattr(market, "entry_quote", lambda *_args: None)
+        predictive = app.state.predictive_odds
+        monkeypatch.setattr(predictive, "schedule", lambda _tickers: None)
+        monkeypatch.setattr(predictive, "distribution", lambda *_args, **_kwargs: base)
+        monkeypatch.setattr(predictive, "cache_retrieved_at", lambda *_args: now)
+        shadow = app.state.physical_shadow
+        monkeypatch.setattr(shadow, "submit", lambda _entries: None)
+        original_candidate = shadow.candidate
+
+        def candidate(distribution, method, *args, **kwargs):
+            if method in fitted:
+                return ShadowForecast(
+                    replace(
+                        distribution, method=method, model_version=MODEL_VERSIONS[method],
+                        terminal_prices=(90.0, 110.0), weights=(0.6, 0.4),
+                    ), None, 1, 1,
+                )
+            return original_candidate(distribution, method, *args, **kwargs)
+
+        monkeypatch.setattr(shadow, "candidate", candidate)
+        for method in (*fitted, *qualified_reasons):
+            response = client.get(f"/api/watchlist?forecast_model={method}")
+            assert response.status_code == 200
+            item = response.json()["items"][0]
+            selected = item["predictive_odds"]
+            by_method = {model["method"]: model for model in item["physical_models"]}
+            assert selected == by_method[method]
+            assert by_method["lognormal_ewma"]["status"] == "available"
+            assert item["hypothetical_risk"]["forecast_method"] == method
+            if method in fitted:
+                assert selected["status"] == "available"
+                assert (selected["itm_pct_tenths"], selected["otm_pct_tenths"]) == (400, 600)
+            else:
+                assert selected["status"] == "unavailable"
+                assert selected["reason"] == qualified_reasons[method]
+                assert selected["itm_pct_tenths"] is None
+                assert item["hypothetical_risk"]["status"] == "unavailable"
+
 
 
 def test_saved_adjusted_root_cannot_suppress_standard_watch_forecast(

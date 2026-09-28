@@ -226,7 +226,10 @@ def main() -> None:
         help="atomically save a replay report for the local app comparison view",
     )
     parser.add_argument(
-        "--candidate", choices=("empirical_scaled", "student_t_ewma", "gjr_garch_t")
+        "--candidate", choices=(
+            "empirical_scaled", "student_t_ewma", "gjr_garch_t", "ohlc_har",
+            "skew_t_ewma", "egarch_skew_t", "markov_switching", "ngboost_pooled",
+        )
     )
     parser.add_argument(
         "--provenance", choices=("as_issued", "immutable_replay"), default="as_issued"

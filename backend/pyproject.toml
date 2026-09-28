@@ -16,6 +16,7 @@ dependencies = [
     "pydantic>=2.13",
     "regimelib==0.1.0",
     "scipy>=1.18,<2",
+    "statsmodels==0.15.0",
     "uvicorn[standard]>=0.32",
     "yfinance>=1.7",
 ]
@@ -28,7 +29,10 @@ dev = [
     "httpx2>=2.9",
     "ruff>=0.15",
 ]
-research = []
+research = [
+    "ngboost==0.5.11",
+    "scikit-learn==1.6.1",
+]
 
 [tool.ruff]
 target-version = "py312"

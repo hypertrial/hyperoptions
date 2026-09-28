@@ -21,6 +21,13 @@ export const zHypotheticalRiskView = z.object({
         'empirical_scaled',
         'student_t_ewma',
         'gjr_garch_t',
+        'ohlc_har',
+        'skew_t_ewma',
+        'egarch_skew_t',
+        'markov_switching',
+        'ngboost_pooled',
+        'earnings_jump',
+        'iv_physical',
         'intraday_shadow'
     ]).nullish(),
     reason: z.string().nullish(),
@@ -57,7 +64,11 @@ export const zJob = z.object({
  * MarketOddsView
  */
 export const zMarketOddsView = z.object({
-    method: z.enum(['regimelib', 'constrained_call_curve']).nullish(),
+    method: z.enum([
+        'regimelib',
+        'constrained_call_curve',
+        'ssvi'
+    ]).nullish(),
     status: z.enum([
         'pending',
         'available',
@@ -142,6 +153,13 @@ export const zPredictiveOddsView = z.object({
         'empirical_scaled',
         'student_t_ewma',
         'gjr_garch_t',
+        'ohlc_har',
+        'skew_t_ewma',
+        'egarch_skew_t',
+        'markov_switching',
+        'ngboost_pooled',
+        'earnings_jump',
+        'iv_physical',
         'intraday_shadow'
     ]).nullish(),
     reason: z.string().nullish(),

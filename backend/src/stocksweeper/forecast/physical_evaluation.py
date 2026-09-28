@@ -16,6 +16,7 @@ from stocksweeper.forecast.calendar import SessionCalendar
 Band = Literal["1", "2-5", "6-25"]
 _BANDS: dict[Band, tuple[int, int]] = {"1": (1, 1), "2-5": (2, 5), "6-25": (6, 25)}
 _BASELINE = "lognormal_ewma"
+_PREDECLARED_PHYSICAL_COMPARISONS = 10
 
 
 @dataclass(frozen=True)
@@ -284,6 +285,7 @@ def evaluate_band(
     date_blocks = sorted(by_date)
     brier_ci: tuple[float, float] | None = None
     log_ci: tuple[float, float] | None = None
+    brier_familywise_ci: tuple[float, float] | None = None
     if date_blocks:
         rng = np.random.default_rng(20260927)
         sampled = rng.integers(0, len(date_blocks), size=(bootstrap_samples, len(date_blocks)))
@@ -299,6 +301,11 @@ def evaluate_band(
         log_boot = log_sums[sampled].sum(axis=1) / sampled_counts
         brier_ci = (_quantile(brier_boot.tolist(), 0.025), _quantile(brier_boot.tolist(), 0.975))
         log_ci = (_quantile(log_boot.tolist(), 0.025), _quantile(log_boot.tolist(), 0.975))
+        tail = 0.05 / (2 * _PREDECLARED_PHYSICAL_COMPARISONS)
+        brier_familywise_ci = (
+            _quantile(brier_boot.tolist(), tail),
+            _quantile(brier_boot.tolist(), 1 - tail),
+        )
     subgroup_units: dict[tuple[str, str], list[tuple[date, float]]] = defaultdict(list)
     for (category, value, _, origin, _), deltas in subgroup_values.items():
         subgroup_units[(category, value)].append((origin, mean(deltas)))
@@ -351,6 +358,8 @@ def evaluate_band(
             "candidate": mean(item["brier_candidate"] for item in units) if units else None,
             "paired_delta": brier_delta,
             "bootstrap_95": brier_ci,
+            "bootstrap_familywise_95": brier_familywise_ci,
+            "comparison_count": _PREDECLARED_PHYSICAL_COMPARISONS,
         },
         "log_loss": {
             "baseline": mean(item["log_baseline"] for item in units) if units else None,

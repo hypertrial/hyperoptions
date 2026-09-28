@@ -3,6 +3,13 @@ export const PHYSICAL_MODELS = [
   "empirical_scaled",
   "student_t_ewma",
   "gjr_garch_t",
+  "ohlc_har",
+  "skew_t_ewma",
+  "egarch_skew_t",
+  "markov_switching",
+  "ngboost_pooled",
+  "earnings_jump",
+  "iv_physical",
   "intraday_shadow",
 ] as const
 
@@ -15,6 +22,13 @@ export const PHYSICAL_MODEL_NAMES: Record<PhysicalModel, string> = {
   empirical_scaled: "Scaled empirical",
   student_t_ewma: "Student-t EWMA",
   gjr_garch_t: "GJR-GARCH Student-t",
+  ohlc_har: "Daily OHLC range/HAR proxy",
+  skew_t_ewma: "Skewed-t EWMA",
+  egarch_skew_t: "EGARCH skewed-t",
+  markov_switching: "Two-regime switching variance",
+  ngboost_pooled: "Pooled NGBoost",
+  earnings_jump: "Earnings jump",
+  iv_physical: "IV-informed forecast",
   intraday_shadow: "Intraday conditioned",
 }
 
@@ -29,5 +43,5 @@ export function physicalModelName(value: string | null | undefined): string {
 
 export function marketModelName(value: string | null | undefined): string {
   return value === "regimelib" ? "Regimelib" : value === "constrained_call_curve"
-    ? "Constrained call curve" : "Unknown market model"
+    ? "Constrained call curve" : value === "ssvi" ? "SSVI volatility surface" : "Unknown market model"
 }

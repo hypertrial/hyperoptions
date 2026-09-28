@@ -86,7 +86,18 @@ class PredictiveDistribution:
     reason: str | None
     method: (
         Literal[
-            "lognormal_ewma", "empirical_scaled", "student_t_ewma", "gjr_garch_t", "intraday_shadow"
+            "lognormal_ewma",
+            "empirical_scaled",
+            "student_t_ewma",
+            "gjr_garch_t",
+            "ohlc_har",
+            "skew_t_ewma",
+            "egarch_skew_t",
+            "markov_switching",
+            "ngboost_pooled",
+            "earnings_jump",
+            "iv_physical",
+            "intraday_shadow",
         ]
         | None
     )
@@ -700,6 +711,9 @@ class PredictiveForecaster:
         standard_terms: bool = True,
     ) -> PredictiveDistribution:
         return self.forecast(
-            ticker, as_of, expiry, contract_since=contract_since,
+            ticker,
+            as_of,
+            expiry,
+            contract_since=contract_since,
             standard_terms=standard_terms,
         )

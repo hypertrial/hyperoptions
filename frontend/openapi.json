@@ -123,6 +123,13 @@
                 "empirical_scaled",
                 "student_t_ewma",
                 "gjr_garch_t",
+                "ohlc_har",
+                "skew_t_ewma",
+                "egarch_skew_t",
+                "markov_switching",
+                "ngboost_pooled",
+                "earnings_jump",
+                "iv_physical",
                 "intraday_shadow"
               ],
               "type": "string",
@@ -202,6 +209,13 @@
                 "empirical_scaled",
                 "student_t_ewma",
                 "gjr_garch_t",
+                "ohlc_har",
+                "skew_t_ewma",
+                "egarch_skew_t",
+                "markov_switching",
+                "ngboost_pooled",
+                "earnings_jump",
+                "iv_physical",
                 "intraday_shadow"
               ],
               "type": "string",
@@ -335,6 +349,13 @@
                 "empirical_scaled",
                 "student_t_ewma",
                 "gjr_garch_t",
+                "ohlc_har",
+                "skew_t_ewma",
+                "egarch_skew_t",
+                "markov_switching",
+                "ngboost_pooled",
+                "earnings_jump",
+                "iv_physical",
                 "intraday_shadow"
               ],
               "type": "string",
@@ -380,6 +401,13 @@
                 "empirical_scaled",
                 "student_t_ewma",
                 "gjr_garch_t",
+                "ohlc_har",
+                "skew_t_ewma",
+                "egarch_skew_t",
+                "markov_switching",
+                "ngboost_pooled",
+                "earnings_jump",
+                "iv_physical",
                 "intraday_shadow"
               ],
               "type": "string",
@@ -1817,6 +1845,13 @@
                   "empirical_scaled",
                   "student_t_ewma",
                   "gjr_garch_t",
+                  "ohlc_har",
+                  "skew_t_ewma",
+                  "egarch_skew_t",
+                  "markov_switching",
+                  "ngboost_pooled",
+                  "earnings_jump",
+                  "iv_physical",
                   "intraday_shadow"
                 ]
               },
@@ -2019,7 +2054,8 @@
                 "type": "string",
                 "enum": [
                   "regimelib",
-                  "constrained_call_curve"
+                  "constrained_call_curve",
+                  "ssvi"
                 ]
               },
               {
@@ -2348,6 +2384,13 @@
                   "empirical_scaled",
                   "student_t_ewma",
                   "gjr_garch_t",
+                  "ohlc_har",
+                  "skew_t_ewma",
+                  "egarch_skew_t",
+                  "markov_switching",
+                  "ngboost_pooled",
+                  "earnings_jump",
+                  "iv_physical",
                   "intraday_shadow"
                 ]
               },

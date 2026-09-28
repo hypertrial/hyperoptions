@@ -7,6 +7,7 @@ from datetime import UTC, date, datetime
 
 from stocksweeper.forecast.evidence_reports import (
     CANDIDATE_VERSIONS,
+    _summary,
     build_model_evidence,
     ledger_band_rows,
     load_replay_report,
@@ -14,7 +15,7 @@ from stocksweeper.forecast.evidence_reports import (
 )
 from stocksweeper.forecast.ledger import ForecastLedger
 from stocksweeper.forecast.calendar import SessionCalendar
-from stocksweeper.forecast.physical_evaluation import evaluate_band
+from stocksweeper.forecast.physical_evaluation import ContestRow, evaluate_band
 from stocksweeper.forecast.predictive import BASELINE_VERSION
 
 
@@ -22,7 +23,10 @@ def test_unlabelled_ledger_reports_zero_and_no_significance(tmp_path):
     evidence = build_model_evidence(
         tmp_path, ForecastLedger(tmp_path), datetime(2026, 9, 27, tzinfo=UTC)
     )
-    assert len(evidence) == 15
+    assert len(evidence) == 3 * (len(CANDIDATE_VERSIONS) + 2)
+    assert evidence[("intraday_shadow", "1")]["prospective"]["capture_windows_all_horizons"] == {
+        "expected": 0, "captured": 0, "missed": 0, "pending": 0,
+    }
     for (method, band), result in evidence.items():
         assert method and band
         prospective = result["prospective"]
@@ -33,6 +37,65 @@ def test_unlabelled_ledger_reports_zero_and_no_significance(tmp_path):
         assert prospective["calibration_by_side"]["call"][0]["count"] == 0
         assert prospective["calibration_by_side"]["put"][0]["count"] == 0
         assert result["retrospective"] is None
+
+
+def test_adjusted_interval_needs_twenty_independent_scored_date_blocks() -> None:
+    calendar = SessionCalendar()
+    origins = calendar.sessions(date(2026, 1, 5), date(2026, 7, 1))[::5][:20]
+    assert len(origins) == 20
+    rows = []
+    for origin in origins:
+        expiry = calendar.offset(origin, 1)
+        for side, observed, baseline, candidate in (
+            ("call", True, 0.4, 0.6),
+            ("put", False, 0.6, 0.4),
+        ):
+            for method, probability, score in (
+                ("lognormal_ewma", baseline, 3.4),
+                ("ohlc_har", candidate, 3.1),
+            ):
+                rows.append(ContestRow(
+                    ticker="TEST", origin=origin, expiry_session=expiry,
+                    horizon=1, strike="100", side=side, method=method,
+                    probability=probability, observed_itm=observed,
+                    provenance="as_issued", input_vintage="frozen-input",
+                    contract_id=f"TEST:{origin}:{side}", crps=score,
+                ))
+
+    def reported(input_rows):
+        band = evaluate_band(input_rows, "ohlc_har", "1", bootstrap_samples=500)
+        return _summary(
+            band, provenance="as_issued", generated_at="2026-09-28T00:00:00Z",
+            report_hash="test", model_version="ohlc-har-v1",
+        )
+
+    enough = reported(rows)
+    assert enough["ticker_origin_horizon_units"] == 20  # Call and put share one close.
+    assert enough["independent_date_blocks"] == 20
+    assert enough["brier"]["comparison_count"] == 10
+    ordinary = enough["brier"]["bootstrap_95"]
+    adjusted = enough["brier"]["bootstrap_familywise_95"]
+    assert ordinary is not None and adjusted is not None
+    assert adjusted[0] <= ordinary[0] <= ordinary[1] <= adjusted[1]
+    assert enough["significance"] == "exploratory_interval"
+    assert enough["crps"]["scored_units"] == 20
+
+    too_few = reported([
+        row for row in rows if row.origin != origins[-1]
+    ])
+    assert too_few["independent_date_blocks"] == 19
+    assert too_few["brier"]["bootstrap_95"] is None
+    assert too_few["brier"]["bootstrap_familywise_95"] is None
+    assert too_few["significance"] == "not_estimable"
+
+    no_labels = reported([])
+    assert no_labels["ticker_origin_horizon_units"] == 0
+    assert no_labels["brier"]["candidate"] is None
+    assert no_labels["brier"]["bootstrap_familywise_95"] is None
+    assert no_labels["crps"] == {
+        "scored_units": 0, "baseline": None, "candidate": None,
+    }
+    assert no_labels["significance"] == "not_estimable"
 
 
 def test_replay_report_is_explicitly_current_vintage_and_detects_tampering(tmp_path):

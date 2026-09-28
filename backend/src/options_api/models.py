@@ -15,7 +15,9 @@ Side = Literal["call", "put"]
 GreeksSource = Literal["bid", "mid"]
 MarketSource = Literal["nasdaq", "yahoo"]
 PhysicalModel = Literal[
-    "lognormal_ewma", "empirical_scaled", "student_t_ewma", "gjr_garch_t", "intraday_shadow"
+    "lognormal_ewma", "empirical_scaled", "student_t_ewma", "gjr_garch_t",
+    "ohlc_har", "skew_t_ewma", "egarch_skew_t", "markov_switching",
+    "ngboost_pooled", "earnings_jump", "iv_physical", "intraday_shadow",
 ]
 
 
@@ -111,7 +113,7 @@ class TickerSearchResponse(BaseModel):
 
 
 class MarketOddsView(BaseModel):
-    method: Literal["regimelib", "constrained_call_curve"] | None = None
+    method: Literal["regimelib", "constrained_call_curve", "ssvi"] | None = None
     status: Literal["pending", "available", "unavailable"] = "pending"
     itm_pct_tenths: int | None = None
     otm_pct_tenths: int | None = None

@@ -27,7 +27,12 @@ INPUT = date(2026, 9, 25)
 EXPIRY = date(2026, 10, 2)
 RETRIEVED = datetime(2026, 9, 25, 21, tzinfo=UTC)
 ISSUED = datetime(2026, 9, 26, 12, tzinfo=UTC)
-METHODS = {"lognormal_ewma", "empirical_scaled", "student_t_ewma", "gjr_garch_t"}
+METHODS = set(MODEL_VERSIONS) - {"intraday_shadow"}
+FITTED_METHODS = METHODS - {"earnings_jump", "iv_physical"}
+QUALIFIED_INPUT_REASONS = {
+    "earnings_jump": "verified_release_time_history_unavailable",
+    "iv_physical": "rights_cleared_option_history_unavailable",
+}
 
 
 def _distribution(
@@ -91,7 +96,7 @@ def _capture(tmp_path, *, verified: bool = True) -> PhysicalShadowCapture:
 def _candidates(*, digest: str = "a" * 64) -> dict[str, ShadowForecast]:
     return {
         method: ShadowForecast(_distribution(method, digest=digest), None, 1.0, 1.0)
-        for method in METHODS
+        for method in FITTED_METHODS
     }
 
 
@@ -109,11 +114,19 @@ def test_live_input_captures_every_physical_method_independently(tmp_path) -> No
     rows = ForecastLedger(tmp_path).evaluation_rows()
     assert len(calls) == 1  # Fit once per ticker, input session, and expiry.
     assert {row["method"] for row in rows} == METHODS
-    assert all(row["status"] == "available" for row in rows)
+    assert all(row["status"] == "available" for row in rows if row["method"] in FITTED_METHODS)
+    assert {
+        row["method"]: row["unavailable_reason"] for row in rows
+        if row["status"] == "unavailable"
+    } == QUALIFIED_INPUT_REASONS
     assert all(row["input_session"] == INPUT and row["data_hash"] == "a" * 64 for row in rows)
-    assert all(row["distribution_hash"] for row in rows)
+    assert all(row["distribution_hash"] for row in rows if row["status"] == "available")
+    assert all(row["distribution_hash"] is None for row in rows if row["status"] == "unavailable")
     assert all(row["provenance"] == "as_issued" for row in rows)
-    assert all(row["prepare_ms"] == 1.0 and row["lookup_ms"] == 1.0 for row in rows)
+    assert all(
+        row["prepare_ms"] == 1.0 and row["lookup_ms"] == 1.0
+        for row in rows if row["status"] == "available"
+    )
     baseline = next(row for row in rows if row["method"] == "lognormal_ewma")
     assert baseline["itm_probability"] == pytest.approx(0.5)
     assert baseline["otm_probability"] == pytest.approx(0.5)
@@ -216,14 +229,20 @@ def test_long_horizon_capture_does_not_record_false_baseline_outage(tmp_path) ->
     )
     capture._capture_sync([(issue, distribution)])
 
-    coverage = ForecastLedger(tmp_path).coverage()
+    coverage = ForecastLedger(tmp_path).evaluation_rows()
     baseline = [row for row in coverage if row["model_version"] == distribution.model_version]
     assert baseline and all(row["status"] == "available" for row in baseline)
     assert {
-        row["unavailable_reason"]
-        for row in coverage
-        if row["model_version"] != distribution.model_version
-    } == {"shadow_horizon_unsupported"}
+        row["method"]: row["unavailable_reason"]
+        for row in coverage if row["method"] in FITTED_METHODS - {"lognormal_ewma"}
+    } == {
+        method: "shadow_horizon_unsupported"
+        for method in FITTED_METHODS - {"lognormal_ewma"}
+    }
+    assert {
+        row["method"]: row["unavailable_reason"]
+        for row in coverage if row["method"] in QUALIFIED_INPUT_REASONS
+    } == QUALIFIED_INPUT_REASONS
 
 
 def test_shadow_failure_cannot_mask_valid_live_method(tmp_path) -> None:
@@ -310,13 +329,24 @@ def test_unavailable_first_contract_does_not_suppress_valid_peer(tmp_path) -> No
     )
     capture._capture_sync([(unavailable, None), (contracts[1], _distribution())])
     rows = ForecastLedger(tmp_path).evaluation_rows()
-    assert sum(row["status"] == "available" for row in rows) == 4
-    assert {row["unavailable_reason"] for row in rows if row["status"] == "unavailable"} == {
-        "input_vintage_changed"
-    }
+    by_contract = {}
+    for row in rows:
+        by_contract.setdefault(row["contract_key"], {})[row["method"]] = row
+    valid = by_contract[contracts[1].contract_key]
+    invalid = by_contract[unavailable.contract_key]
+    assert set(valid) == set(invalid) == METHODS
+    assert all(valid[method]["status"] == "available" for method in FITTED_METHODS)
+    assert all(
+        invalid[method]["unavailable_reason"] == "input_vintage_changed"
+        for method in FITTED_METHODS
+    )
+    assert {
+        method: valid[method]["unavailable_reason"]
+        for method in QUALIFIED_INPUT_REASONS
+    } == QUALIFIED_INPUT_REASONS
 
 
-def test_manifest_mismatch_records_four_unavailable_attempts_without_fitting(tmp_path) -> None:
+def test_manifest_mismatch_records_every_unavailable_attempt_without_fitting(tmp_path) -> None:
     capture = _capture(tmp_path, verified=False)
     capture.forecaster = SimpleNamespace(
         forecast_candidates=lambda *_args, **_kwargs: pytest.fail("unverified cache was fitted")
@@ -326,7 +356,14 @@ def test_manifest_mismatch_records_four_unavailable_attempts_without_fitting(tmp
     rows = ForecastLedger(tmp_path).evaluation_rows()
     assert {row["method"] for row in rows} == METHODS
     assert all(row["status"] == "unavailable" for row in rows)
-    assert all(row["unavailable_reason"] == "input_provenance_unverified" for row in rows)
+    assert all(
+        row["unavailable_reason"] == "input_provenance_unverified"
+        for row in rows if row["method"] in FITTED_METHODS
+    )
+    assert {
+        row["method"]: row["unavailable_reason"]
+        for row in rows if row["method"] in QUALIFIED_INPUT_REASONS
+    } == QUALIFIED_INPUT_REASONS
     assert all(row["itm_probability"] is None and row["distribution_hash"] is None for row in rows)
     assert capture.candidate(
         _distribution("lognormal_ewma"), "student_t_ewma", EXPIRY, INPUT
@@ -341,9 +378,16 @@ def test_changed_input_vintage_is_rejected_even_if_fit_succeeds(tmp_path) -> Non
     capture._capture_sync([(_issue(), _distribution())])
 
     rows = ForecastLedger(tmp_path).evaluation_rows()
-    assert len(rows) == 4
+    assert len(rows) == len(METHODS)
     assert all(row["status"] == "unavailable" for row in rows)
-    assert all(row["unavailable_reason"] == "input_vintage_changed" for row in rows)
+    assert all(
+        row["unavailable_reason"] == "input_vintage_changed"
+        for row in rows if row["method"] in FITTED_METHODS
+    )
+    assert {
+        row["method"]: row["unavailable_reason"]
+        for row in rows if row["method"] in QUALIFIED_INPUT_REASONS
+    } == QUALIFIED_INPUT_REASONS
 
 
 def test_candidate_fit_error_is_recorded_as_fit_failure_not_bad_provenance(tmp_path) -> None:
@@ -358,7 +402,14 @@ def test_candidate_fit_error_is_recorded_as_fit_failure_not_bad_provenance(tmp_p
     rows = ForecastLedger(tmp_path).evaluation_rows()
     assert {row["method"] for row in rows} == METHODS
     assert all(row["status"] == "unavailable" for row in rows)
-    assert all(row["unavailable_reason"] == "shadow_fit_failed" for row in rows)
+    assert all(
+        row["unavailable_reason"] == "shadow_fit_failed"
+        for row in rows if row["method"] in FITTED_METHODS
+    )
+    assert {
+        row["method"]: row["unavailable_reason"]
+        for row in rows if row["method"] in QUALIFIED_INPUT_REASONS
+    } == QUALIFIED_INPUT_REASONS
     assert capture.candidate(
         _distribution("lognormal_ewma"), "student_t_ewma", EXPIRY, INPUT
     ).reason == "shadow_fit_failed"
@@ -381,8 +432,8 @@ def test_restart_does_not_duplicate_the_same_shadow_issuances(tmp_path) -> None:
         capture._capture_sync(entries)
 
     rows = ForecastLedger(tmp_path).evaluation_rows()
-    assert len(rows) == 4
-    assert len({row["idempotency_key"] for row in rows}) == 4
+    assert len(rows) == len(METHODS)
+    assert len({row["idempotency_key"] for row in rows}) == len(METHODS)
 
 
 def test_contracts_over_fit_capacity_leave_recorded_unavailable_attempts(
@@ -400,15 +451,14 @@ def test_contracts_over_fit_capacity_leave_recorded_unavailable_attempts(
     capture._capture_sync(contracts)
 
     rows = ForecastLedger(tmp_path).evaluation_rows()
-    assert len(rows) == 8
+    assert len(rows) == 2 * len(METHODS)
     assert {row["contract_key"] for row in rows} == {
         _issue("100.000").contract_key,
         _issue("110.000").contract_key,
     }
-    assert len([row for row in rows if row["status"] == "available"]) == 4
-    assert (
-        len([row for row in rows if row["unavailable_reason"] == "shadow_capacity_exceeded"]) == 4
-    )
+    assert len([row for row in rows if row["status"] == "available"]) == len(FITTED_METHODS)
+    capped = [row for row in rows if row["unavailable_reason"] == "shadow_capacity_exceeded"]
+    assert len(capped) == len(METHODS)
     skipped = max(
         (issue for issue, _ in contracts),
         key=lambda issue: hashlib.sha256(issue.contract_key.encode()).digest(),
