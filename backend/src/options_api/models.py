@@ -11,6 +11,7 @@ Ticker = str
 TICKER_PATTERN = re.compile(r"^[A-Z]{1,5}$")
 CurrentSource = Literal["stock_bid", "chain_last_trade", "yahoo_underlying"]
 Moneyness = Literal["itm", "otm", "all"]
+ChainMoneyness = Literal["itm", "otm"]
 Side = Literal["call", "put"]
 GreeksSource = Literal["bid", "mid"]
 MarketSource = Literal["nasdaq", "yahoo"]
@@ -209,6 +210,10 @@ class CoveredCallContract(BaseModel):
     stock_apr_pct_tenths: int | None
     drop_to_strike_pct_tenths: int
     drop_to_breakeven_pct_tenths: int | None
+    net_premium_cents: int | None
+    net_apr_pct_tenths: int | None
+    breakeven_cents: int | None
+    breakeven_change_pct_tenths: int | None
     vs_7d_low_pct_tenths: int | None
     vs_30d_low_pct_tenths: int | None
     vs_90d_low_pct_tenths: int | None
@@ -288,6 +293,9 @@ class CashSecuredPutContract(BaseModel):
     apr_net_pct_tenths: int | None
     cushion_to_strike_pct_tenths: int
     cushion_to_breakeven_pct_tenths: int | None
+    net_premium_cents: int | None
+    net_apr_pct_tenths: int | None
+    breakeven_change_pct_tenths: int | None
     vs_7d_low_pct_tenths: int | None
     vs_30d_low_pct_tenths: int | None
     vs_90d_low_pct_tenths: int | None

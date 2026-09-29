@@ -101,8 +101,7 @@
                 {
                   "enum": [
                     "itm",
-                    "otm",
-                    "all"
+                    "otm"
                   ],
                   "type": "string"
                 },
@@ -187,8 +186,7 @@
                 {
                   "enum": [
                     "itm",
-                    "otm",
-                    "all"
+                    "otm"
                   ],
                   "type": "string"
                 },
@@ -700,6 +698,39 @@
             ],
             "title": "Cushion To Breakeven Pct Tenths"
           },
+          "net_premium_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Premium Cents"
+          },
+          "net_apr_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Apr Pct Tenths"
+          },
+          "breakeven_change_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Breakeven Change Pct Tenths"
+          },
           "vs_7d_low_pct_tenths": {
             "anyOf": [
               {
@@ -892,6 +923,9 @@
           "apr_net_pct_tenths",
           "cushion_to_strike_pct_tenths",
           "cushion_to_breakeven_pct_tenths",
+          "net_premium_cents",
+          "net_apr_pct_tenths",
+          "breakeven_change_pct_tenths",
           "vs_7d_low_pct_tenths",
           "vs_30d_low_pct_tenths",
           "vs_90d_low_pct_tenths",
@@ -1359,6 +1393,50 @@
             ],
             "title": "Drop To Breakeven Pct Tenths"
           },
+          "net_premium_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Premium Cents"
+          },
+          "net_apr_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Apr Pct Tenths"
+          },
+          "breakeven_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Breakeven Cents"
+          },
+          "breakeven_change_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Breakeven Change Pct Tenths"
+          },
           "vs_7d_low_pct_tenths": {
             "anyOf": [
               {
@@ -1553,6 +1631,10 @@
           "stock_apr_pct_tenths",
           "drop_to_strike_pct_tenths",
           "drop_to_breakeven_pct_tenths",
+          "net_premium_cents",
+          "net_apr_pct_tenths",
+          "breakeven_cents",
+          "breakeven_change_pct_tenths",
           "vs_7d_low_pct_tenths",
           "vs_30d_low_pct_tenths",
           "vs_90d_low_pct_tenths",

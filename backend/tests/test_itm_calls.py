@@ -806,3 +806,119 @@ def test_buy_write_legs_match_cifr_shaped_quote() -> None:
         D("4.40") / D("17.92") * D("100")
     )
     assert row.drop_to_breakeven_pct_tenths == 246
+
+
+def _net_metrics(side: str, current: Decimal, strike: Decimal, bid: Decimal, dte: int):
+    intrinsic = max(D(0), (current - strike) if side == "call" else (strike - current))
+    net = D(100) * (bid - intrinsic)
+    breakeven = (current - bid) if side == "call" else (strike - bid)
+    capital = D(100) * breakeven
+    apr = None
+    if capital > D(0) and dte > 0:
+        apr = net / capital * D(365) / D(dte) * D(100)
+    change = abs(current - breakeven) / current * D(100)
+    return (
+        to_cents(net),
+        None if apr is None else to_pct_tenths(apr),
+        to_cents(breakeven),
+        to_pct_tenths(change),
+    )
+
+
+def test_net_premium_apr_and_breakeven_follow_moneyness() -> None:
+    current = D("49.9")
+    call_page = assemble_covered_calls(
+        _chain(
+            _quote("2026-09-18", 40, bid=12, ask=12.2),
+            _quote("2026-09-18", 55, bid=1.25, ask=1.30),
+            _quote("2026-09-18", D("49.9"), bid=2, ask=2.1),
+            _quote("2026-09-18", 45, bid=None, ask=None),
+            _quote("2026-09-18", 42, bid=5, ask=5.1),
+            _quote("2026-09-18", 60, bid=55, ask=56),
+            _quote("2026-09-11", 40, bid=12, ask=12.2),
+        ),
+        _info(),
+        _history(),
+        TODAY,
+        NOW,
+        "all",
+    )
+    calls = {
+        (row.expiration, row.strike_cents): row
+        for group in call_page.expirations
+        for row in group.contracts
+    }
+    def _seen(row, side: str, strike: Decimal, bid: Decimal, dte: int) -> None:
+        assert (
+            row.net_premium_cents,
+            row.net_apr_pct_tenths,
+            row.breakeven_cents,
+            row.breakeven_change_pct_tenths,
+        ) == _net_metrics(side, current, strike, bid, dte)
+
+    weekly = calls[("2026-09-18", 4000)]
+    assert weekly.in_the_money is True
+    _seen(weekly, "call", D(40), D(12), 7)
+    otm = calls[("2026-09-18", 5500)]
+    assert otm.in_the_money is False
+    _seen(otm, "call", D(55), D("1.25"), 7)
+    atm = calls[("2026-09-18", 4990)]
+    assert atm.at_the_money is True
+    assert atm.net_premium_cents == to_cents(D(200))
+    below = calls[("2026-09-18", 4200)]
+    assert below.net_premium_cents < 0
+    assert below.net_premium_cents == _net_metrics("call", current, D(42), D(5), 7)[0]
+    rich = calls[("2026-09-18", 6000)]
+    assert rich.net_apr_pct_tenths is None
+    assert rich.net_premium_cents == to_cents(D(5500))
+    missing = calls[("2026-09-18", 4500)]
+    assert missing.net_premium_cents is None
+    assert missing.net_apr_pct_tenths is None
+    assert missing.breakeven_cents is None
+    assert missing.breakeven_change_pct_tenths is None
+    expired = calls[("2026-09-11", 4000)]
+    assert expired.dte == 0
+    assert expired.net_apr_pct_tenths is None
+    assert expired.net_premium_cents == weekly.net_premium_cents
+
+    put_page = assemble_cash_secured_puts(
+        _chain(
+            _put_quote("2026-09-18", 55, bid=8, ask=8.2),
+            _put_quote("2026-09-18", 40, bid=1.5, ask=1.6),
+            _put_quote("2026-09-18", D("49.9"), bid=2, ask=2.1),
+            _put_quote("2026-09-18", 45, bid=None, ask=None),
+            _put_quote("2026-09-18", 30, bid=40, ask=41),
+        ),
+        _info(),
+        _history(),
+        TODAY,
+        NOW,
+        "all",
+    )
+    puts = {
+        row.strike_cents: row
+        for group in put_page.expirations
+        for row in group.contracts
+    }
+    itm_put = puts[5500]
+    assert itm_put.in_the_money is True
+    _seen(itm_put, "put", D(55), D(8), 7)
+    otm_put = puts[4000]
+    assert otm_put.in_the_money is False
+    _seen(otm_put, "put", D(40), D("1.5"), 7)
+    assert puts[4990].net_premium_cents == to_cents(D(200))
+    assert puts[4500].net_premium_cents is None
+    rich_put = puts[3000]
+    assert rich_put.net_apr_pct_tenths is None
+    assert rich_put.breakeven_change_pct_tenths >= 0
+
+    itm_only = assemble_covered_calls(
+        _chain(_quote("2026-09-18", 40, bid=12), _quote("2026-09-18", 55, bid=1.25)),
+        _info(), _history(), TODAY, NOW, "itm",
+    )
+    assert [row.strike_cents for row in itm_only.expirations[0].contracts] == [4000]
+    otm_only = assemble_cash_secured_puts(
+        _chain(_put_quote("2026-09-18", 55, bid=8), _put_quote("2026-09-18", 40, bid=1.5)),
+        _info(), _history(), TODAY, NOW, "otm",
+    )
+    assert [row.strike_cents for row in otm_only.expirations[0].contracts] == [4000]

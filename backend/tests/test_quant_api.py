@@ -90,12 +90,12 @@ def test_chain_serializes_predictive_fallback_and_coherent_payoff(
             ),
         )
         response = client.get(
-            "/api/covered-calls/IREN?moneyness=all&forecast_model=empirical_scaled"
+            "/api/covered-calls/IREN?moneyness=itm&forecast_model=empirical_scaled"
         )
-        default_response = client.get("/api/covered-calls/IREN?moneyness=all")
+        default_response = client.get("/api/covered-calls/IREN?moneyness=itm")
         invalid_response = client.get("/api/covered-calls/IREN?forecast_model=unknown")
         rights_unavailable = client.get(
-            "/api/covered-calls/IREN?moneyness=all&forecast_model=iv_physical"
+            "/api/covered-calls/IREN?moneyness=itm&forecast_model=iv_physical"
         )
         page = assemble_covered_calls(chain, info, history, today, now, "all")
 
@@ -104,10 +104,10 @@ def test_chain_serializes_predictive_fallback_and_coherent_payoff(
 
         monkeypatch.setattr(app.state.predictive_odds.ledger, "record_batch", failed_evidence)
         degraded = client.get(
-            "/api/covered-calls/IREN?moneyness=all&forecast_model=empirical_scaled"
+            "/api/covered-calls/IREN?moneyness=itm&forecast_model=empirical_scaled"
         )
         selected_unavailable = client.get(
-            "/api/covered-calls/IREN?moneyness=all&forecast_model=intraday_shadow"
+            "/api/covered-calls/IREN?moneyness=itm&forecast_model=intraday_shadow"
         )
 
     assert response.status_code == 200

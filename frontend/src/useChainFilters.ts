@@ -9,12 +9,11 @@ export function useChainFilters() {
   }
   const clear = () => setTexts(EMPTY_FILTER_TEXTS)
   const parsed: FilterState = {
-    primary: parseThreshold(texts.primary),
+    premium: parseThreshold(texts.premium),
     apr: parseThreshold(texts.apr),
-    drop: parseThreshold(texts.drop),
-    minDte: parseThreshold(texts.minDte),
+    breakeven: parseThreshold(texts.breakeven),
     maxDte: parseThreshold(texts.maxDte),
   }
-  const key = `${texts.primary}|${texts.apr}|${texts.drop}|${texts.minDte}|${texts.maxDte}`
+  const key = `${texts.premium}|${texts.apr}|${texts.breakeven}|${texts.maxDte}`
   return { texts, parsed, setText, clear, key }
 }

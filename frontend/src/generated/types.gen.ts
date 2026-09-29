@@ -97,6 +97,18 @@ export type CashSecuredPutContract = {
      */
     cushion_to_breakeven_pct_tenths: number | null;
     /**
+     * Net Premium Cents
+     */
+    net_premium_cents: number | null;
+    /**
+     * Net Apr Pct Tenths
+     */
+    net_apr_pct_tenths: number | null;
+    /**
+     * Breakeven Change Pct Tenths
+     */
+    breakeven_change_pct_tenths: number | null;
+    /**
      * Vs 7D Low Pct Tenths
      */
     vs_7d_low_pct_tenths: number | null;
@@ -380,6 +392,22 @@ export type CoveredCallContract = {
      * Drop To Breakeven Pct Tenths
      */
     drop_to_breakeven_pct_tenths: number | null;
+    /**
+     * Net Premium Cents
+     */
+    net_premium_cents: number | null;
+    /**
+     * Net Apr Pct Tenths
+     */
+    net_apr_pct_tenths: number | null;
+    /**
+     * Breakeven Cents
+     */
+    breakeven_cents: number | null;
+    /**
+     * Breakeven Change Pct Tenths
+     */
+    breakeven_change_pct_tenths: number | null;
     /**
      * Vs 7D Low Pct Tenths
      */
@@ -1192,7 +1220,7 @@ export type GetCoveredCallsApiCoveredCallsTickerGetData = {
         /**
          * Moneyness
          */
-        moneyness?: 'itm' | 'otm' | 'all' | null;
+        moneyness?: 'itm' | 'otm' | null;
         /**
          * Forecast Model
          */
@@ -1231,7 +1259,7 @@ export type GetCashSecuredPutsApiCashSecuredPutsTickerGetData = {
         /**
          * Moneyness
          */
-        moneyness?: 'itm' | 'otm' | 'all' | null;
+        moneyness?: 'itm' | 'otm' | null;
         /**
          * Forecast Model
          */

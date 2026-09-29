@@ -918,7 +918,7 @@ def test_unverified_chain_contract_never_exposes_cached_numeric_odds(
             status="available", itm_pct_tenths=700, otm_pct_tenths=300,
             source="nasdaq", fetched_at=now,
         )
-        response = client.get("/api/covered-calls/IREN?moneyness=all")
+        response = client.get("/api/covered-calls/IREN?moneyness=itm")
         assert response.status_code == 200
         actual = response.json()["expirations"][0]["contracts"][0]["market_odds"]
         assert actual["status"] == "unavailable"

@@ -115,20 +115,20 @@ describe("chain interactions", () => {
     const strikes = within(first!).getAllByRole("row").slice(1).map((row) => row.firstChild?.textContent)
     expect(strikes).toEqual(["$50.00", "$40.50"])
     expect(within(first!).getAllByRole("row")[1].querySelector("th")?.hasAttribute("data-heat")).toBe(false)
-    expect(within(first!).getAllByRole("row")[1].querySelector("[data-heat]")?.textContent).toBe("$40.00")
+    expect(within(first!).getAllByRole("row")[1].querySelector("[data-heat]")?.textContent).toBe("$50.00")
     expect(within(first!).getAllByRole("row")[2].querySelector("th")?.hasAttribute("data-heat")).toBe(false)
     expect(within(first!).getAllByRole("row")[2].querySelector("td")?.hasAttribute("data-heat")).toBe(false)
     const pricedCells = within(first!).getAllByRole("row")[1].querySelectorAll("td")
     expect(pricedCells[0].textContent).toContain("Market odds are unavailable")
     expect(pricedCells[1].textContent).toBe("$0.50")
     expect(pricedCells[1].hasAttribute("data-heat")).toBe(false)
-    expect(pricedCells[5].textContent).toBe("$40.00")
+    expect(pricedCells[5].textContent).toBe("$50.00")
     expect(pricedCells[5].getAttribute("data-heat")).toBe("0.50")
     const missingRowCells = within(first!).getAllByRole("row")[2].querySelectorAll("td")
     expect(missingRowCells[5].textContent).toBe("—")
     expect(missingRowCells[5].hasAttribute("data-heat")).toBe(false)
     const missingCells = [...missingRowCells].map((cell) => cell.textContent)
-    expect(missingCells.slice(1, 8)).toEqual(["—", "—", "—", "—", "—", "—", "—"])
+    expect(missingCells.slice(1, 9)).toEqual(["—", "—", "—", "—", "—", "—", "—", "—"])
     expect(screen.queryByText("Suggested trade")).toBeNull()
     expect(screen.getByRole("button", { name: "Copy row IREN 2026-09-18 strike $50.00" })).toBeTruthy()
     expect(screen.getByText("Market open at fetch")).toBeTruthy()
@@ -137,39 +137,42 @@ describe("chain interactions", () => {
     expect(screen.getByText(/Sep 11, 2026 10:00 AM ET/)).toBeTruthy()
     expect(screen.queryByText(/SEP 10, 2026 3:37 PM ET/)).toBeNull()
     expect(screen.getByText("1 contract · 100 sh · $4,990.00 stock")).toBeTruthy()
+    expect(screen.getByText("$49.40")).toBeTruthy()
     expect(screen.getByText("1.0%")).toBeTruthy()
     const headers = within(first!).getAllByRole("columnheader")
     expect(headers.map((header) => header.textContent)).toEqual([
       "Strike",
       "Expiry odds · EWMA lognormal",
       "Bid",
-      "Sprd %",
+      "Ask",
+      "Spread (%)",
       "OI",
-      "Premium",
-      "Called P&L",
+      "Premium (net)",
       "APR (net)",
-      "Drop (BE)",
+      "Breakeven",
+      "% to breakeven",
       "Watch",
       "Copy",
     ])
     expect(headers.some((header) => header.textContent === "IV")).toBe(false)
-    expect(headers[4].querySelector("abbr")?.getAttribute("title")).toBe(headers[4].getAttribute("title"))
-    expect(headers[4].getAttribute("title")).toContain("open interest")
-    expect(headers[6].getAttribute("title")).toContain("assigned")
-    expect(headers[2].getAttribute("title")).toContain("Premium is 100")
+    expect(headers[5].querySelector("abbr")?.getAttribute("title")).toBe(headers[5].getAttribute("title"))
+    expect(headers[5].getAttribute("title")).toContain("open interest")
+    expect(headers[6].getAttribute("title")).toContain("Time value")
+    expect(headers[2].getAttribute("title")).toContain("100 × (bid − intrinsic)")
     expect(screen.getByRole("main").getAttribute("aria-busy")).toBe("false")
     expect(screen.getByRole("button", { name: "Filters" }).getAttribute("aria-expanded")).toBe("false")
-    expect(screen.getByLabelText("Min Called P&L ($)")).toBeTruthy()
-    expect(screen.getByLabelText("Min APR net (%)")).toBeTruthy()
-    expect(screen.getByLabelText("Min Drop to breakeven (%)")).toBeTruthy()
-    expect(screen.getByLabelText("Min DTE")).toBeTruthy()
+    expect(screen.getByLabelText("Min Premium (net) ($)")).toBeTruthy()
+    expect(screen.getByLabelText("Min APR (net) (%)")).toBeTruthy()
+    expect(screen.getByLabelText("Min % to breakeven (%)")).toBeTruthy()
     expect(screen.getByLabelText("Max DTE")).toBeTruthy()
+    expect(screen.queryByLabelText("Min DTE")).toBeNull()
+    expect(screen.queryByRole("button", { name: "Columns" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Clear all" })).toBeNull()
     expect(screen.getByRole("radio", { name: "Covered calls" })).toBeTruthy()
     expect(screen.getByRole("radio", { name: "Cash-secured puts" })).toBeTruthy()
     expect(screen.getByRole("radio", { name: "ITM" })).toBeTruthy()
     expect(screen.getByRole("radio", { name: "OTM" })).toBeTruthy()
-    expect(screen.getByRole("radio", { name: "All" })).toBeTruthy()
+    expect(screen.queryByRole("radio", { name: "All" })).toBeNull()
   })
 
   it("shows market-implied odds, source time, and a quote-quality reason in chain rows", async () => {
@@ -201,8 +204,7 @@ describe("chain interactions", () => {
     expect(screen.getByText(/Nasdaq · last estimate Sep 17, 2026/)).toBeTruthy()
   })
 
-  it("uses a labeled historical fallback and sorts hypothetical risk without a composite score", async () => {
-    window.history.replaceState(null, "", "/?t=IREN&side=call&m=itm&cols=strike_cents,expected_pnl_cents,loss_pct_tenths,p05_pnl_cents")
+  it("uses a labeled historical fallback without a composite score", async () => {
     const oddsPage = page()
     oddsPage.expirations[0].contracts.forEach((row, index) => Object.assign(row, {
       market_odds: {
@@ -236,13 +238,8 @@ describe("chain interactions", () => {
     expect(rows[1].querySelector(".odds-cell")?.textContent).not.toContain("Reliability not yet established")
     expect(screen.getByText(/Selected forecast: EWMA lognormal baseline/)).toBeTruthy()
     expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("Why market odds unavailable?")
-    expect(screen.getByRole("columnheader", { name: "Est P&L" })).toBeTruthy()
-    expect(screen.getByRole("columnheader", { name: "Loss odds" })).toBeTruthy()
+    expect(screen.queryByRole("columnheader", { name: "Est P&L" })).toBeNull()
     expect(screen.queryByRole("columnheader", { name: /score/i })).toBeNull()
-    fireEvent.click(screen.getByRole("button", { name: "Est P&L" }))
-    expect((await screen.findAllByRole("row"))[1].firstChild?.textContent).toBe("$40.50")
-    fireEvent.change(screen.getByLabelText("Contracts"), { target: { value: "2" } })
-    expect((await screen.findAllByRole("row"))[1].textContent).toContain("-$20.00")
   })
 
   it("sorts expiry odds by real-world ITM probability rather than market-implied ITM", async () => {
@@ -438,34 +435,34 @@ describe("chain interactions", () => {
     expect(listbox.getAttribute("aria-busy")).toBe("false")
   })
 
-  it("sizes buy-writes from a contract count and scales outlay and called P&L", async () => {
+  it("sizes buy-writes from a contract count and scales net premium", async () => {
     render(<ItmChain />)
-    await waitFor(() => expect(screen.getByText("$40.00")).toBeTruthy())
+    await waitFor(() => expect(screen.getByText("$49.40")).toBeTruthy())
     fireEvent.change(screen.getByLabelText("Contracts"), { target: { value: "2" } })
     expect(screen.getByText("2 contracts · 200 sh · $9,980.00 stock")).toBeTruthy()
     expect(screen.getByText("$100.00")).toBeTruthy()
-    expect(screen.getByText("$80.00")).toBeTruthy()
+    expect(screen.getByText("$49.40")).toBeTruthy()
     expect(screen.getByText("42.1%")).toBeTruthy()
   })
 
   it("treats an explicit zero contract count as invalid and keeps one contract", async () => {
     render(<ItmChain />)
-    await waitFor(() => expect(screen.getByText("$40.00")).toBeTruthy())
+    await waitFor(() => expect(screen.getByText("$49.40")).toBeTruthy())
     fireEvent.change(screen.getByLabelText("Contracts"), { target: { value: "0" } })
     expect(screen.getByLabelText("Contracts").getAttribute("aria-invalid")).toBe("true")
     expect(screen.getByText(/Enter a whole number of 1 or more/)).toBeTruthy()
-    expect(screen.getByText("$40.00")).toBeTruthy()
+    expect(screen.getByText("$49.40")).toBeTruthy()
   })
 
   it("rejects a contract count that would overflow scaled money", async () => {
     render(<ItmChain />)
-    await waitFor(() => expect(screen.getByText("$40.00")).toBeTruthy())
+    await waitFor(() => expect(screen.getByText("$49.40")).toBeTruthy())
     fireEvent.change(screen.getByLabelText("Contracts"), {
       target: { value: String(Number.MAX_SAFE_INTEGER) },
     })
     expect(screen.getByLabelText("Contracts").getAttribute("aria-invalid")).toBe("true")
     expect(screen.getByText(/too large to calculate exactly/)).toBeTruthy()
-    expect(screen.getByText("$40.00")).toBeTruthy()
+    expect(screen.getByText("$49.40")).toBeTruthy()
   })
 
   it("fetches another ticker only after it is chosen from the picker", async () => {
@@ -607,7 +604,7 @@ describe("chain interactions", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh data" }))
     await waitFor(() => expect(screen.getByText(/Nasdaq unavailable/)).toBeTruthy())
-    expect(screen.getByText("$40.00")).toBeTruthy()
+    expect(screen.getByText("$49.40")).toBeTruthy()
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(fetchMock.mock.calls.map((item) => item[0])).toEqual(["IREN", "IREN"])
   })
@@ -661,7 +658,7 @@ describe("chain interactions", () => {
       .mockRejectedValueOnce(new Error("Nasdaq unavailable"))
     render(<ItmChain />)
     await waitFor(() => expect(screen.getAllByText("$50.00")[0]).toBeTruthy())
-    fireEvent.change(screen.getByLabelText("Min APR net (%)"), { target: { value: "500" } })
+    fireEvent.change(screen.getByLabelText("Min APR (net) (%)"), { target: { value: "500" } })
     expect(screen.getByText("No rows match the current filters.")).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh data" }))
@@ -734,28 +731,29 @@ describe("chain interactions", () => {
 
   it("hides rows below each minimum and ANDs active filters", async () => {
     render(<ItmChain />)
-    await waitFor(() => expect(screen.getByText("$40.00")).toBeTruthy())
+    await waitFor(() => expect(screen.getByText("$49.40")).toBeTruthy())
     fireEvent.click(screen.getByRole("button", { name: "Expand all" }))
 
-    fireEvent.change(screen.getByLabelText("Min Called P&L ($)"), { target: { value: "100" } })
-    expect(screen.getByText("$290.00")).toBeTruthy()
-    expect(screen.queryByText("$40.00")).toBeNull()
+    fireEvent.change(screen.getByLabelText("Min Premium (net) ($)"), { target: { value: "100" } })
+    expect(screen.getByText("$800.00")).toBeTruthy()
+    expect(screen.queryByText("$49.40")).toBeNull()
     expect(screen.queryByRole("heading", { name: /2026-09-18/ })).toBeNull()
     expect(screen.getByRole("heading", { name: /2026-10-09/ })).toBeTruthy()
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
-    fireEvent.change(screen.getByLabelText("Min Called P&L ($)"), { target: { value: "" } })
-    fireEvent.change(screen.getByLabelText("Min APR net (%)"), { target: { value: "50" } })
+    fireEvent.change(screen.getByLabelText("Min Premium (net) ($)"), { target: { value: "" } })
+    fireEvent.change(screen.getByLabelText("Min APR (net) (%)"), { target: { value: "50" } })
     expect(screen.getByText("89.8%")).toBeTruthy()
     expect(screen.queryByText("42.1%")).toBeNull()
     expect(screen.queryByRole("heading", { name: /2026-09-18/ })).toBeNull()
 
-    fireEvent.change(screen.getByLabelText("Min APR net (%)"), { target: { value: "" } })
-    fireEvent.change(screen.getByLabelText("Min Drop to breakeven (%)"), { target: { value: "5" } })
+    fireEvent.change(screen.getByLabelText("Min APR (net) (%)"), { target: { value: "" } })
+    fireEvent.change(screen.getByLabelText("Min % to breakeven (%)"), { target: { value: "5" } })
     expect(screen.getByText("16.0%")).toBeTruthy()
+    expect(screen.getByText("$42.00")).toBeTruthy()
     expect(screen.queryByText("$50.00")).toBeNull()
 
-    fireEvent.change(screen.getByLabelText("Min APR net (%)"), { target: { value: "50" } })
+    fireEvent.change(screen.getByLabelText("Min APR (net) (%)"), { target: { value: "50" } })
     expect(screen.getByText("$45.00")).toBeTruthy()
     expect(screen.queryByText("$40.50")).toBeNull()
     expect(fetchMock).toHaveBeenCalledTimes(1)
@@ -766,58 +764,58 @@ describe("chain interactions", () => {
     await waitFor(() => expect(screen.getAllByText("$50.00")[0]).toBeTruthy())
     fireEvent.click(screen.getByRole("button", { name: "Expand all" }))
 
-    fireEvent.change(screen.getByLabelText("Min APR net (%)"), { target: { value: "abc" } })
+    fireEvent.change(screen.getByLabelText("Min APR (net) (%)"), { target: { value: "abc" } })
     expect(screen.getAllByText("$50.00")[0]).toBeTruthy()
     expect(screen.getByText("$40.50")).toBeTruthy()
-    expect(screen.getByLabelText("Min APR net (%)").getAttribute("aria-invalid")).toBe("true")
-    expect(screen.getByRole("button", { name: "Clear invalid input APR net (%) abc" })).toBeTruthy()
-    expect(screen.queryByRole("button", { name: "Remove filter APR net (%) abc" })).toBeNull()
+    expect(screen.getByLabelText("Min APR (net) (%)").getAttribute("aria-invalid")).toBe("true")
+    expect(screen.getByRole("button", { name: "Clear invalid input APR (net) (%) abc" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Remove filter APR (net) (%) abc" })).toBeNull()
     expect(screen.getByRole("button", { name: /Filters/ }).textContent).toContain("Fix 1")
     expect(screen.getByRole("button", { name: "Clear all" })).toBeTruthy()
 
-    fireEvent.change(screen.getByLabelText("Min APR net (%)"), { target: { value: "10%5" } })
-    expect(screen.getByLabelText("Min APR net (%)").getAttribute("aria-invalid")).toBe("true")
-    expect(screen.getByRole("button", { name: "Clear invalid input APR net (%) 10%5" })).toBeTruthy()
+    fireEvent.change(screen.getByLabelText("Min APR (net) (%)"), { target: { value: "10%5" } })
+    expect(screen.getByLabelText("Min APR (net) (%)").getAttribute("aria-invalid")).toBe("true")
+    expect(screen.getByRole("button", { name: "Clear invalid input APR (net) (%) 10%5" })).toBeTruthy()
     expect(screen.getByRole("button", { name: /Filters/ }).textContent).toContain("Fix 1")
 
-    fireEvent.change(screen.getByLabelText("Min Called P&L ($)"), { target: { value: "0" } })
+    fireEvent.change(screen.getByLabelText("Min Premium (net) ($)"), { target: { value: "0" } })
     expect(screen.getAllByText("$50.00")[0]).toBeTruthy()
     expect(screen.queryByText("$40.50")).toBeNull()
-    expect(screen.getByRole("button", { name: "Remove filter Called P&L ($) 0" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Remove filter Premium (net) ($) 0" })).toBeTruthy()
     expect(screen.getByRole("button", { name: /Filters/ }).textContent).toContain("Fix 1")
   })
 
   it("shows removable active-filter chips and clears filters independently", async () => {
     render(<ItmChain />)
-    await waitFor(() => expect(screen.getByText("$40.00")).toBeTruthy())
-    fireEvent.change(screen.getByLabelText("Min APR net (%)"), { target: { value: "42.1" } })
-    fireEvent.change(screen.getByLabelText("Min DTE"), { target: { value: "7" } })
+    await waitFor(() => expect(screen.getByText("$49.40")).toBeTruthy())
+    fireEvent.change(screen.getByLabelText("Min APR (net) (%)"), { target: { value: "42.1" } })
+    fireEvent.change(screen.getByLabelText("Max DTE"), { target: { value: "7" } })
 
-    expect(screen.getByRole("button", { name: "Remove filter APR net (%) 42.1" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Remove filter DTE ≥ 7" })).toBeTruthy()
-    fireEvent.click(screen.getByRole("button", { name: "Remove filter APR net (%) 42.1" }))
-    expect((screen.getByLabelText("Min APR net (%)") as HTMLInputElement).value).toBe("")
-    expect((screen.getByLabelText("Min DTE") as HTMLInputElement).value).toBe("7")
+    expect(screen.getByRole("button", { name: "Remove filter APR (net) (%) 42.1" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Remove filter DTE ≤ 7" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Remove filter APR (net) (%) 42.1" }))
+    expect((screen.getByLabelText("Min APR (net) (%)") as HTMLInputElement).value).toBe("")
+    expect((screen.getByLabelText("Max DTE") as HTMLInputElement).value).toBe("7")
     expect(screen.getByRole("button", { name: "Clear all" })).toBeTruthy()
   })
 
-  it("filters contract-scaled Called P&L and keeps heatmap on remaining rows", async () => {
+  it("filters contract-scaled net premium and keeps heatmap on remaining rows", async () => {
     render(<ItmChain />)
-    await waitFor(() => expect(screen.getByText("$40.00")).toBeTruthy())
+    await waitFor(() => expect(screen.getByText("$49.40")).toBeTruthy())
     fireEvent.click(screen.getByRole("button", { name: "Expand all" }))
 
-    fireEvent.change(screen.getByLabelText("Min Called P&L ($)"), { target: { value: "50" } })
-    expect(screen.queryByText("$40.00")).toBeNull()
-    expect(screen.getByText("$290.00")).toBeTruthy()
+    fireEvent.change(screen.getByLabelText("Min Premium (net) ($)"), { target: { value: "60" } })
+    expect(screen.queryByText("$49.40")).toBeNull()
+    expect(screen.getByText("$800.00")).toBeTruthy()
 
     fireEvent.change(screen.getByLabelText("Contracts"), { target: { value: "2" } })
-    expect(screen.getByText("$80.00")).toBeTruthy()
-    expect(screen.getByText("$580.00")).toBeTruthy()
+    expect(screen.getByText("$100.00")).toBeTruthy()
+    expect(screen.getByText("$1,600.00")).toBeTruthy()
     expect(screen.getByRole("heading", { name: /2026-09-18/ })).toBeTruthy()
 
-    fireEvent.change(screen.getByLabelText("Min Called P&L ($)"), { target: { value: "100" } })
-    expect(screen.queryByText("$80.00")).toBeNull()
-    expect(screen.getByText("$580.00")).toBeTruthy()
+    fireEvent.change(screen.getByLabelText("Min Premium (net) ($)"), { target: { value: "200" } })
+    expect(screen.queryByText("$100.00")).toBeNull()
+    expect(screen.getByText("$1,600.00")).toBeTruthy()
     expect(screen.queryByRole("heading", { name: /2026-09-18/ })).toBeNull()
     const remaining = screen.getByRole("heading", { name: /2026-10-09/ }).closest("section")
     expect(within(remaining!).getAllByRole("row")[1].querySelector("[data-heat]")?.getAttribute("data-heat")).toBe("0.50")
@@ -827,24 +825,24 @@ describe("chain interactions", () => {
     render(<ItmChain />)
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
     fireEvent.click(screen.getByRole("button", { name: "Expand all" }))
-    fireEvent.change(screen.getByLabelText("Min APR net (%)"), { target: { value: "50" } })
+    fireEvent.change(screen.getByLabelText("Min APR (net) (%)"), { target: { value: "50" } })
     fireEvent.change(screen.getByLabelText("Contracts"), { target: { value: "2" } })
     expect(screen.getByText("89.8%")).toBeTruthy()
     expect(screen.queryByText("42.1%")).toBeNull()
 
     await selectTicker("CIFR")
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("CIFR", "call", "itm"))
-    expect((screen.getByLabelText("Min APR net (%)") as HTMLInputElement).value).toBe("50")
+    expect((screen.getByLabelText("Min APR (net) (%)") as HTMLInputElement).value).toBe("50")
     expect((screen.getByLabelText("Contracts") as HTMLInputElement).value).toBe("2")
     expect(screen.queryByText("42.1%")).toBeNull()
     expect(screen.getByText("89.8%")).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh data" }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
-    expect((screen.getByLabelText("Min APR net (%)") as HTMLInputElement).value).toBe("50")
+    expect((screen.getByLabelText("Min APR (net) (%)") as HTMLInputElement).value).toBe("50")
 
     fireEvent.click(screen.getByRole("button", { name: "Clear all" }))
-    expect((screen.getByLabelText("Min APR net (%)") as HTMLInputElement).value).toBe("")
+    expect((screen.getByLabelText("Min APR (net) (%)") as HTMLInputElement).value).toBe("")
     expect((screen.getByLabelText("Contracts") as HTMLInputElement).value).toBe("2")
     const restoredExpiry = screen.getByRole("heading", { name: /2026-09-18/ }).closest("section")
     expect(restoredExpiry).toBeTruthy()
@@ -858,58 +856,41 @@ describe("chain interactions", () => {
     render(<ItmChain />)
     await waitFor(() => expect(screen.getAllByText("$50.00")[0]).toBeTruthy())
     fireEvent.click(screen.getByRole("button", { name: "Expand all" }))
-    fireEvent.change(screen.getByLabelText("Min APR net (%)"), { target: { value: "500" } })
+    fireEvent.change(screen.getByLabelText("Min APR (net) (%)"), { target: { value: "500" } })
     expect(screen.getByText("No rows match the current filters.")).toBeTruthy()
     expect(screen.queryByText("No ITM calls for IREN")).toBeNull()
     expect(screen.queryByRole("table")).toBeNull()
   })
 
-  it("keeps a row whose displayed Called P&L equals the typed minimum", async () => {
-    const sample = page()
-    fetchMock.mockResolvedValue(page({
-      expirations: [{
-        expiration: "2026-09-18",
-        dte: 7,
-        contracts: [{ ...sample.expirations[0].contracts[0], called_pnl_cents: 4000 }],
-      }],
-    }))
+  it("keeps a row whose displayed net premium equals the typed minimum", async () => {
     render(<ItmChain />)
-    await waitFor(() => expect(screen.getByText("$40.00")).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole("heading", { name: /2026-09-18/ })).toBeTruthy())
 
-    fireEvent.change(screen.getByLabelText("Min Called P&L ($)"), { target: { value: "40" } })
-    expect(screen.getByText("$40.00")).toBeTruthy()
+    fireEvent.change(screen.getByLabelText("Min Premium (net) ($)"), { target: { value: "50" } })
+    expect(screen.getByText("$49.40")).toBeTruthy()
     expect(screen.getByRole("button", { name: "Copy row IREN 2026-09-18 strike $50.00" })).toBeTruthy()
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it("hides expiries outside an inclusive DTE range", async () => {
+  it("hides expiries beyond Max DTE", async () => {
     render(<ItmChain />)
     await waitFor(() => expect(screen.getByRole("heading", { name: /2026-09-18/ })).toBeTruthy())
     fireEvent.click(screen.getByRole("button", { name: "Expand all" }))
 
-    fireEvent.change(screen.getByLabelText("Min DTE"), { target: { value: "21" } })
-    expect(screen.queryByRole("heading", { name: /2026-09-18/ })).toBeNull()
-    expect(screen.getByRole("heading", { name: /2026-10-09/ })).toBeTruthy()
-
-    fireEvent.change(screen.getByLabelText("Min DTE"), { target: { value: "" } })
     fireEvent.change(screen.getByLabelText("Max DTE"), { target: { value: "14" } })
     expect(screen.getByRole("heading", { name: /2026-09-18/ })).toBeTruthy()
     expect(screen.queryByRole("heading", { name: /2026-10-09/ })).toBeNull()
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it("treats an inverted DTE range as a filter miss and marks both fields invalid", async () => {
+  it("maps an all-moneyness link to the side default and drops retired column params", async () => {
+    window.history.replaceState(null, "", "/?t=IREN&side=call&m=all&cols=strike_cents,iv_pct_tenths")
     render(<ItmChain />)
-    await waitFor(() => expect(screen.getAllByText("$50.00")[0]).toBeTruthy())
-    fireEvent.click(screen.getByRole("button", { name: "Expand all" }))
-    fireEvent.change(screen.getByLabelText("Min DTE"), { target: { value: "40" } })
-    fireEvent.change(screen.getByLabelText("Max DTE"), { target: { value: "10" } })
-    expect(screen.getByText("Minimum DTE must not exceed maximum DTE. Fix the range to see results.")).toBeTruthy()
-    expect(screen.queryByText("No rows match the current filters.")).toBeNull()
-    expect(screen.getByLabelText("Min DTE").getAttribute("aria-invalid")).toBe("true")
-    expect(screen.getByLabelText("Max DTE").getAttribute("aria-invalid")).toBe("true")
-    expect(screen.getByRole("button", { name: "Clear invalid input DTE ≥ 40" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Clear invalid input DTE ≤ 10" })).toBeTruthy()
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "call", "itm"))
+    expect(window.location.search).toBe("?t=IREN&side=call&m=itm")
+    expect(screen.queryByRole("columnheader", { name: "IV" })).toBeNull()
+    expect(screen.getByRole("columnheader", { name: "Premium (net)" })).toBeTruthy()
+    expect(screen.getByRole("columnheader", { name: "% to breakeven" })).toBeTruthy()
   })
 
   it("copies displayed row values with headers and context, including contract scaling", async () => {
@@ -940,7 +921,7 @@ describe("chain interactions", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2))
     const sized = writeText.mock.calls[1][0] as string
     expect(sized).toContain("IREN · 2026-09-18 · 7 DTE · Stock bid: $49.90 · 2 contracts · 200 sh")
-    expect(sized).toContain("| $50.00 | $0.50 | 2.0% | 55 | $100.00 | $80.00 | 42.1% | 1.0% |")
+    expect(sized).toContain("| $50.00 | $0.50 | $0.51 | 2.0% | 55 | $100.00 | 42.1% | $49.40 | 1.0% |")
 
     fireEvent.change(screen.getByLabelText("Contracts"), { target: { value: "0" } })
     fireEvent.click(screen.getByRole("button", { name: "Copy row IREN 2026-09-18 strike $50.00" }))
@@ -1005,7 +986,7 @@ describe("chain interactions", () => {
     await waitFor(() => expect(screen.getByText(/Displaying 250 of 300 rows/)).toBeTruthy())
     fireEvent.click(screen.getByRole("button", { name: "Show all" }))
     expect(document.querySelectorAll("tbody tr")).toHaveLength(300)
-    fireEvent.change(screen.getByLabelText("Min DTE"), { target: { value: "1" } })
+    fireEvent.change(screen.getByLabelText("Max DTE"), { target: { value: "100" } })
     expect(screen.getByText(/Displaying 250 of 300 rows/)).toBeTruthy()
     expect(document.querySelectorAll("tbody tr")).toHaveLength(250)
   }, 15_000)
@@ -1015,91 +996,44 @@ describe("chain interactions", () => {
       side === "put" ? samplePutPage() : page()
     ))
     render(<ItmChain />)
-    await waitFor(() => expect(screen.getByText("$40.00")).toBeTruthy())
+    await waitFor(() => expect(screen.getByText("$49.40")).toBeTruthy())
 
     fireEvent.click(screen.getByRole("radio", { name: "Cash-secured puts" }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "put", "otm"))
     expect(screen.getByRole("heading", { name: "Cash-secured puts" })).toBeTruthy()
     expect(screen.getByText("Iris Energy Limited")).toBeTruthy()
-    expect(screen.getByLabelText("Min Premium ($)")).toBeTruthy()
-    expect(screen.getByLabelText("Min APR net (%)")).toBeTruthy()
-    expect(screen.getByLabelText("Min Cushion to breakeven (%)")).toBeTruthy()
+    expect(screen.getByLabelText("Min Premium (net) ($)")).toBeTruthy()
+    expect(screen.getByLabelText("Min APR (net) (%)")).toBeTruthy()
+    expect(screen.getByLabelText("Min % to breakeven (%)")).toBeTruthy()
+    expect(screen.getByLabelText("Max DTE")).toBeTruthy()
     expect(screen.getByText("$45.00")).toBeTruthy()
     expect(screen.getByText("$44.20")).toBeTruthy()
-    expect(screen.queryByText("Called P&L")).toBeNull()
-  })
-
-  it("honors explicit URL columns on load and resets them for a deliberate strategy switch", async () => {
-    window.history.replaceState(null, "", "/?t=IREN&side=call&m=itm&cols=strike_cents,iv_pct_tenths")
-    fetchMock.mockImplementation(async (_ticker, selectedSide) => (
-      selectedSide === "put" ? samplePutPage() : page()
-    ))
-    render(<ItmChain />)
-
-    await waitFor(() => expect(screen.getByRole("columnheader", { name: "IV" })).toBeTruthy())
-    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["Strike", "Expiry odds · EWMA lognormal", "IV", "Watch", "Copy"])
-    fireEvent.click(screen.getByRole("radio", { name: "Cash-secured puts" }))
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "put", "otm"))
-    expect(screen.queryByRole("columnheader", { name: "IV" })).toBeNull()
-    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
-      "Strike", "Expiry odds · EWMA lognormal", "Bid", "Sprd %", "OI", "Premium", "Breakeven", "APR (net)", "Cushion (BE)", "Watch", "Copy",
+    expect(screen.getByText("11.4%")).toBeTruthy()
+    const headers = screen.getAllByRole("columnheader").map((header) => header.textContent)
+    expect(headers).toEqual([
+      "Strike",
+      "Expiry odds · EWMA lognormal",
+      "Bid",
+      "Ask",
+      "Spread (%)",
+      "OI",
+      "Premium (net)",
+      "APR (net)",
+      "Breakeven",
+      "% to breakeven",
+      "Watch",
+      "Copy",
     ])
-    expect(window.location.search).not.toContain("cols=")
   })
 
-  it("keeps the column picker synchronized with canonical URL columns", async () => {
-    window.history.replaceState(null, "", "/?t=IREN&side=put&m=otm&cols=call_bid_cents")
-    fetchMock.mockResolvedValue(samplePutPage())
-    render(<ItmChain />)
-
-    await screen.findByRole("columnheader", { name: "Strike" })
-    expect(screen.getByRole("button", { name: "Columns8" })).toBeTruthy()
-    expect(window.location.search).not.toContain("cols=")
-  })
-
-  it("renders each valid URL column once and canonicalizes duplicate IDs", async () => {
-    window.history.replaceState(
-      null,
-      "",
-      "/?t=IREN&side=call&m=itm&cols=strike_cents,strike_cents,unknown,iv_pct_tenths",
-    )
-    render(<ItmChain />)
-
-    await screen.findByRole("columnheader", { name: "IV" })
-    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
-      "Strike", "Expiry odds · EWMA lognormal", "IV", "Watch", "Copy",
-    ])
-    expect(screen.getByRole("button", { name: "Columns2" })).toBeTruthy()
-    expect(window.location.search).toContain("cols=strike_cents%2Civ_pct_tenths")
-  })
-
-  it("normalizes sorting when a selected column is removed and keeps one column selected", async () => {
-    window.history.replaceState(null, "", "/?t=IREN&side=call&m=itm&cols=strike_cents,iv_pct_tenths")
-    render(<ItmChain />)
-    await waitFor(() => expect(screen.getByRole("columnheader", { name: "IV" })).toBeTruthy())
-
-    fireEvent.click(screen.getByRole("button", { name: "IV" }))
-    expect(screen.getByRole("columnheader", { name: "IV" }).getAttribute("aria-sort")).toBe("ascending")
-    fireEvent.click(screen.getByText("Columns"))
-    fireEvent.click(screen.getByRole("checkbox", { name: "IV" }))
-
-    expect(screen.queryByRole("columnheader", { name: "IV" })).toBeNull()
-    expect(screen.getByRole("columnheader", { name: "Strike" }).getAttribute("aria-sort")).toBe("descending")
-    const strikeToggle = screen.getByRole("checkbox", { name: "Strike" })
-    fireEvent.click(strikeToggle)
-    expect(strikeToggle.getAttribute("aria-checked")).toBe("true")
-    expect(screen.getByRole("columnheader", { name: "Strike" })).toBeTruthy()
-    expect(window.location.search).toContain("cols=strike_cents")
-  })
-
-  it("toggles the visible fallback sort when an explicit URL omits Strike", async () => {
+  it("drops a retired column query and keeps strike as the default sort", async () => {
     window.history.replaceState(null, "", "/?t=IREN&side=call&m=itm&cols=call_bid_cents")
     render(<ItmChain />)
-    const bidHeader = await screen.findByRole("columnheader", { name: "Bid" })
-
-    expect(bidHeader.getAttribute("aria-sort")).toBe("ascending")
+    const strike = await screen.findByRole("columnheader", { name: "Strike" })
+    expect(strike.getAttribute("aria-sort")).toBe("descending")
+    expect(window.location.search).not.toContain("cols=")
     fireEvent.click(screen.getByRole("button", { name: "Bid" }))
-    expect(bidHeader.getAttribute("aria-sort")).toBe("descending")
+    expect(screen.getByRole("columnheader", { name: "Bid" }).getAttribute("aria-sort")).toBe("ascending")
   })
 
   it("expands and collapses all expirations without removing their headers", async () => {
@@ -1135,20 +1069,10 @@ describe("chain interactions", () => {
   it("refetches when moneyness changes and keeps the selected strategy", async () => {
     render(<ItmChain />)
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "call", "itm"))
-    fireEvent.click(screen.getByRole("radio", { name: "All" }))
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "call", "all"))
-  })
-
-  it("shows Greeks only after they are enabled and does not refetch", async () => {
-    render(<ItmChain />)
-    await waitFor(() => expect(screen.getByRole("heading", { name: /2026-09-18/ })).toBeTruthy())
-    expect(screen.queryByRole("columnheader", { name: "IV" })).toBeNull()
-    fireEvent.click(screen.getByText("Columns"))
-    const ivToggle = (await screen.findAllByLabelText(/IV/))[0]
-    fireEvent.click(ivToggle)
-    expect(screen.getAllByRole("columnheader", { name: "IV" }).length).toBeGreaterThan(0)
-    expect(screen.getAllByText("45.0%").length).toBeGreaterThan(0)
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole("radio", { name: "OTM" }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "call", "otm"))
+    expect(screen.queryByRole("radio", { name: "All" })).toBeNull()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it("toggles theme into localStorage and sets the dark class", async () => {

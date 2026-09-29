@@ -16,17 +16,16 @@ export function useExpansion(
   const [state, setState] = useState<{ identity: string; values: Set<string> | null; seed: Seed }>(() => ({
     identity: identityKey,
     values: null,
-    seed: { primary: "", apr: "", drop: "", minDte: "", maxDte: "", contracts: 1 },
+    seed: { premium: "", apr: "", breakeven: "", maxDte: "", contracts: 1 },
   }))
   const seed = useMemo(
     () => (state.identity === identityKey ? state.seed : { ...texts, contracts }),
     [state, identityKey, texts, contracts],
   )
   const seededExpiration = useMemo(() => nearestMatchingExpiration(page, seed.contracts, {
-    primary: parseThreshold(seed.primary),
+    premium: parseThreshold(seed.premium),
     apr: parseThreshold(seed.apr),
-    drop: parseThreshold(seed.drop),
-    minDte: parseThreshold(seed.minDte),
+    breakeven: parseThreshold(seed.breakeven),
     maxDte: parseThreshold(seed.maxDte),
   }, side), [page, side, seed])
   const stored = state.identity === identityKey ? state.values : null

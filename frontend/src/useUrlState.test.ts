@@ -3,32 +3,24 @@ import { describe, expect, it } from "vitest"
 import { defaultMoneyness, parseUrlState, serializeUrlState } from "./useUrlState"
 
 describe("url state", () => {
-  it("defaults to IREN covered-call ITM with hidden column overrides", () => {
+  it("defaults to IREN covered-call ITM", () => {
     const state = parseUrlState("")
-    expect(state).toEqual({ ticker: "IREN", side: "call", moneyness: "itm", cols: null })
+    expect(state).toEqual({ ticker: "IREN", side: "call", moneyness: "itm" })
     expect(defaultMoneyness("put")).toBe("otm")
+    expect(defaultMoneyness("call")).toBe("itm")
   })
 
-  it("accepts ticker, strategy, moneyness, and columns", () => {
-    const state = parseUrlState("?t=cifr&side=put&m=all&cols=strike_cents,iv_pct_tenths")
-    expect(state).toEqual({
-      ticker: "CIFR",
-      side: "put",
-      moneyness: "all",
-      cols: ["strike_cents", "iv_pct_tenths"],
-    })
-    expect(serializeUrlState(state)).toBe("?t=CIFR&side=put&m=all&cols=strike_cents%2Civ_pct_tenths")
+  it("accepts ticker, strategy, and moneyness, and drops retired column and all-moneyness params", () => {
+    const state = parseUrlState("?t=cifr&side=put&m=otm&cols=strike_cents,iv_pct_tenths")
+    expect(state).toEqual({ ticker: "CIFR", side: "put", moneyness: "otm" })
+    expect(serializeUrlState(state)).toBe("?t=CIFR&side=put&m=otm")
+    expect(parseUrlState("?side=put&m=all")).toEqual({ ticker: "IREN", side: "put", moneyness: "otm" })
+    expect(parseUrlState("?side=call&m=all")).toEqual({ ticker: "IREN", side: "call", moneyness: "itm" })
   })
 
-  it("rejects invalid tickers and omits default columns from the query", () => {
+  it("rejects invalid tickers", () => {
     expect(parseUrlState("?t=not-a-ticker").ticker).toBe("IREN")
-    expect(serializeUrlState({ ticker: "IREN", side: "call", moneyness: "itm", cols: null }))
+    expect(serializeUrlState({ ticker: "IREN", side: "call", moneyness: "itm" }))
       .toBe("?t=IREN&side=call&m=itm")
-  })
-
-  it("deduplicates columns and removes IDs unavailable for the selected strategy", () => {
-    expect(parseUrlState("?side=call&cols=strike_cents,strike_cents,unknown").cols)
-      .toEqual(["strike_cents"])
-    expect(parseUrlState("?side=put&cols=call_bid_cents").cols).toBeNull()
   })
 })

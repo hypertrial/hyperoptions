@@ -31,7 +31,7 @@ from options_api.models import (
     HealthResponse,
     HypotheticalRiskView,
     MarketOddsView,
-    Moneyness,
+    ChainMoneyness,
     PhysicalModel,
     PredictiveOddsView,
     TickerSearchResponse,
@@ -227,7 +227,7 @@ async def _load_page(
     request: Request,
     ticker: str,
     load: Callable[..., Awaitable[CoveredCallPage | CashSecuredPutPage]],
-    moneyness: Moneyness | None,
+    moneyness: ChainMoneyness | None,
     forecast_model: PhysicalModel,
 ) -> CoveredCallPage | CashSecuredPutPage:
     _check_origin(request)
@@ -387,7 +387,7 @@ async def _load_page(
 async def get_covered_calls(
     request: Request,
     ticker: Annotated[str, Path(min_length=1, max_length=8)],
-    moneyness: Annotated[Moneyness | None, Query()] = None,
+    moneyness: Annotated[ChainMoneyness | None, Query()] = None,
     forecast_model: Annotated[PhysicalModel, Query()] = "lognormal_ewma",
 ) -> CoveredCallPage:
     return await _load_page(request, ticker, load_covered_calls, moneyness, forecast_model)
@@ -397,7 +397,7 @@ async def get_covered_calls(
 async def get_cash_secured_puts(
     request: Request,
     ticker: Annotated[str, Path(min_length=1, max_length=8)],
-    moneyness: Annotated[Moneyness | None, Query()] = None,
+    moneyness: Annotated[ChainMoneyness | None, Query()] = None,
     forecast_model: Annotated[PhysicalModel, Query()] = "lognormal_ewma",
 ) -> CashSecuredPutPage:
     return await _load_page(request, ticker, load_cash_secured_puts, moneyness, forecast_model)

@@ -2,7 +2,7 @@ import { visibleColumns } from "./columns"
 import { STRATEGIES } from "./strategy"
 import type { CashSecuredPutContract, CashSecuredPutPage, CoveredCallContract, CoveredCallPage } from "./types"
 
-export const COLUMN_HEADERS = visibleColumns("call", null)
+export const COLUMN_HEADERS = visibleColumns("call")
 export const COPY_HEADERS = COLUMN_HEADERS.map((column) => column.label)
 export const METRIC_KEYS = [...STRATEGIES.call.heatmapIds]
 
@@ -28,6 +28,10 @@ export function sampleContract(overrides: Partial<CoveredCallContract> = {}): Co
     stock_apr_pct_tenths: 418,
     drop_to_strike_pct_tenths: 2,
     drop_to_breakeven_pct_tenths: 10,
+    net_premium_cents: 5000,
+    net_apr_pct_tenths: 421,
+    breakeven_cents: 4940,
+    breakeven_change_pct_tenths: 10,
     vs_7d_low_pct_tenths: 250,
     vs_30d_low_pct_tenths: 429,
     vs_90d_low_pct_tenths: 667,
@@ -62,6 +66,10 @@ export function missingContract(overrides: Partial<CoveredCallContract> = {}): C
     stock_apr_pct_tenths: null,
     drop_to_strike_pct_tenths: 192,
     drop_to_breakeven_pct_tenths: null,
+    net_premium_cents: null,
+    net_apr_pct_tenths: null,
+    breakeven_cents: null,
+    breakeven_change_pct_tenths: null,
     vs_7d_low_pct_tenths: 13,
     vs_30d_low_pct_tenths: 157,
     vs_90d_low_pct_tenths: 350,
@@ -98,6 +106,10 @@ export function laterContract(overrides: Partial<CoveredCallContract> = {}): Cov
     stock_apr_pct_tenths: 758,
     drop_to_strike_pct_tenths: 102,
     drop_to_breakeven_pct_tenths: 160,
+    net_premium_cents: 80_000,
+    net_apr_pct_tenths: 898,
+    breakeven_cents: 4200,
+    breakeven_change_pct_tenths: 160,
     vs_7d_low_pct_tenths: 125,
     vs_30d_low_pct_tenths: 286,
     vs_90d_low_pct_tenths: 500,
@@ -165,6 +177,9 @@ export function samplePutContract(overrides: Partial<CashSecuredPutContract> = {
     apr_net_pct_tenths: 945,
     cushion_to_strike_pct_tenths: 98,
     cushion_to_breakeven_pct_tenths: 114,
+    net_premium_cents: 8000,
+    net_apr_pct_tenths: 945,
+    breakeven_change_pct_tenths: 114,
     vs_7d_low_pct_tenths: 125,
     vs_30d_low_pct_tenths: 286,
     vs_90d_low_pct_tenths: 500,
@@ -223,6 +238,7 @@ export function largeChainPage(rowCount: number): CoveredCallPage {
       strike_cents: strike,
       outlay_cents: 1000 + index,
       called_pnl_cents: 100 + index,
+      net_premium_cents: 100 + index,
     }))
   }
   return samplePage({

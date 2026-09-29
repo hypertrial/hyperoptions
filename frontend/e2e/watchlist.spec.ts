@@ -82,7 +82,7 @@ test("watches a desktop chain contract and restores its URL after visiting the w
     }
   })
 
-  await page.goto("/?t=IREN&side=call&m=itm&cols=strike_cents")
+  await page.goto("/?t=IREN&side=call&m=itm")
   await expect(page.getByRole("columnheader", { name: "Watch" })).toBeVisible()
   await expect(page.getByRole("columnheader", { name: /Expiry odds · EWMA lognormal/ })).toBeVisible()
   await expect(page.locator(".odds-market").first()).toContainText("62.0% ITM")
@@ -96,7 +96,7 @@ test("watches a desktop chain contract and restores its URL after visiting the w
   await page.getByRole("link", { name: "Watchlist", exact: true }).click()
   await expect(page.getByRole("heading", { name: "Watchlist" })).toBeVisible()
   await page.getByRole("link", { name: "Option chain", exact: true }).click()
-  await expect(page).toHaveURL(/t=IREN&side=call&m=itm&cols=strike_cents/)
+  await expect(page).toHaveURL(/t=IREN&side=call&m=itm/)
   await expect(page.getByRole("columnheader", { name: "Strike" })).toBeVisible()
 })
 

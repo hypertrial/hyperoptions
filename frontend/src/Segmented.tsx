@@ -61,7 +61,6 @@ export function MoneynessToggle({ value, onChange }: { value: Moneyness; onChang
       options={[
         { value: "itm", label: "ITM" },
         { value: "otm", label: "OTM" },
-        { value: "all", label: "All" },
       ]}
     />
   )

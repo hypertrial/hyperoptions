@@ -39,7 +39,6 @@ function emptyCopy(ticker: string, side: Side, moneyness: Moneyness, optionsAvai
   if (!optionsAvailable) return `Options are not available for ${ticker}`
   if (!priced) return `No usable ${ticker} price is available, so contracts cannot be listed.`
   const kind = side === "put" ? "puts" : "calls"
-  if (moneyness === "all") return `No ${kind} for ${ticker}`
   return `No ${moneyness.toUpperCase()} ${kind} for ${ticker}`
 }
 
@@ -62,7 +61,7 @@ function firstDatedOdds(page: ChainPage | null): MarketOdds | null {
 
 export default function ItmChain({ forecastModel = DEFAULT_FORECAST_MODEL }: { forecastModel?: PhysicalModel }) {
   const { state, setState } = useUrlState()
-  const { ticker, side, moneyness, cols } = state
+  const { ticker, side, moneyness } = state
   const identityKey = `${ticker}|${side}|${moneyness}`
   const { page, error, loading, beginTickerChange, beginRefresh } = useChainPage(ticker, side, moneyness, forecastModel)
   const [contractsText, setContractsText] = useState("")
@@ -73,7 +72,7 @@ export default function ItmChain({ forecastModel = DEFAULT_FORECAST_MODEL }: { f
   const filtersState = useChainFilters()
   const { density, toggle: toggleDensity } = useDensity()
   const copiedClear = useRef<number | null>(null)
-  const columns = visibleColumns(side, cols)
+  const columns = visibleColumns(side)
   const filterKey = `${identityKey}|${filtersState.key}`
   const reveal = useRevealLimit(filterKey)
   const effectiveSort = sort.id === PREDICTIVE_ODDS_SORT_ID || columns.some((column) => column.id === sort.id) ? sort : fallbackSort(columns)
@@ -126,11 +125,11 @@ export default function ItmChain({ forecastModel = DEFAULT_FORECAST_MODEL }: { f
 
   const selectSide = (next: Side) => {
     if (next === side) return
-    const nextMoneyness = state.moneyness === "all" ? "all" : defaultMoneyness(next)
+    const nextMoneyness = defaultMoneyness(next)
     expansion.reset(`${ticker}|${next}|${nextMoneyness}`)
     beginTickerChange()
     setSort(DEFAULT_SORT)
-    setState({ ...state, side: next, moneyness: nextMoneyness, cols: null })
+    setState({ ...state, side: next, moneyness: nextMoneyness })
   }
 
   const selectMoneyness = (next: Moneyness) => {
@@ -147,12 +146,6 @@ export default function ItmChain({ forecastModel = DEFAULT_FORECAST_MODEL }: { f
         ? { id, dir: normalized.dir === "desc" ? "asc" : "desc" }
         : { id, dir: id === "strike_cents" || id === PREDICTIVE_ODDS_SORT_ID ? "desc" : "asc" }
     })
-  }
-
-  const selectColumns = (next: string[] | null) => {
-    const nextColumns = visibleColumns(side, next)
-    if (sort.id !== PREDICTIVE_ODDS_SORT_ID && !nextColumns.some((column) => column.id === sort.id)) setSort(fallbackSort(nextColumns))
-    setState({ ...state, cols: next })
   }
 
   const markCopied = (key: string) => {
@@ -240,22 +233,18 @@ export default function ItmChain({ forecastModel = DEFAULT_FORECAST_MODEL }: { f
             )}
           </p>
           {page ? <p className="odds-context">Selected forecast: {PHYSICAL_MODEL_NAMES[forecastModel]}{forecastModel === DEFAULT_FORECAST_MODEL ? " baseline" : " · user-selected experimental"}. It drives expiry odds, odds sort, and hypothetical risk. Market odds use option prices (risk-neutral). {oddsStamp ? `Market quote: ${oddsStamp}.` : ""}</p> : null}
-          {page && columns.some((column) => column.greek) ? <p className="odds-context">Greeks use the dated quote midpoint, Treasury rate, and time to the expiry-session close. European Black-Scholes estimates omit dividends and only approximate American equity options.</p> : null}
         </header>
 
         <main id="main-content" className="chain-panel" aria-busy={loading}>
           {page ? (
             <FilterControls
               side={side}
-              selectedColumns={cols}
               density={density}
               visibleCount={view.visibleCount}
               expirationCount={view.visibleGroups.length}
               expandedCount={expandedVisibleCount}
               texts={filtersState.texts}
               parsed={filters}
-              invertedDte={view.invertedDte}
-              onChangeColumns={selectColumns}
               onToggleDensity={toggleDensity}
               onExpandAll={() => expansion.update(new Set(view.visibleGroups.map((item) => item.group.expiration)))}
               onCollapseAll={() => expansion.update(new Set())}
@@ -312,7 +301,7 @@ export default function ItmChain({ forecastModel = DEFAULT_FORECAST_MODEL }: { f
           ) : null}
           {!loading && view.filterMiss ? (
             <div className="empty-state" role="status">
-              <p>{view.invertedDte ? "Minimum DTE must not exceed maximum DTE. Fix the range to see results." : "No rows match the current filters."}</p>
+              <p>No rows match the current filters.</p>
             </div>
           ) : null}
 

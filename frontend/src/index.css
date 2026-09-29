@@ -794,43 +794,11 @@
   .filter-panel { padding: 4px 0 12px; }
   .filter-cluster {
     display: grid;
-    grid-template-columns: repeat(5, minmax(8rem, 1fr));
+    grid-template-columns: repeat(4, minmax(8rem, 1fr));
     align-items: start;
     gap: 8px;
   }
   .filter-field { display: grid; gap: 4px; min-width: 0; }
-
-  .column-picker-popover {
-    max-height: min(42rem, var(--available-height, calc(100vh - 2rem)));
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
-  .column-picker-actions {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 14px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--border);
-  }
-  .column-picker-actions strong { font-size: .9rem; }
-  .column-picker-actions p { margin: 3px 0 0; color: var(--muted-foreground); font-size: .75rem; }
-  .column-picker-body {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 16px;
-    padding-top: 14px;
-  }
-  .column-picker-body fieldset { display: grid; align-content: start; gap: 7px; min-width: 0; }
-  .column-picker-body legend {
-    margin-bottom: 6px;
-    color: var(--muted-foreground);
-    font-size: .68rem;
-    font-weight: 800;
-    letter-spacing: .06em;
-    text-transform: uppercase;
-  }
-  .column-option { display: flex; min-height: 28px; align-items: center; gap: 8px; font-size: .78rem; }
 
   .banner {
     margin: 0 0 12px;
@@ -1112,8 +1080,6 @@
     .watch-risk-section { grid-column: 1 / -1; border-top: 1px solid var(--border); border-left: 0 !important; }
   }
   @media (max-width: 48rem) {
-    .column-picker-actions { align-items: stretch; flex-direction: column; }
-    .column-picker-body { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .filter-cluster { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .stale-warning [data-slot="alert-description"] { align-items: flex-start; flex-direction: column; }
   }
@@ -1133,7 +1099,6 @@
     .toolbar-button { flex: 1 1 auto; }
     .density-button { display: none !important; }
     .filter-cluster { grid-template-columns: minmax(0, 1fr); }
-    .column-picker-body { grid-template-columns: minmax(0, 1fr); }
     .table-scroll { display: none; }
     .mobile-results { display: block; }
     .mobile-sort-row {

@@ -11,7 +11,7 @@ import { meetsScaledMaximum } from "./decimal"
 import { parseThreshold, passesFilters } from "./filters"
 import { dateTime, integer, moneyCents, percentTenths, plural, signedE4, unsignedPercentTenths } from "./format"
 import { heatmapHue, heatmapStop, metricRange } from "./heatmap"
-import { CALL_COLUMNS, CALL_DEFAULT_COLUMN_IDS, PUT_DEFAULT_COLUMN_IDS, defaultColumnIds, formatContractValues, mobilePriorityColumns, visibleColumns, type ColumnDef } from "./columns"
+import { formatContractValues, mobilePriorityColumns, visibleColumns } from "./columns"
 import type { CoveredCallContract } from "./types"
 import { COLUMN_HEADERS, COPY_HEADERS, METRIC_KEYS, largeChainPage, missingContract, sampleContract, samplePage } from "./testFixtures"
 import { deriveChainView, INITIAL_REVEAL } from "./viewModel"
@@ -33,7 +33,7 @@ describe("ITM chain page", () => {
     expect(markup).toContain("Cash-secured puts")
     expect(markup).toContain("ITM")
     expect(markup).toContain("OTM")
-    expect(markup).toContain("All")
+    expect(markup).not.toContain(">All<")
     expect(markup).toContain("Loading IREN market data")
     expect(markup).not.toContain("Session unavailable")
     expect(markup).toContain("Contracts")
@@ -114,17 +114,28 @@ describe("metric heatmap", () => {
     expect(metricRange([null, Number.NaN])).toBeNull()
   })
 
-  it("limits call heatmaps to decision outcomes", () => {
+  it("limits heatmaps to net premium, net APR, and percent to breakeven", () => {
     expect(METRIC_KEYS).toEqual([
-      "called_pnl_cents",
-      "simple_apr_pct_tenths",
-      "drop_to_breakeven_pct_tenths",
+      "net_premium_cents",
+      "net_apr_pct_tenths",
+      "breakeven_change_pct_tenths",
     ])
   })
 
-  it("uses the focused strategy defaults", () => {
-    expect(defaultColumnIds("call")).toEqual([...CALL_DEFAULT_COLUMN_IDS])
-    expect(defaultColumnIds("put")).toEqual([...PUT_DEFAULT_COLUMN_IDS])
+  it("uses the same column labels for calls and puts", () => {
+    expect(visibleColumns("call").map((column) => column.label)).toEqual(visibleColumns("put").map((column) => column.label))
+    expect(visibleColumns("call").map((column) => column.id)).toEqual([
+      "strike_cents",
+      "call_bid_cents",
+      "call_ask_cents",
+      "call_spread_pct_tenths",
+      "call_open_interest",
+      "net_premium_cents",
+      "net_apr_pct_tenths",
+      "breakeven_cents",
+      "breakeven_change_pct_tenths",
+    ])
+    expect(visibleColumns("put").map((column) => column.id)[1]).toBe("put_bid_cents")
   })
 })
 
@@ -161,7 +172,7 @@ describe("contract sizing", () => {
   })
 })
 
-const openFilters = { primary: null, apr: null, drop: null, minDte: null, maxDte: null }
+const openFilters = { premium: null, apr: null, breakeven: null, maxDte: null }
 
 describe("row filters", () => {
   it("parses optional signed thresholds and ANDs minimums", () => {
@@ -172,16 +183,16 @@ describe("row filters", () => {
     expect(parseThreshold("40%")).toEqual({ value: 40n, scale: 0 })
     expect(parseThreshold("1,000")).toEqual({ value: 1000n, scale: 0 })
 
-    const priced = { called_pnl_cents: 4000, simple_apr_pct_tenths: 421, drop_to_breakeven_pct_tenths: 2, dte: 7 }
-    const missing = { called_pnl_cents: null, simple_apr_pct_tenths: null, drop_to_breakeven_pct_tenths: 192, dte: 7 }
+    const priced = { net_premium_cents: 5000, net_apr_pct_tenths: 421, breakeven_change_pct_tenths: 10, dte: 7 }
+    const missing = { net_premium_cents: null, net_apr_pct_tenths: null, breakeven_change_pct_tenths: null, dte: 7 }
     expect(passesFilters(priced, openFilters, "call")).toBe(true)
-    expect(passesFilters(priced, { ...openFilters, primary: parseThreshold("100") }, "call")).toBe(false)
-    expect(passesFilters(priced, { ...openFilters, primary: parseThreshold("0") }, "call")).toBe(true)
-    expect(passesFilters(missing, { ...openFilters, primary: parseThreshold("0") }, "call")).toBe(false)
-    expect(passesFilters(missing, { ...openFilters, apr: parseThreshold("50"), drop: parseThreshold("5") }, "call")).toBe(false)
+    expect(passesFilters(priced, { ...openFilters, premium: parseThreshold("100") }, "call")).toBe(false)
+    expect(passesFilters(priced, { ...openFilters, premium: parseThreshold("50") }, "call")).toBe(true)
+    expect(passesFilters(missing, { ...openFilters, premium: parseThreshold("0") }, "call")).toBe(false)
+    expect(passesFilters(missing, { ...openFilters, apr: parseThreshold("50"), breakeven: parseThreshold("5") }, "call")).toBe(false)
     expect(passesFilters(
-      { called_pnl_cents: 29_000, simple_apr_pct_tenths: 898, drop_to_breakeven_pct_tenths: 102, dte: 28 },
-      { ...openFilters, apr: parseThreshold("50"), drop: parseThreshold("5") },
+      { net_premium_cents: 80_000, net_apr_pct_tenths: 898, breakeven_change_pct_tenths: 160, dte: 28 },
+      { ...openFilters, apr: parseThreshold("50"), breakeven: parseThreshold("5") },
       "call",
     )).toBe(true)
   })
@@ -216,115 +227,96 @@ describe("row filters", () => {
   })
 
   it("fails only the matching active filter for null and non-finite metrics", () => {
-    const missing = { called_pnl_cents: null, simple_apr_pct_tenths: null, drop_to_breakeven_pct_tenths: 192, dte: 7 }
-    const nonFinite = { called_pnl_cents: Number.NaN, simple_apr_pct_tenths: Number.POSITIVE_INFINITY, drop_to_breakeven_pct_tenths: 102, dte: 7 }
-    expect(passesFilters(missing, { ...openFilters, drop: parseThreshold("5") }, "call")).toBe(true)
+    const missing = { net_premium_cents: null, net_apr_pct_tenths: null, breakeven_change_pct_tenths: 160, dte: 7 }
+    const nonFinite = { net_premium_cents: Number.NaN, net_apr_pct_tenths: Number.POSITIVE_INFINITY, breakeven_change_pct_tenths: 160, dte: 7 }
+    expect(passesFilters(missing, { ...openFilters, breakeven: parseThreshold("5") }, "call")).toBe(true)
     expect(passesFilters(missing, { ...openFilters, apr: parseThreshold("50") }, "call")).toBe(false)
-    expect(passesFilters(missing, { ...openFilters, primary: parseThreshold("0"), drop: parseThreshold("5") }, "call")).toBe(false)
-    expect(passesFilters(nonFinite, { ...openFilters, primary: parseThreshold("0") }, "call")).toBe(false)
+    expect(passesFilters(missing, { ...openFilters, premium: parseThreshold("0"), breakeven: parseThreshold("5") }, "call")).toBe(false)
+    expect(passesFilters(nonFinite, { ...openFilters, premium: parseThreshold("0") }, "call")).toBe(false)
     expect(passesFilters(nonFinite, { ...openFilters, apr: parseThreshold("50") }, "call")).toBe(false)
-    expect(passesFilters(nonFinite, { ...openFilters, drop: parseThreshold("5") }, "call")).toBe(true)
+    expect(passesFilters(nonFinite, { ...openFilters, breakeven: parseThreshold("5") }, "call")).toBe(true)
   })
 
-  it("ANDs all three floors and includes the exact threshold", () => {
-    const oct = { called_pnl_cents: 29_000, simple_apr_pct_tenths: 898, drop_to_breakeven_pct_tenths: 102, dte: 28 }
-    const priced = { called_pnl_cents: 4000, simple_apr_pct_tenths: 421, drop_to_breakeven_pct_tenths: 2, dte: 7 }
-    const negative = { called_pnl_cents: -1000, simple_apr_pct_tenths: 421, drop_to_breakeven_pct_tenths: 2, dte: 7 }
-    expect(passesFilters(oct, { ...openFilters, primary: parseThreshold("100"), apr: parseThreshold("50"), drop: parseThreshold("5") }, "call")).toBe(true)
-    expect(passesFilters(oct, { ...openFilters, primary: parseThreshold("100"), apr: parseThreshold("50"), drop: parseThreshold("10.2") }, "call")).toBe(true)
-    expect(passesFilters(oct, { ...openFilters, primary: parseThreshold("100"), apr: parseThreshold("50"), drop: parseThreshold("10.21") }, "call")).toBe(false)
-    expect(passesFilters(priced, { ...openFilters, primary: parseThreshold("40") }, "call")).toBe(true)
-    expect(passesFilters(priced, { ...openFilters, primary: parseThreshold("40.01") }, "call")).toBe(false)
-    expect(passesFilters(priced, { ...openFilters, primary: parseThreshold("100"), apr: parseThreshold("50"), drop: parseThreshold("5") }, "call")).toBe(false)
-    expect(passesFilters(negative, { ...openFilters, primary: parseThreshold("-40") }, "call")).toBe(true)
-    expect(passesFilters(negative, { ...openFilters, primary: parseThreshold("0") }, "call")).toBe(false)
+  it("ANDs the floors and includes the exact threshold", () => {
+    const oct = { net_premium_cents: 80_000, net_apr_pct_tenths: 898, breakeven_change_pct_tenths: 160, dte: 28 }
+    const priced = { net_premium_cents: 5000, net_apr_pct_tenths: 421, breakeven_change_pct_tenths: 10, dte: 7 }
+    const negative = { net_premium_cents: -1000, net_apr_pct_tenths: 421, breakeven_change_pct_tenths: 10, dte: 7 }
+    expect(passesFilters(oct, { ...openFilters, premium: parseThreshold("100"), apr: parseThreshold("50"), breakeven: parseThreshold("5") }, "call")).toBe(true)
+    expect(passesFilters(oct, { ...openFilters, premium: parseThreshold("100"), apr: parseThreshold("50"), breakeven: parseThreshold("16") }, "call")).toBe(true)
+    expect(passesFilters(oct, { ...openFilters, premium: parseThreshold("100"), apr: parseThreshold("50"), breakeven: parseThreshold("16.1") }, "call")).toBe(false)
+    expect(passesFilters(priced, { ...openFilters, premium: parseThreshold("50") }, "call")).toBe(true)
+    expect(passesFilters(priced, { ...openFilters, premium: parseThreshold("50.01") }, "call")).toBe(false)
+    expect(passesFilters(priced, { ...openFilters, premium: parseThreshold("100"), apr: parseThreshold("50"), breakeven: parseThreshold("5") }, "call")).toBe(false)
+    expect(passesFilters(negative, { ...openFilters, premium: parseThreshold("-10") }, "call")).toBe(true)
+    expect(passesFilters(negative, { ...openFilters, premium: parseThreshold("0") }, "call")).toBe(false)
   })
 
-  it("compares Called P&L, APR, and Drop at displayed precision and keeps typed floors exact", () => {
+  it("compares Premium (net), APR (net), and % to breakeven at displayed precision", () => {
     const displayedInclusive = {
-      called_pnl_cents: 4000,
-      simple_apr_pct_tenths: 421,
-      drop_to_breakeven_pct_tenths: -1560,
+      net_premium_cents: 5000,
+      net_apr_pct_tenths: 421,
+      breakeven_change_pct_tenths: 10,
       dte: 7,
     }
     const displayedBelow = {
-      called_pnl_cents: 3999,
-      simple_apr_pct_tenths: 420,
-      drop_to_breakeven_pct_tenths: -1561,
+      net_premium_cents: 4999,
+      net_apr_pct_tenths: 420,
+      breakeven_change_pct_tenths: 9,
       dte: 7,
     }
-    expect(moneyCents(displayedInclusive.called_pnl_cents)).toBe("$40.00")
-    expect(unsignedPercentTenths(displayedInclusive.simple_apr_pct_tenths)).toBe("42.1%")
-    expect(unsignedPercentTenths(displayedInclusive.drop_to_breakeven_pct_tenths)).toBe("-156.0%")
-    expect(passesFilters(displayedInclusive, { ...openFilters, primary: parseThreshold("40") }, "call")).toBe(true)
+    expect(moneyCents(displayedInclusive.net_premium_cents)).toBe("$50.00")
+    expect(unsignedPercentTenths(displayedInclusive.net_apr_pct_tenths)).toBe("42.1%")
+    expect(unsignedPercentTenths(displayedInclusive.breakeven_change_pct_tenths)).toBe("1.0%")
+    expect(passesFilters(displayedInclusive, { ...openFilters, premium: parseThreshold("50") }, "call")).toBe(true)
     expect(passesFilters(displayedInclusive, { ...openFilters, apr: parseThreshold("42.1") }, "call")).toBe(true)
-    expect(passesFilters(displayedInclusive, { ...openFilters, drop: parseThreshold("-156") }, "call")).toBe(true)
-    expect(moneyCents(displayedBelow.called_pnl_cents)).toBe("$39.99")
-    expect(unsignedPercentTenths(displayedBelow.simple_apr_pct_tenths)).toBe("42.0%")
-    expect(unsignedPercentTenths(displayedBelow.drop_to_breakeven_pct_tenths)).toBe("-156.1%")
-    expect(passesFilters(displayedBelow, { ...openFilters, primary: parseThreshold("40") }, "call")).toBe(false)
+    expect(passesFilters(displayedInclusive, { ...openFilters, breakeven: parseThreshold("1") }, "call")).toBe(true)
+    expect(moneyCents(displayedBelow.net_premium_cents)).toBe("$49.99")
+    expect(unsignedPercentTenths(displayedBelow.net_apr_pct_tenths)).toBe("42.0%")
+    expect(unsignedPercentTenths(displayedBelow.breakeven_change_pct_tenths)).toBe("0.9%")
+    expect(passesFilters(displayedBelow, { ...openFilters, premium: parseThreshold("50") }, "call")).toBe(false)
     expect(passesFilters(displayedBelow, { ...openFilters, apr: parseThreshold("42.1") }, "call")).toBe(false)
-    expect(passesFilters(displayedBelow, { ...openFilters, drop: parseThreshold("-156") }, "call")).toBe(false)
-    expect(passesFilters(displayedInclusive, { ...openFilters, primary: parseThreshold("40.01") }, "call")).toBe(false)
+    expect(passesFilters(displayedBelow, { ...openFilters, breakeven: parseThreshold("1") }, "call")).toBe(false)
+    expect(passesFilters(displayedInclusive, { ...openFilters, premium: parseThreshold("50.01") }, "call")).toBe(false)
     expect(passesFilters(displayedInclusive, { ...openFilters, apr: parseThreshold("42.14") }, "call")).toBe(false)
+    expect(moneyCents(-100)).toBe("-$1.00")
     expect(passesFilters(
-      { called_pnl_cents: 4000, simple_apr_pct_tenths: 421, drop_to_breakeven_pct_tenths: 102, dte: 7 },
-      { ...openFilters, drop: parseThreshold("10.21") },
-      "call",
-    )).toBe(false)
-    expect(moneyCents(4000)).toBe("$40.00")
-    expect(passesFilters(
-      { called_pnl_cents: 4000, simple_apr_pct_tenths: 0, drop_to_breakeven_pct_tenths: 0, dte: 7 },
-      { ...openFilters, primary: parseThreshold("40") },
-      "call",
-    )).toBe(true)
-    expect(moneyCents(-15601)).toBe("-$156.01")
-    expect(passesFilters(
-      { called_pnl_cents: -15601, simple_apr_pct_tenths: 0, drop_to_breakeven_pct_tenths: 0, dte: 7 },
-      { ...openFilters, primary: parseThreshold("-156") },
+      { net_premium_cents: -100, net_apr_pct_tenths: 0, breakeven_change_pct_tenths: 0, dte: 7 },
+      { ...openFilters, premium: parseThreshold("0") },
       "call",
     )).toBe(false)
   })
 
-  it("applies an inclusive DTE range and ANDs it with the other floors", () => {
-    const weekly = { called_pnl_cents: 4000, simple_apr_pct_tenths: 421, drop_to_breakeven_pct_tenths: 2, dte: 7 }
-    const monthly = { called_pnl_cents: 29_000, simple_apr_pct_tenths: 898, drop_to_breakeven_pct_tenths: 102, dte: 28 }
+  it("applies an inclusive maximum DTE and ANDs it with the other floors", () => {
+    const weekly = { net_premium_cents: 5000, net_apr_pct_tenths: 421, breakeven_change_pct_tenths: 10, dte: 7 }
+    const monthly = { net_premium_cents: 80_000, net_apr_pct_tenths: 898, breakeven_change_pct_tenths: 160, dte: 28 }
     expect(meetsScaledMaximum(7, null, 0)).toBe(true)
     expect(meetsScaledMaximum(7, parseThreshold("14"), 0)).toBe(true)
     expect(meetsScaledMaximum(28, parseThreshold("14"), 0)).toBe(false)
     expect(meetsScaledMaximum(null, parseThreshold("14"), 0)).toBe(false)
     expect(passesFilters(weekly, openFilters, "call")).toBe(true)
-    expect(passesFilters(weekly, { ...openFilters, minDte: parseThreshold("7") }, "call")).toBe(true)
-    expect(passesFilters(weekly, { ...openFilters, minDte: parseThreshold("7.0") }, "call")).toBe(true)
-    expect(passesFilters(weekly, { ...openFilters, minDte: parseThreshold("8") }, "call")).toBe(false)
     expect(passesFilters(weekly, { ...openFilters, maxDte: parseThreshold("7") }, "call")).toBe(true)
+    expect(passesFilters(weekly, { ...openFilters, maxDte: parseThreshold("7.0") }, "call")).toBe(true)
     expect(passesFilters(weekly, { ...openFilters, maxDte: parseThreshold("6") }, "call")).toBe(false)
-    expect(passesFilters(monthly, { ...openFilters, minDte: parseThreshold("7"), maxDte: parseThreshold("28") }, "call")).toBe(true)
-    expect(passesFilters(weekly, { ...openFilters, minDte: parseThreshold("7"), maxDte: parseThreshold("7") }, "call")).toBe(true)
-    expect(passesFilters(monthly, { ...openFilters, minDte: parseThreshold("7"), maxDte: parseThreshold("7") }, "call")).toBe(false)
-    expect(passesFilters(weekly, { ...openFilters, minDte: parseThreshold("21") }, "call")).toBe(false)
-    expect(passesFilters(monthly, { ...openFilters, minDte: parseThreshold("21") }, "call")).toBe(true)
+    expect(passesFilters(monthly, { ...openFilters, maxDte: parseThreshold("28") }, "call")).toBe(true)
+    expect(passesFilters(monthly, { ...openFilters, maxDte: parseThreshold("7") }, "call")).toBe(false)
     expect(passesFilters(weekly, { ...openFilters, maxDte: parseThreshold("14") }, "call")).toBe(true)
     expect(passesFilters(monthly, { ...openFilters, maxDte: parseThreshold("14") }, "call")).toBe(false)
-    expect(passesFilters(weekly, { ...openFilters, minDte: parseThreshold("40"), maxDte: parseThreshold("10") }, "call")).toBe(false)
-    expect(passesFilters(monthly, { ...openFilters, minDte: parseThreshold("40"), maxDte: parseThreshold("10") }, "call")).toBe(false)
     expect(passesFilters(monthly, { ...openFilters, maxDte: parseThreshold("0") }, "call")).toBe(false)
-    expect(passesFilters(monthly, { ...openFilters, minDte: parseThreshold("21"), apr: parseThreshold("50") }, "call")).toBe(true)
+    expect(passesFilters(monthly, { ...openFilters, maxDte: parseThreshold("28"), apr: parseThreshold("50") }, "call")).toBe(true)
     expect(passesFilters(weekly, { ...openFilters, maxDte: parseThreshold("14"), apr: parseThreshold("50") }, "call")).toBe(false)
   })
 
-  it("uses put APR net and cushion to breakeven at exact integer precision", () => {
+  it("uses the same net metrics for puts at exact integer precision", () => {
     const row = {
-      premium_cents: 8000,
-      apr_collateral_pct_tenths: 9999,
-      apr_net_pct_tenths: 945,
-      cushion_to_strike_pct_tenths: 9999,
-      cushion_to_breakeven_pct_tenths: 114,
+      net_premium_cents: 8000,
+      net_apr_pct_tenths: 945,
+      breakeven_change_pct_tenths: 114,
       dte: 7,
     }
-    expect(passesFilters(row, { ...openFilters, primary: parseThreshold("80"), apr: parseThreshold("94.5"), drop: parseThreshold("11.4") }, "put")).toBe(true)
+    expect(passesFilters(row, { ...openFilters, premium: parseThreshold("80"), apr: parseThreshold("94.5"), breakeven: parseThreshold("11.4") }, "put")).toBe(true)
     expect(passesFilters(row, { ...openFilters, apr: parseThreshold("94.51") }, "put")).toBe(false)
-    expect(passesFilters(row, { ...openFilters, drop: parseThreshold("11.41") }, "put")).toBe(false)
+    expect(passesFilters(row, { ...openFilters, breakeven: parseThreshold("11.41") }, "put")).toBe(false)
+    expect(passesFilters(row, { ...openFilters, premium: parseThreshold("80.01") }, "put")).toBe(false)
   })
 
   it("mounts only expanded expiration rows while retaining every header group", () => {
@@ -336,20 +328,19 @@ describe("row filters", () => {
     expect(view.mountedCount).toBe(1)
   })
 
-  it("selects mobile decision priorities and fills omitted slots in selected order", () => {
-    const defaults = visibleColumns("call", null)
+  it("selects mobile decision priorities", () => {
+    const defaults = visibleColumns("call")
     expect(mobilePriorityColumns(defaults, "call").map((column) => column.id)).toEqual([
       "strike_cents",
       "call_bid_cents",
-      "simple_apr_pct_tenths",
-      "drop_to_breakeven_pct_tenths",
+      "net_apr_pct_tenths",
+      "breakeven_change_pct_tenths",
     ])
-    const custom = visibleColumns("call", ["strike_cents", "premium_cents", "called_pnl_cents", "call_open_interest"])
-    expect(mobilePriorityColumns(custom, "call").map((column) => column.id)).toEqual([
+    expect(mobilePriorityColumns(visibleColumns("put"), "put").map((column) => column.id)).toEqual([
       "strike_cents",
-      "premium_cents",
-      "called_pnl_cents",
-      "call_open_interest",
+      "put_bid_cents",
+      "net_apr_pct_tenths",
+      "breakeven_change_pct_tenths",
     ])
   })
 
@@ -357,7 +348,7 @@ describe("row filters", () => {
     const view = deriveChainView(
       largeChainPage(5000),
       1,
-      { primary: null, apr: null, drop: null, minDte: null, maxDte: null },
+      openFilters,
       INITIAL_REVEAL,
       "call",
       COLUMN_HEADERS,
@@ -370,19 +361,18 @@ describe("row filters", () => {
     expect(view.visibleGroups[0].visible[0].strike_cents).toBe(4989)
     expect(view.visibleGroups[0].visible[249].strike_cents).toBe(4740)
     expect(view.visibleGroups[0].ranges.strike_cents).toBeUndefined()
-    expect(view.visibleGroups[0].ranges.called_pnl_cents).toEqual({ min: 100, max: 5099 })
+    expect(view.visibleGroups[0].ranges.net_premium_cents).toEqual({ min: 100, max: 5099 })
     expect(view.mountedGroups[0].ranges).toEqual(view.visibleGroups[0].ranges)
   })
 
   it("sorts within groups before the reveal slice and keeps unsorted heatmap ranges", () => {
-    const filters = { primary: null, apr: null, drop: null, minDte: null, maxDte: null }
-    const desc = deriveChainView(largeChainPage(400), 1, filters, INITIAL_REVEAL, "call", COLUMN_HEADERS)
+    const desc = deriveChainView(largeChainPage(400), 1, openFilters, INITIAL_REVEAL, "call", COLUMN_HEADERS)
     expect(desc.mountedGroups[0].visible[0].strike_cents).toBe(4989)
     expect(desc.mountedGroups[0].visible[249].strike_cents).toBe(4740)
     const asc = deriveChainView(
       largeChainPage(400),
       1,
-      filters,
+      openFilters,
       INITIAL_REVEAL,
       "call",
       COLUMN_HEADERS,
@@ -393,7 +383,7 @@ describe("row filters", () => {
     expect(asc.mountedGroups[0].ranges).toEqual(desc.mountedGroups[0].ranges)
   })
 
-  it("scales outlay and Called P&L with contracts but leaves P&L / sh one-contract", () => {
+  it("scales net premium with contracts and leaves bid, APR, and breakeven one-contract", () => {
     const view = deriveChainView(
       samplePage(),
       2,
@@ -403,62 +393,39 @@ describe("row filters", () => {
       COLUMN_HEADERS,
     )
     const priced = view.visibleGroups[0].visible[0] as CoveredCallContract
+    expect(priced.net_premium_cents).toBe(10_000)
     expect(priced.stock_cost_cents).toBe(998_000)
-    expect(priced.premium_cents).toBe(10_000)
-    expect(priced.outlay_cents).toBe(992_000)
-    expect(priced.called_pnl_cents).toBe(8000)
-    expect(priced.called_pnl_per_share_cents).toBe(60)
-    expect(priced.effective_cost_cents).toBe(4940)
-    expect(priced.simple_apr_pct_tenths).toBe(421)
-    expect(priced.stock_apr_pct_tenths).toBe(418)
-    expect(priced.drop_to_breakeven_pct_tenths).toBe(10)
-    expect(COLUMN_HEADERS.find((column) => column.id === "drop_to_breakeven_pct_tenths")?.format(priced)).toBe("1.0%")
-  })
-
-  it("formats P&L / sh from the dedicated field, not reconstructed cents", () => {
-    const column = CALL_COLUMNS.find((item) => item.id === "called_pnl_per_share_cents")
-    expect(column).toBeDefined()
-    const row = sampleContract({
-      strike_cents: 4000,
-      call_bid_cents: 800,
-      called_pnl_cents: 50,
-      called_pnl_per_share_cents: 1,
-    })
-    expect(Math.trunc((row.called_pnl_cents ?? 0) / 100)).not.toBe(1)
-    expect(row.strike_cents + (row.call_bid_cents ?? 0) - 4800).not.toBe(1)
-    expect(column!.accessor(row)).toBe(1)
-    expect(column!.format(row)).toBe("$0.01")
+    expect(priced.call_bid_cents).toBe(50)
+    expect(priced.breakeven_cents).toBe(4940)
+    expect(priced.net_apr_pct_tenths).toBe(421)
+    expect(priced.breakeven_change_pct_tenths).toBe(10)
+    expect(COLUMN_HEADERS.find((column) => column.id === "net_premium_cents")?.format(priced)).toBe("$100.00")
+    expect(COLUMN_HEADERS.find((column) => column.id === "breakeven_cents")?.format(priced)).toBe("$49.40")
+    expect(COLUMN_HEADERS.find((column) => column.id === "breakeven_change_pct_tenths")?.format(priced)).toBe("1.0%")
   })
 })
 
 const pricedContract = sampleContract()
 const missingRow = missingContract()
+const clipboardHeaders = [
+  "Strike",
+  "Bid",
+  "Ask",
+  "Spread (%)",
+  "OI",
+  "Premium (net)",
+  "APR (net)",
+  "Breakeven",
+  "% to breakeven",
+]
+const pricedValues = ["$50.00", "$0.50", "$0.51", "2.0%", "55", "$50.00", "42.1%", "$49.40", "1.0%"]
 
 describe("row clipboard", () => {
   it("formats displayed values, em dashes, and ChatGPT markdown with optional contract context", () => {
     expect(COLUMN_HEADERS.map((column) => column.label)).toEqual([...COPY_HEADERS])
-    expect(formatContractValues(pricedContract, COLUMN_HEADERS)).toHaveLength(COLUMN_HEADERS.length)
-    expect([...COPY_HEADERS]).toEqual([
-      "Strike",
-      "Bid",
-      "Sprd %",
-      "OI",
-      "Premium",
-      "Called P&L",
-      "APR (net)",
-      "Drop (BE)",
-    ])
-    expect(formatContractValues(pricedContract, COLUMN_HEADERS)).toEqual([
-      "$50.00",
-      "$0.50",
-      "2.0%",
-      "55",
-      "$50.00",
-      "$40.00",
-      "42.1%",
-      "1.0%",
-    ])
-    expect(formatContractValues(missingRow, COLUMN_HEADERS)).toEqual(["$40.50", "—", "—", "—", "—", "—", "—", "—"])
+    expect([...COPY_HEADERS]).toEqual(clipboardHeaders)
+    expect(formatContractValues(pricedContract, COLUMN_HEADERS)).toEqual(pricedValues)
+    expect(formatContractValues(missingRow, COLUMN_HEADERS)).toEqual(["$40.50", "—", "—", "—", "—", "—", "—", "—", "—"])
     expect(copyRowAccessibleName("IREN", "2026-09-18", "$50.00")).toBe("Copy row IREN 2026-09-18 strike $50.00")
     expect(copyRowStateKey("IREN", "2026-12-18", 5)).toBe("IREN-2026-12-18-5")
     expect(copyRowStateKey("CIFR", "2026-12-18", 5)).toBe("CIFR-2026-12-18-5")
@@ -476,12 +443,12 @@ describe("row clipboard", () => {
       [
         "IREN · 2026-09-18 · 7 DTE · Stock bid: $49.90",
         "",
-        "| Strike | Bid | Sprd % | OI | Premium | Called P&L | APR (net) | Drop (BE) |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
-        "| $50.00 | $0.50 | 2.0% | 55 | $50.00 | $40.00 | 42.1% | 1.0% |",
+        "| Strike | Bid | Ask | Spread (%) | OI | Premium (net) | APR (net) | Breakeven | % to breakeven |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| $50.00 | $0.50 | $0.51 | 2.0% | 55 | $50.00 | 42.1% | $49.40 | 1.0% |",
       ].join("\n"),
     )
-    expect(formatRowClipboard(baseContext, COPY_HEADERS, formatContractValues(missingRow, COLUMN_HEADERS))).toContain("| $40.50 | — | — | — | — | — | — | — |")
+    expect(formatRowClipboard(baseContext, COPY_HEADERS, formatContractValues(missingRow, COLUMN_HEADERS))).toContain("| $40.50 | — | — | — | — | — | — | — | — |")
     expect(formatRowClipboard(baseContext, COPY_HEADERS, formatContractValues(pricedContract, COLUMN_HEADERS))).not.toContain("Copy")
 
     const sized = formatRowClipboard(
@@ -489,18 +456,15 @@ describe("row clipboard", () => {
       COPY_HEADERS,
       formatContractValues({
         ...pricedContract,
-        stock_cost_cents: 998_000,
-        premium_cents: 10_000,
-        outlay_cents: 992_000,
-        called_pnl_cents: 8000,
+        net_premium_cents: 10_000,
       }, COLUMN_HEADERS),
     )
     expect(sized).toContain("IREN · 2026-09-18 · 7 DTE · Stock bid: $49.90 · 2 contracts · 200 sh")
     expect(sized).not.toContain("budget")
-    expect(sized).toContain("| $50.00 | $0.50 | 2.0% | 55 | $100.00 | $80.00 | 42.1% | 1.0% |")
+    expect(sized).toContain("| $50.00 | $0.50 | $0.51 | 2.0% | 55 | $100.00 | 42.1% | $49.40 | 1.0% |")
   })
 
-  it("formats a five-contract CIFR-shaped buy-write in broker-leg terms", () => {
+  it("scales net premium for a five-contract row and leaves the other chain columns one-contract", () => {
     const view = deriveChainView(
       samplePage({
         current_cents: 1792,
@@ -513,16 +477,10 @@ describe("row clipboard", () => {
             strike_cents: 1500,
             call_bid_cents: 440,
             call_ask_cents: 450,
-            call_spread_cents: 10,
-            stock_cost_cents: 179_200,
-            premium_cents: 44_000,
-            outlay_cents: 135_200,
-            effective_cost_cents: 1352,
-            called_pnl_cents: 14_800,
-            called_pnl_per_share_cents: 148,
-            simple_apr_pct_tenths: 634,
-            stock_apr_pct_tenths: 478,
-            drop_to_breakeven_pct_tenths: 246,
+            net_premium_cents: 44_000,
+            net_apr_pct_tenths: 634,
+            breakeven_cents: 1352,
+            breakeven_change_pct_tenths: 246,
           })],
         }],
       }),
@@ -533,20 +491,16 @@ describe("row clipboard", () => {
       COLUMN_HEADERS,
     )
     const row = view.visibleGroups[0].visible[0] as CoveredCallContract
-    expect(formatContractValues(row, CALL_COLUMNS as unknown as ColumnDef[])).toEqual(expect.arrayContaining([
-      "$8,960.00",
+    expect(formatContractValues(row, COLUMN_HEADERS)).toEqual([
+      "$15.00",
+      "$4.40",
+      "$4.50",
+      "2.0%",
+      "55",
       "$2,200.00",
-      "$6,760.00",
-      "$740.00",
       "63.4%",
-      "47.8%",
-    ]))
-    expect(CALL_COLUMNS.find((column) => column.id === "stock_cost_cents")?.format(row)).toBe("$8,960.00")
-    expect(CALL_COLUMNS.find((column) => column.id === "premium_cents")?.format(row)).toBe("$2,200.00")
-    expect(CALL_COLUMNS.find((column) => column.id === "outlay_cents")?.format(row)).toBe("$6,760.00")
-    expect(CALL_COLUMNS.find((column) => column.id === "called_pnl_cents")?.format(row)).toBe("$740.00")
-    expect(CALL_COLUMNS.find((column) => column.id === "simple_apr_pct_tenths")?.format(row)).toBe("63.4%")
-    expect(CALL_COLUMNS.find((column) => column.id === "stock_apr_pct_tenths")?.format(row)).toBe("47.8%")
-    expect(CALL_COLUMNS.find((column) => column.id === "drop_to_breakeven_pct_tenths")?.format(row)).toBe("24.6%")
+      "$13.52",
+      "24.6%",
+    ])
   })
 })

@@ -422,6 +422,11 @@ def test_openapi_financial_fields_are_integers() -> None:
     assert "drop_to_breakeven_pct_tenths" in contract_schema["required"]
 
 
+def test_chain_rejects_all_moneyness(api: TestClient) -> None:
+    assert api.get("/api/covered-calls/IREN?moneyness=all").status_code == 422
+    assert api.get("/api/cash-secured-puts/IREN?moneyness=all").status_code == 422
+
+
 def test_removed_planner_routes_are_gone(api: TestClient) -> None:
     assert api.get("/api/itm-calls/IREN").status_code == 404
     assert api.get("/api/covered-calls").status_code == 404

@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import ColumnPicker from "./ColumnPicker"
 import type { Density } from "./density"
 import type { ExactDecimal } from "./decimal"
 import { filterFieldSpecs, type FilterId, type FilterState, type FilterTexts } from "./filters"
@@ -14,15 +13,12 @@ import type { Side } from "./types"
 
 type Props = {
   side: Side
-  selectedColumns: string[] | null
   density: Density
   visibleCount: number
   expirationCount: number
   expandedCount: number
   texts: FilterTexts
   parsed: FilterState
-  invertedDte: boolean
-  onChangeColumns: (ids: string[] | null) => void
   onToggleDensity: () => void
   onExpandAll: () => void
   onCollapseAll: () => void
@@ -35,13 +31,11 @@ type FilterFieldProps = {
   label: string
   value: string
   parsed: ExactDecimal | null
-  invalidRange?: boolean
   onChange: (value: string) => void
 }
 
-function FilterField({ id, label, value, parsed, invalidRange = false, onChange }: FilterFieldProps) {
-  const invalidToken = value.trim() !== "" && parsed == null
-  const invalid = invalidToken || invalidRange
+function FilterField({ id, label, value, parsed, onChange }: FilterFieldProps) {
+  const invalid = value.trim() !== "" && parsed == null
   const errorId = `${id}-error`
   return (
     <div className="filter-field">
@@ -62,7 +56,7 @@ function FilterField({ id, label, value, parsed, invalidRange = false, onChange 
       </Label>
       {invalid ? (
         <p id={errorId} className="field-error">
-          {invalidRange ? "Minimum DTE must not exceed maximum DTE." : "Enter a valid number."}
+          {"Enter a valid number."}
         </p>
       ) : null}
     </div>
@@ -71,15 +65,12 @@ function FilterField({ id, label, value, parsed, invalidRange = false, onChange 
 
 export default function FilterControls({
   side,
-  selectedColumns,
   density,
   visibleCount,
   expirationCount,
   expandedCount,
   texts,
   parsed,
-  invertedDte,
-  onChangeColumns,
   onToggleDensity,
   onExpandAll,
   onCollapseAll,
@@ -88,10 +79,9 @@ export default function FilterControls({
 }: Props) {
   const specs = filterFieldSpecs(side)
   const parsedById: Record<FilterId, ExactDecimal | null> = {
-    primary: parsed.primary,
+    premium: parsed.premium,
     apr: parsed.apr,
-    drop: parsed.drop,
-    minDte: parsed.minDte,
+    breakeven: parsed.breakeven,
     maxDte: parsed.maxDte,
   }
   const chips = specs
@@ -99,7 +89,7 @@ export default function FilterControls({
       key: spec.chipKey,
       label: spec.chipLabel,
       value: texts[spec.id],
-      valid: parsedById[spec.id] !== null && !(spec.rowKey === "dte" && invertedDte),
+      valid: parsedById[spec.id] !== null,
       clear: () => onTextChange(spec.id, ""),
     }))
     .filter((chip) => chip.value.trim() !== "")
@@ -122,7 +112,6 @@ export default function FilterControls({
             {invalidCount > 0 ? <Badge variant="destructive">Fix {invalidCount}</Badge> : null}
             <ChevronDown className="chevron" aria-hidden="true" />
           </CollapsibleTrigger>
-          <ColumnPicker side={side} selected={selectedColumns} onChange={onChangeColumns} />
           <Button
             type="button"
             variant="outline"
@@ -165,7 +154,6 @@ export default function FilterControls({
               label={spec.label}
               value={texts[spec.id]}
               parsed={parsedById[spec.id]}
-              invalidRange={spec.rowKey === "dte" && invertedDte}
               onChange={(value) => onTextChange(spec.id, value)}
             />
           ))}

@@ -9,15 +9,14 @@ export function parseThreshold(raw: string): ExactDecimal | null {
   return parseExactToken(raw, /[$%,\s]/g)
 }
 
-export type FilterId = "primary" | "apr" | "drop" | "minDte" | "maxDte"
+export type FilterId = "premium" | "apr" | "breakeven" | "maxDte"
 
 export type FilterTexts = Record<FilterId, string>
 
 export const EMPTY_FILTER_TEXTS: FilterTexts = {
-  primary: "",
+  premium: "",
   apr: "",
-  drop: "",
-  minDte: "",
+  breakeven: "",
   maxDte: "",
 }
 
@@ -36,14 +35,14 @@ export function filterFieldSpecs(side: Side): FilterFieldSpec[] {
   const metrics = STRATEGIES[side].filterMetrics
   return [
     {
-      id: "primary",
-      inputId: "min-primary",
-      label: metrics.primary.label,
-      chipLabel: metrics.primary.label.replace(/^Min /, ""),
-      chipKey: "primary",
+      id: "premium",
+      inputId: "min-premium",
+      label: metrics.premium.label,
+      chipLabel: metrics.premium.label.replace(/^Min /, ""),
+      chipKey: "premium",
       bound: "min",
-      scale: metrics.primary.scale,
-      rowKey: metrics.primary.key,
+      scale: metrics.premium.scale,
+      rowKey: metrics.premium.key,
     },
     {
       id: "apr",
@@ -56,24 +55,14 @@ export function filterFieldSpecs(side: Side): FilterFieldSpec[] {
       rowKey: metrics.apr.key,
     },
     {
-      id: "drop",
-      inputId: "min-drop",
-      label: metrics.drop.label,
-      chipLabel: metrics.drop.label.replace(/^Min /, ""),
-      chipKey: "drop",
+      id: "breakeven",
+      inputId: "min-breakeven",
+      label: metrics.breakeven.label,
+      chipLabel: metrics.breakeven.label.replace(/^Min /, ""),
+      chipKey: "breakeven",
       bound: "min",
-      scale: metrics.drop.scale,
-      rowKey: metrics.drop.key,
-    },
-    {
-      id: "minDte",
-      inputId: "min-dte",
-      label: "Min DTE",
-      chipLabel: "DTE ≥",
-      chipKey: "min-dte",
-      bound: "min",
-      scale: 0,
-      rowKey: "dte",
+      scale: metrics.breakeven.scale,
+      rowKey: metrics.breakeven.key,
     },
     {
       id: "maxDte",
@@ -89,33 +78,22 @@ export function filterFieldSpecs(side: Side): FilterFieldSpec[] {
 }
 
 export type FilterState = {
-  primary: ExactDecimal | null
+  premium: ExactDecimal | null
   apr: ExactDecimal | null
-  drop: ExactDecimal | null
-  minDte: ExactDecimal | null
+  breakeven: ExactDecimal | null
   maxDte: ExactDecimal | null
-}
-
-export function invertedDteRange(filters: FilterState): boolean {
-  if (filters.minDte == null || filters.maxDte == null) return false
-  const left = filters.minDte.value * (10n ** BigInt(filters.maxDte.scale))
-  const right = filters.maxDte.value * (10n ** BigInt(filters.minDte.scale))
-  return left > right
 }
 
 export function passesFilters(
   row: Record<string, number | null | undefined>,
   filters: FilterState,
   side: Side,
-  inverted = invertedDteRange(filters),
 ): boolean {
-  if (inverted) return false
   const metrics = STRATEGIES[side].filterMetrics
   return (
-    meetsScaledMinimum(row[metrics.primary.key], filters.primary, metrics.primary.scale)
+    meetsScaledMinimum(row[metrics.premium.key], filters.premium, metrics.premium.scale)
     && meetsScaledMinimum(row[metrics.apr.key], filters.apr, metrics.apr.scale)
-    && meetsScaledMinimum(row[metrics.drop.key], filters.drop, metrics.drop.scale)
-    && meetsScaledMinimum(row.dte, filters.minDte, 0)
+    && meetsScaledMinimum(row[metrics.breakeven.key], filters.breakeven, metrics.breakeven.scale)
     && meetsScaledMaximum(row.dte, filters.maxDte, 0)
   )
 }

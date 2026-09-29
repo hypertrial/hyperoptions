@@ -73,7 +73,7 @@ test("reveals overflowing tablet metrics to pointer and keyboard users", async (
   await page.keyboard.press("ArrowRight")
   await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0)
 
-  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.setViewportSize({ width: 2200, height: 900 })
   await expect(page.getByText("Scroll table sideways to view more metrics")).toHaveCount(0)
   await expect(scroll).not.toHaveAttribute("tabindex", "0")
 })
@@ -97,19 +97,17 @@ test("searches a ticker, toggles strategy and moneyness, and round-trips the URL
   await expect(page.getByRole("heading", { name: "Covered calls" })).toBeVisible()
   await page.getByRole("radio", { name: "Cash-secured puts" }).click()
   await expect(page.getByRole("heading", { name: "Cash-secured puts" })).toBeVisible()
-  await page.getByRole("radio", { name: "All", exact: true }).click()
-  await page.getByText("Columns").click()
-  await page.getByRole("checkbox", { name: /IV/ }).click()
-  await expect(page.getByRole("checkbox", { name: /IV/ })).toBeChecked()
+  await page.getByRole("radio", { name: "ITM", exact: true }).click()
   await expect(page).toHaveURL(/t=CIFR/)
   await expect(page).toHaveURL(/side=put/)
-  await expect(page).toHaveURL(/m=all/)
-  await expect(page).toHaveURL(/cols=/)
+  await expect(page).toHaveURL(/m=itm/)
+  await expect(page).not.toHaveURL(/cols=/)
+  await expect(page.getByRole("columnheader", { name: "Premium (net)" })).toBeVisible()
+  await expect(page.getByRole("columnheader", { name: "% to breakeven" })).toBeVisible()
   await page.reload()
   await expect(page.getByRole("heading", { name: "Cash-secured puts" })).toBeVisible()
   await expect(page.getByRole("radio", { name: "Cash-secured puts" })).toBeChecked()
-  await expect(page.getByRole("radio", { name: "All", exact: true })).toBeChecked()
-  await expect(page.getByRole("columnheader", { name: "IV" })).toBeVisible()
+  await expect(page.getByRole("radio", { name: "ITM", exact: true })).toBeChecked()
   expect(nasdaqHits).toEqual([])
 })
 
@@ -237,7 +235,7 @@ for (const viewport of [
     await expect(page.getByRole("heading", { name: "Covered calls" })).toBeVisible()
     await expect(page.getByRole("heading", { name: /2026-09-18/ })).toBeVisible()
     const sidebarOptionsFit = () => page.locator(".market-control-stack .segmented [role='radio']").evaluateAll((options) =>
-      options.length === 5 && options.every((option) => option.clientHeight >= 44
+      options.length === 4 && options.every((option) => option.clientHeight >= 44
         && option.scrollWidth <= option.clientWidth
         && option.scrollHeight <= option.clientHeight),
     )
@@ -278,18 +276,13 @@ for (const viewport of [
         await expect(copy).toContainText("Copied")
         const clipboard = await page.evaluate(() => navigator.clipboard.readText())
         expect(clipboard).toContain("IREN · 2026-09-18")
-        expect(clipboard).toContain("Cushion (BE)")
+        expect(clipboard).toContain("Breakeven")
+        expect(clipboard).not.toContain("Cushion (BE)")
       }
       if (viewport.width === 320) {
         await expect(page.locator(".expiry-heading").first().getByText(/contracts$/)).toBeVisible()
-        await page.getByRole("button", { name: /Columns/ }).click()
-        const picker = page.locator(".column-picker-popover")
-        await expect(picker).toBeVisible()
-        await expect.poll(() => picker.evaluate((element) => {
-          const bounds = element.getBoundingClientRect()
-          return bounds.top >= 0 && bounds.bottom <= window.innerHeight
-        })).toBe(true)
-        await page.keyboard.press("Escape")
+        await expect(page.getByRole("button", { name: /Columns/ })).toHaveCount(0)
+        await expect(page.getByRole("button", { name: /Show details for/ }).first()).toBeVisible()
       }
     } else {
       await expect(page.getByRole("table")).toBeVisible()

@@ -2,7 +2,7 @@ import type { ColumnDef, ColumnId, SizedContract } from "./columns"
 import { scaleByContracts } from "./contracts"
 import { parseExactDecimal } from "./decimal"
 import { STRATEGIES } from "./strategy"
-import { invertedDteRange, passesFilters, type FilterState } from "./filters"
+import { passesFilters, type FilterState } from "./filters"
 import { metricRanges, type MetricRanges } from "./heatmap"
 import { predictiveAvailable } from "./marketOdds"
 import type { ChainPage, Side } from "./types"
@@ -35,7 +35,6 @@ export type ChainView = {
   expandedVisibleCount: number
   remainingCount: number
   filterMiss: boolean
-  invertedDte: boolean
 }
 
 function scaleRow(row: SizedContract, contracts: number, side: Side): SizedContract {
@@ -59,7 +58,6 @@ export function nearestMatchingExpiration(
   filters: FilterState,
   side: Side,
 ): string | null {
-  const inverted = invertedDteRange(filters)
   let nearest: ChainPage["expirations"][number] | null = null
   for (const group of page?.expirations ?? []) {
     const matches = group.contracts.some((row) => (
@@ -67,7 +65,6 @@ export function nearestMatchingExpiration(
         scaleRow(row as SizedContract, contracts, side) as unknown as Record<string, number | null>,
         filters,
         side,
-        inverted,
       )
     ))
     if (matches && (nearest == null || group.dte < nearest.dte)) nearest = group
@@ -113,7 +110,6 @@ export function deriveChainView(
   sort: SortState = DEFAULT_SORT,
   expandedExpirations?: ReadonlySet<string>,
 ): ChainView {
-  const invertedDte = invertedDteRange(filters)
   const providerCount = page?.expirations.reduce((total, group) => total + group.contracts.length, 0) ?? 0
   const visibleGroups: VisibleGroup[] = []
   if (page) {
@@ -121,7 +117,7 @@ export function deriveChainView(
       const visible: SizedContract[] = []
       for (const row of group.contracts) {
         const sized = scaleRow(row as SizedContract, contracts, side)
-        if (passesFilters(sized as unknown as Record<string, number | null>, filters, side, invertedDte)) {
+        if (passesFilters(sized as unknown as Record<string, number | null>, filters, side)) {
           visible.push(sized)
         }
       }
@@ -156,6 +152,5 @@ export function deriveChainView(
     expandedVisibleCount,
     remainingCount: Math.max(0, expandedVisibleCount - mountedCount),
     filterMiss: Boolean(page) && providerCount > 0 && visibleCount === 0,
-    invertedDte,
   }
 }
