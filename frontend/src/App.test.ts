@@ -9,11 +9,11 @@ import { contractSizeLabel, contractCountIsSafe, parseContractCount, scaleByCont
 import { copyRowAccessibleName, copyRowStateKey, formatRowClipboard } from "./copyRow"
 import { meetsScaledMaximum } from "./decimal"
 import { parseThreshold, passesFilters } from "./filters"
-import { dateTime, integer, moneyCents, percentTenths, plural, signedE4, unsignedPercentTenths } from "./format"
+import { dateTime, integer, moneyCents, percentTenths, plural, unsignedPercentTenths } from "./format"
 import { heatmapHue, heatmapStop, metricRange } from "./heatmap"
 import { formatContractValues, mobilePriorityColumns, visibleColumns } from "./columns"
 import type { CoveredCallContract } from "./types"
-import { COLUMN_HEADERS, COPY_HEADERS, METRIC_KEYS, largeChainPage, missingContract, sampleContract, samplePage } from "./testFixtures"
+import { COLUMN_HEADERS, COPY_HEADERS, largeChainPage, missingContract, sampleContract, samplePage } from "./testFixtures"
 import { deriveChainView, INITIAL_REVEAL } from "./viewModel"
 
 describe("ITM chain page", () => {
@@ -69,9 +69,6 @@ describe("formatters", () => {
     expect(unsignedPercentTenths(156)).toBe("15.6%")
     expect(integer(null)).toBe("—")
     expect(integer(1234)).toBe("1,234")
-    expect(signedE4(6368)).toBe("+0.6368")
-    expect(signedE4(-176)).toBe("-0.0176")
-    expect(signedE4(null)).toBe("—")
     expect(plural(1, "expiration")).toBe("expiration")
     expect(plural(0, "contract")).toBe("contracts")
     expect(dateTime(null)).toBe("—")
@@ -115,11 +112,9 @@ describe("metric heatmap", () => {
   })
 
   it("limits heatmaps to net premium, net APR, and percent to breakeven", () => {
-    expect(METRIC_KEYS).toEqual([
-      "net_premium_cents",
-      "net_apr_pct_tenths",
-      "breakeven_change_pct_tenths",
-    ])
+    const heated = ["net_premium_cents", "net_apr_pct_tenths", "breakeven_change_pct_tenths"]
+    expect(visibleColumns("call").filter((column) => column.heatmap).map((column) => column.id)).toEqual(heated)
+    expect(visibleColumns("put").filter((column) => column.heatmap).map((column) => column.id)).toEqual(heated)
   })
 
   it("uses the same column labels for calls and puts", () => {

@@ -37,15 +37,6 @@ export function integer(value: number | null | undefined): string {
   return value == null || !Number.isFinite(value) ? "—" : Math.trunc(value).toLocaleString("en-US")
 }
 
-export function signedE4(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value) || !Number.isInteger(value)) return "—"
-  const sign = value > 0 ? "+" : value < 0 ? "-" : ""
-  const abs = Math.abs(value)
-  const whole = Math.trunc(abs / 10000)
-  const frac = String(abs % 10000).padStart(4, "0")
-  return `${sign}${whole}.${frac}`
-}
-
 const fetchedAtFormat = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "numeric",

@@ -4,7 +4,6 @@ exports[`strategy column metadata > matches the call snapshot 1`] = `
 [
   {
     "abbrev": false,
-    "group": "market",
     "heatmap": false,
     "id": "strike_cents",
     "info": "Call strike. Listed when open interest is at least 5 and the moneyness filter matches.",
@@ -12,7 +11,6 @@ exports[`strategy column metadata > matches the call snapshot 1`] = `
   },
   {
     "abbrev": false,
-    "group": "market",
     "heatmap": false,
     "id": "call_bid_cents",
     "info": "Call bid. Premium (net) is 100 × (bid − intrinsic).",
@@ -20,7 +18,6 @@ exports[`strategy column metadata > matches the call snapshot 1`] = `
   },
   {
     "abbrev": false,
-    "group": "market",
     "heatmap": false,
     "id": "call_ask_cents",
     "info": "Call ask. Shown with the bid so you can see the spread.",
@@ -28,7 +25,6 @@ exports[`strategy column metadata > matches the call snapshot 1`] = `
   },
   {
     "abbrev": true,
-    "group": "market",
     "heatmap": false,
     "id": "call_spread_pct_tenths",
     "info": "Bid-ask spread as a percent of the midpoint.",
@@ -36,7 +32,6 @@ exports[`strategy column metadata > matches the call snapshot 1`] = `
   },
   {
     "abbrev": true,
-    "group": "market",
     "heatmap": false,
     "id": "call_open_interest",
     "info": "Call open interest for this strike and expiration.",
@@ -44,7 +39,6 @@ exports[`strategy column metadata > matches the call snapshot 1`] = `
   },
   {
     "abbrev": false,
-    "group": "returns",
     "heatmap": true,
     "id": "net_premium_cents",
     "info": "Time value received: 100 × (bid − intrinsic). Intrinsic is max(0, current − strike) for calls and max(0, strike − current) for puts. Contracts multiplies this.",
@@ -52,7 +46,6 @@ exports[`strategy column metadata > matches the call snapshot 1`] = `
   },
   {
     "abbrev": true,
-    "group": "returns",
     "heatmap": true,
     "id": "net_apr_pct_tenths",
     "info": "APR from one-contract net capital: (net premium / (100 × (current − bid))) × 365 / DTE.",
@@ -60,7 +53,6 @@ exports[`strategy column metadata > matches the call snapshot 1`] = `
   },
   {
     "abbrev": false,
-    "group": "risk",
     "heatmap": false,
     "id": "breakeven_cents",
     "info": "Breakeven stock price: current − call bid. Contracts does not scale this.",
@@ -68,7 +60,6 @@ exports[`strategy column metadata > matches the call snapshot 1`] = `
   },
   {
     "abbrev": true,
-    "group": "risk",
     "heatmap": true,
     "id": "breakeven_change_pct_tenths",
     "info": "Absolute percent distance from the current price to breakeven. Always zero or higher.",
@@ -81,7 +72,6 @@ exports[`strategy column metadata > matches the put snapshot 1`] = `
 [
   {
     "abbrev": false,
-    "group": "market",
     "heatmap": false,
     "id": "strike_cents",
     "info": "Put strike. Listed when open interest is at least 5 and the moneyness filter matches.",
@@ -89,7 +79,6 @@ exports[`strategy column metadata > matches the put snapshot 1`] = `
   },
   {
     "abbrev": false,
-    "group": "market",
     "heatmap": false,
     "id": "put_bid_cents",
     "info": "Put bid. Premium (net) is 100 × (bid − intrinsic).",
@@ -97,7 +86,6 @@ exports[`strategy column metadata > matches the put snapshot 1`] = `
   },
   {
     "abbrev": false,
-    "group": "market",
     "heatmap": false,
     "id": "put_ask_cents",
     "info": "Put ask. Shown with the bid so you can see the spread.",
@@ -105,7 +93,6 @@ exports[`strategy column metadata > matches the put snapshot 1`] = `
   },
   {
     "abbrev": true,
-    "group": "market",
     "heatmap": false,
     "id": "put_spread_pct_tenths",
     "info": "Bid-ask spread as a percent of the midpoint.",
@@ -113,7 +100,6 @@ exports[`strategy column metadata > matches the put snapshot 1`] = `
   },
   {
     "abbrev": true,
-    "group": "market",
     "heatmap": false,
     "id": "put_open_interest",
     "info": "Put open interest for this strike and expiration.",
@@ -121,7 +107,6 @@ exports[`strategy column metadata > matches the put snapshot 1`] = `
   },
   {
     "abbrev": false,
-    "group": "returns",
     "heatmap": true,
     "id": "net_premium_cents",
     "info": "Time value received: 100 × (bid − intrinsic). Intrinsic is max(0, current − strike) for calls and max(0, strike − current) for puts. Contracts multiplies this.",
@@ -129,7 +114,6 @@ exports[`strategy column metadata > matches the put snapshot 1`] = `
   },
   {
     "abbrev": true,
-    "group": "returns",
     "heatmap": true,
     "id": "net_apr_pct_tenths",
     "info": "APR from one-contract net capital: (net premium / (100 × (strike − bid))) × 365 / DTE.",
@@ -137,7 +121,6 @@ exports[`strategy column metadata > matches the put snapshot 1`] = `
   },
   {
     "abbrev": false,
-    "group": "risk",
     "heatmap": false,
     "id": "breakeven_cents",
     "info": "Assigned breakeven: strike − put bid. Contracts does not scale this.",
@@ -145,7 +128,6 @@ exports[`strategy column metadata > matches the put snapshot 1`] = `
   },
   {
     "abbrev": true,
-    "group": "risk",
     "heatmap": true,
     "id": "breakeven_change_pct_tenths",
     "info": "Absolute percent distance from the current price to breakeven. Always zero or higher.",

@@ -9,15 +9,12 @@ export type SizedContract = SizedCall | SizedPut
 
 export type ColumnId = string
 
-export type ColumnGroup = "market" | "capital" | "returns" | "risk"
-
 export type ColumnDef<T extends SizedContract = SizedContract> = {
   id: ColumnId
   label: string
   info: string
   abbrev?: boolean
   heatmap: boolean
-  group: ColumnGroup
   accessor: (row: T) => number | null | undefined
   format: (row: T) => string
 }
@@ -36,7 +33,6 @@ export function chainColumns(side: Side): ColumnDef[] {
       label: "Strike",
       info: `${name} strike. Listed when open interest is at least 5 and the moneyness filter matches.`,
       heatmap: false,
-      group: "market",
       accessor: (row) => row.strike_cents,
       format: (row) => moneyStrike(row.strike_exact, row.strike_cents),
     },
@@ -45,7 +41,6 @@ export function chainColumns(side: Side): ColumnDef[] {
       label: "Bid",
       info: `${name} bid. Premium (net) is 100 × (bid − intrinsic).`,
       heatmap: false,
-      group: "market",
       accessor: (row) => quote(side, row, "bid_cents"),
       format: (row) => moneyCents(quote(side, row, "bid_cents")),
     },
@@ -54,7 +49,6 @@ export function chainColumns(side: Side): ColumnDef[] {
       label: "Ask",
       info: `${name} ask. Shown with the bid so you can see the spread.`,
       heatmap: false,
-      group: "market",
       accessor: (row) => quote(side, row, "ask_cents"),
       format: (row) => moneyCents(quote(side, row, "ask_cents")),
     },
@@ -64,7 +58,6 @@ export function chainColumns(side: Side): ColumnDef[] {
       info: "Bid-ask spread as a percent of the midpoint.",
       abbrev: true,
       heatmap: false,
-      group: "market",
       accessor: (row) => quote(side, row, "spread_pct_tenths"),
       format: (row) => unsignedPercentTenths(quote(side, row, "spread_pct_tenths")),
     },
@@ -74,7 +67,6 @@ export function chainColumns(side: Side): ColumnDef[] {
       info: `${name} open interest for this strike and expiration.`,
       abbrev: true,
       heatmap: false,
-      group: "market",
       accessor: (row) => quote(side, row, "open_interest"),
       format: (row) => integer(quote(side, row, "open_interest")),
     },
@@ -83,7 +75,6 @@ export function chainColumns(side: Side): ColumnDef[] {
       label: "Premium (net)",
       info: "Time value received: 100 × (bid − intrinsic). Intrinsic is max(0, current − strike) for calls and max(0, strike − current) for puts. Contracts multiplies this.",
       heatmap: true,
-      group: "returns",
       accessor: (row) => row.net_premium_cents,
       format: (row) => moneyCents(row.net_premium_cents),
     },
@@ -95,7 +86,6 @@ export function chainColumns(side: Side): ColumnDef[] {
         : "APR from one-contract net capital: (net premium / (100 × (strike − bid))) × 365 / DTE.",
       abbrev: true,
       heatmap: true,
-      group: "returns",
       accessor: (row) => row.net_apr_pct_tenths,
       format: (row) => unsignedPercentTenths(row.net_apr_pct_tenths),
     },
@@ -106,7 +96,6 @@ export function chainColumns(side: Side): ColumnDef[] {
         ? "Breakeven stock price: current − call bid. Contracts does not scale this."
         : "Assigned breakeven: strike − put bid. Contracts does not scale this.",
       heatmap: false,
-      group: "risk",
       accessor: (row) => row.breakeven_cents,
       format: (row) => moneyCents(row.breakeven_cents),
     },
@@ -116,7 +105,6 @@ export function chainColumns(side: Side): ColumnDef[] {
       info: "Absolute percent distance from the current price to breakeven. Always zero or higher.",
       abbrev: true,
       heatmap: true,
-      group: "risk",
       accessor: (row) => row.breakeven_change_pct_tenths,
       format: (row) => unsignedPercentTenths(row.breakeven_change_pct_tenths),
     },

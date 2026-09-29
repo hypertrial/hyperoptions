@@ -10,7 +10,6 @@ function columnSnapshot(side: Side) {
     info: column.info,
     abbrev: column.abbrev ?? false,
     heatmap: column.heatmap,
-    group: column.group,
   }))
 }
 
