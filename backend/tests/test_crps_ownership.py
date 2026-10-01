@@ -30,4 +30,3 @@ def test_crps_computes_outside_database_lock_and_keeps_batches(tmp_path, monkeyp
     assert batches == [64, 1]
     assert len(scored) == 65
     assert scored[(digests[0], "42")] == pytest.approx(1.04)
-
