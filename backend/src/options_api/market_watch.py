@@ -8,12 +8,10 @@ import logging
 import math
 import time
 from collections.abc import Callable, Iterable
-from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -27,20 +25,33 @@ from options_api.market_calendar import (
 )
 from options_api.market_curve_shadow import CurveShadowResult, calculate_curve_shadow
 from options_api.market_odds import OddsEstimate, calculate_market_odds
-from options_api.market_sources import DividendStatus, fetch_dividend_status, fetch_treasury_curve
+from options_api.market_sources import (
+    DividendStatus,
+    TreasuryCurve,
+    fetch_dividend_status,
+    fetch_treasury_curve,
+)
 from options_api.models import (
-    HistoricalBar,
+    HistoricalResponse,
     MarketOddsView,
     OptionChainResponse,
     OptionQuote,
     StockInfoResponse,
 )
+from options_api.pricing_context import (
+    EntryQuote,
+    PricingContext,
+    build_pricing_context,
+    displayed_chain_reason,
+    positive_close,
+    pricing_block_reason,
+)
 from options_api.service import OptionChainService
 from stocksweeper.storage.db import connect, rows
 
 LOG = logging.getLogger(__name__)
-_NY = ZoneInfo("America/New_York")
 _REFRESH = timedelta(minutes=5)
+PAGE_INPUT_TIMEOUT = 2.0
 _DIVIDEND_REFRESH = timedelta(hours=24)
 _MAX_CACHED_TICKERS = 320  # All 256 watches plus recently viewed chain tickers.
 _MAX_SCHEDULED = 8
@@ -93,20 +104,6 @@ class _Snapshot:
 
 
 @dataclass(frozen=True)
-class EntryQuote:
-    spot: Decimal
-    stock_ask: Decimal | None
-    bid: Decimal
-    ask: Decimal
-    session_date: date
-    source: str
-    fetched_at: datetime
-    rate: Decimal | None
-    valuation_time: datetime
-    rate_as_of_session: date | None
-
-
-@dataclass(frozen=True)
 class UnderlyingQuote:
     spot: Decimal
     session_date: date
@@ -130,57 +127,6 @@ class _LastGood:
 
 def _as_utc(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
-
-
-def _underlying_time(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        return _as_utc(datetime.fromisoformat(value))
-    except ValueError:
-        pass
-    try:
-        return datetime.strptime(value, "%b %d, %Y %I:%M %p ET").replace(tzinfo=_NY).astimezone(UTC)
-    except ValueError:
-        return None
-
-
-def _spot(
-    chain: OptionChainResponse, info: StockInfoResponse, now: datetime
-) -> tuple[Decimal | None, datetime | None, str | None]:
-    if not regular_session_open(now):
-        return None, None, "Official completed-session close required"
-    if chain.source == "yahoo":
-        price = chain.spot
-        quote_time = _underlying_time(chain.last_trade_timestamp)
-    else:
-        bid, ask = info.bid, info.ask
-        if (
-            bid is None
-            or ask is None
-            or bid <= 0
-            or ask < bid
-            or (ask - bid) / ((bid + ask) / 2) > Decimal("0.02")
-            or abs((chain.fetched_at - info.fetched_at).total_seconds()) > 120
-        ):
-            return None, None, "A coherent underlying bid and ask is unavailable"
-        price = (bid + ask) / 2
-        quote_time = _underlying_time(info.quote_timestamp)
-        if not info.is_real_time:
-            return None, None, "Underlying quote is not marked real time"
-    if price is None or price <= 0 or quote_time is None:
-        return None, None, "Underlying quote time or price is unavailable"
-    age = (now - quote_time).total_seconds()
-    if age < -60 or age > _REFRESH.total_seconds():
-        return None, None, "Underlying quote is stale"
-    return price, quote_time, None
-
-
-def _positive_close(bars: Iterable[HistoricalBar], session: date) -> Decimal | None:
-    for bar in bars:
-        if bar.date == session and bar.close > 0:
-            return bar.close
-    return None
 
 
 def _probability_tenths(estimate: OddsEstimate | None) -> int | None:
@@ -211,24 +157,6 @@ def _quote_support(estimate: OddsEstimate, side: str) -> tuple[int | None, int |
     return _to_tenths(low), _to_tenths(high), score
 
 
-def _entry_bid_ask(row: OptionQuote, side: str, spot: Decimal) -> tuple[Decimal, Decimal] | None:
-    bid = row.call_bid if side == "call" else row.put_bid
-    ask = row.call_ask if side == "call" else row.put_ask
-    interest = row.call_open_interest if side == "call" else row.put_open_interest
-    volume = row.call_volume if side == "call" else row.put_volume
-    if bid is None or ask is None or not (bid.is_finite() and ask.is_finite()):
-        return None
-    if bid < 0 or ask <= bid:
-        return None
-    if ask >= (spot if side == "call" else row.strike):
-        return None
-    if (interest or 0) < 5 and (volume or 0) < 5:
-        return None
-    if ask - bid > max(Decimal("0.25"), (bid + ask) / 2 * Decimal("0.25")):
-        return None
-    return bid, ask
-
-
 class MarketWatchOdds:
     def __init__(
         self,
@@ -255,6 +183,8 @@ class MarketWatchOdds:
         self._pending: dict[str, None] = {}
         self._chain_refresh_attempts: dict[str, tuple[datetime, str, datetime]] = {}
         self._dividends: dict[str, DividendStatus] = {}
+        self._page_inputs: set[asyncio.Task[object]] = set()
+        self._page_input_flights: dict[str, asyncio.Task[object]] = {}
         self._semaphore = asyncio.Semaphore(2)
         self._closed = False
         if self._data_path is not None:
@@ -841,6 +771,11 @@ class MarketWatchOdds:
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        inputs = list(self._page_inputs)
+        for task in inputs:
+            task.cancel()
+        if inputs:
+            await asyncio.gather(*inputs, return_exceptions=True)
         if self._shadow_tasks:
             await asyncio.gather(*self._shadow_tasks, return_exceptions=True)
 
@@ -887,7 +822,7 @@ class MarketWatchOdds:
         except Exception:
             LOG.exception("completed-session close unavailable for %s", ticker)
             return None
-        close = _positive_close(history.bars, session)
+        close = positive_close(history.bars, session)
         if close is None:
             # A daily bar can appear after the first post-close fetch. Do not
             # keep that incomplete window for the history cache's full day.
@@ -904,6 +839,75 @@ class MarketWatchOdds:
         if len(self._dividends) > _MAX_CACHED_TICKERS:
             self._dividends.pop(next(iter(self._dividends)))
         return status
+
+    def _shared_page_inputs(self, ticker: str, now: datetime) -> asyncio.Task[object]:
+        """One in-flight curve read per ticker. A timed-out page leaves it running."""
+        flight = self._page_input_flights.get(ticker)
+        if flight is not None and not flight.done():
+            return flight
+        flight = asyncio.create_task(self._page_curve_and_dividends(ticker, now))
+        self._page_input_flights[ticker] = flight
+        self._page_inputs.add(flight)
+
+        def _finish(done: asyncio.Task[object], symbol: str = ticker) -> None:
+            self._page_inputs.discard(done)
+            if self._page_input_flights.get(symbol) is done:
+                self._page_input_flights.pop(symbol, None)
+
+        flight.add_done_callback(_finish)
+        return flight
+
+    async def pricing_context_for(
+        self,
+        ticker: str,
+        chain: OptionChainResponse,
+        info: StockInfoResponse,
+        history: HistoricalResponse,
+        now: datetime,
+    ) -> PricingContext | None:
+        """Price the displayed chain. A slow curve read falls back to the snapshot."""
+        now = _as_utc(now)
+        completed_close = (
+            positive_close(history.bars, latest_completed_session(now))
+            if not regular_session_open(now)
+            else None
+        )
+        if (
+            pricing_block_reason(chain, info, now, completed_close, quote_max_age=_REFRESH)
+            is not None
+        ):
+            return None
+        task = self._shared_page_inputs(ticker, now)
+        try:
+            curve, dividends = await asyncio.wait_for(asyncio.shield(task), PAGE_INPUT_TIMEOUT)
+        except TimeoutError:
+            return None
+        except Exception:
+            LOG.exception("displayed-chain pricing inputs unavailable for %s", ticker)
+            return None
+        try:
+            built = build_pricing_context(
+                ticker,
+                chain,
+                info,
+                now,
+                completed_close,
+                curve,
+                dividends,
+                quote_max_age=_REFRESH,
+            )
+        except (ValueError, ArithmeticError):
+            LOG.exception("displayed chain cannot be priced for %s", ticker)
+            return None
+        return None if isinstance(built, str) else built
+
+    async def _page_curve_and_dividends(
+        self, ticker: str, now: datetime
+    ) -> tuple[TreasuryCurve | None, DividendStatus]:
+        curve, dividends = await asyncio.gather(
+            fetch_treasury_curve(self.client, now), self._dividend_status(ticker, now)
+        )
+        return curve, dividends
 
     async def _refresh(self, ticker: str) -> None:
         async with self._semaphore:
@@ -937,126 +941,77 @@ class MarketWatchOdds:
                 else:
                     info = info_result
                 session = quote_session(now)
-                valuation_time = now if regular_session_open(now) else session_close(session)
-                if quote_session(chain.fetched_at) != session:
+                chain_reason = displayed_chain_reason(chain, now)
+                if chain_reason is not None:
                     self._remember(
                         ticker,
-                        _Snapshot(
-                            chain.fetched_at,
-                            session,
-                            chain.source,
-                            {},
-                            {},
-                            "Option chain belongs to another quote session",
-                        ),
+                        _Snapshot(chain.fetched_at, session, chain.source, {}, {}, chain_reason),
                     )
                     return
-                if chain.truncated:
+                # Last-sale time does not timestamp the bid and ask. After hours,
+                # use only the exact official bar for the completed session.
+                completed_close = (
+                    await self._completed_session_close(ticker, now)
+                    if not regular_session_open(now)
+                    else None
+                )
+                blocked = pricing_block_reason(
+                    chain, info, now, completed_close, quote_max_age=_REFRESH
+                )
+                if blocked is not None:
                     self._remember(
                         ticker,
-                        _Snapshot(
-                            chain.fetched_at,
-                            session,
-                            chain.source,
-                            {},
-                            {},
-                            "Option-chain coverage is incomplete",
-                        ),
-                    )
-                    return
-                if regular_session_open(now):
-                    spot, underlying_quote_time, spot_reason = _spot(chain, info, now)
-                    stock_ask = (
-                        info.ask if chain.source == "nasdaq" and spot_reason is None else None
-                    )
-                else:
-                    # Last-sale time does not timestamp the bid and ask. Use
-                    # only the exact official bar for the completed session.
-                    close = await self._completed_session_close(ticker, now)
-                    if close is not None:
-                        spot, spot_reason = close, None
-                    else:
-                        spot, spot_reason = None, "Official completed-session close is unavailable"
-                    stock_ask = None
-                    underlying_quote_time = None
-                if spot_reason is not None:
-                    self._remember(
-                        ticker,
-                        _Snapshot(chain.fetched_at, session, chain.source, {}, {}, spot_reason),
+                        _Snapshot(chain.fetched_at, session, chain.source, {}, {}, blocked),
                     )
                     return
                 curve, dividends = await asyncio.gather(
                     fetch_treasury_curve(self.client, now), self._dividend_status(ticker, now)
                 )
-                reasons: dict[str, str] = {}
-                allowed: set[str] = set()
-                rates: dict[str, Decimal] = {}
-                for expiry_text in {row.expiration for row in chain.rows}:
-                    expiry = date.fromisoformat(expiry_text)
-                    if expiry <= valuation_time.astimezone(_NY).date():
-                        reasons[expiry_text] = "Same-day option quote timing cannot be verified"
-                    elif (
-                        curve is None
-                        or (rate := curve.rate_for(expiry, valuation_time)) is None
-                        or not math.isfinite(rate)
-                        or not 0 <= rate <= 0.25
-                    ):
-                        reasons[expiry_text] = "Dated Treasury rate is unavailable"
-                    else:
-                        eligible, reason = dividends.eligible_for(expiry)
-                        if eligible:
-                            allowed.add(expiry_text)
-                            rates[expiry_text] = Decimal(str(rate))
-                        else:
-                            reasons[expiry_text] = reason or "Dividend exposure is unsupported"
-                by_contract: dict[tuple[str, Decimal], list[OptionQuote]] = defaultdict(list)
-                for row in chain.rows:
-                    by_contract[(row.expiration, row.strike)].append(row)
-                standard_rows = {
-                    key: matches[0]
-                    for key, matches in by_contract.items()
-                    if len(matches) == 1
-                    and matches[0].identity_reason is None
-                    and matches[0].root == ticker
-                }
-                entry_quotes: dict[tuple[str, str, Decimal], tuple[Decimal, Decimal]] = {}
-                for (expiry, strike), row in standard_rows.items():
-                    for side in ("call", "put"):
-                        quote = _entry_bid_ask(row, side, spot)
-                        if quote is not None:
-                            entry_quotes[(side, expiry, strike)] = quote
+                context = build_pricing_context(
+                    ticker,
+                    chain,
+                    info,
+                    now,
+                    completed_close,
+                    curve,
+                    dividends,
+                    quote_max_age=_REFRESH,
+                )
+                if isinstance(context, str):
+                    self._remember(
+                        ticker,
+                        _Snapshot(chain.fetched_at, session, chain.source, {}, {}, context),
+                    )
+                    return
+                allowed = set(context.rates)
                 odds: dict[tuple[str, Decimal], OddsEstimate] = {}
                 benchmark_started = time.perf_counter()
-                if allowed and curve is not None and spot is not None:
+                if allowed and curve is not None:
                     odds = await asyncio.to_thread(
                         calculate_market_odds,
                         chain.rows,
-                        spot,
-                        lambda expiry: float(rates[expiry.isoformat()]),
+                        context.spot,
+                        lambda expiry, priced=context: float(priced.rates[expiry.isoformat()]),
                         allowed,
-                        valuation_time,
+                        context.valuation_time,
                     )
                 benchmark_ms = (time.perf_counter() - benchmark_started) * 1000
                 snapshot = _Snapshot(
-                    chain.fetched_at,
-                    session,
-                    chain.source,
+                    context.fetched_at,
+                    context.session_date,
+                    context.source,
                     odds,
-                    reasons,
-                    spot=spot,
-                    stock_ask=stock_ask,
-                    valuation_time=valuation_time,
-                    underlying_quote_time=underlying_quote_time,
-                    underlying_quote_fetched_at=(
-                        (chain.fetched_at if chain.source == "yahoo" else info.fetched_at)
-                        if underlying_quote_time is not None
-                        else None
-                    ),
-                    rate_as_of_session=curve.as_of if curve is not None else None,
-                    rates=rates,
-                    entry_quotes=entry_quotes,
-                    valid_contracts=set(standard_rows),
-                    invalid_contracts=set(by_contract) - set(standard_rows),
+                    context.reasons,
+                    spot=context.spot,
+                    stock_ask=context.stock_ask,
+                    valuation_time=context.valuation_time,
+                    underlying_quote_time=context.underlying_quote_time,
+                    underlying_quote_fetched_at=context.underlying_quote_fetched_at,
+                    rate_as_of_session=context.rate_as_of_session,
+                    rates=context.rates,
+                    entry_quotes=context.entry_quotes,
+                    valid_contracts=context.valid_contracts,
+                    invalid_contracts=context.invalid_contracts,
                 )
                 self._remember(ticker, snapshot)
                 live_refresh_ms = (time.perf_counter() - refresh_started) * 1000
@@ -1067,10 +1022,10 @@ class MarketWatchOdds:
                             ticker,
                             snapshot,
                             chain.rows,
-                            spot,
-                            rates,
+                            context.spot,
+                            context.rates,
                             allowed,
-                            valuation_time,
+                            context.valuation_time,
                             benchmark_ms,
                             live_refresh_ms,
                         )

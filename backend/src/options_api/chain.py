@@ -400,6 +400,14 @@ def _lows(history: HistoricalResponse, today: date) -> dict[str, Decimal | None]
 
 
 @dataclass(frozen=True)
+class LoadedChainPage:
+    page: CoveredCallPage | CashSecuredPutPage
+    chain: OptionChainResponse
+    info: StockInfoResponse
+    history: HistoricalResponse
+
+
+@dataclass(frozen=True)
 class _SideSpec:
     side: Side
     in_the_money: Callable[[Decimal, Decimal], bool]
@@ -576,10 +584,10 @@ async def _load_side(
     moneyness: Moneyness | None,
     name: str | None,
     rate: Decimal | None,
-) -> CoveredCallPage | CashSecuredPutPage:
+) -> LoadedChainPage:
     today = today_new_york(now)
     chain, info, history = await _load_context(service, ticker, now)
-    return _assemble(
+    page = _assemble(
         spec,
         chain,
         info,
@@ -591,6 +599,7 @@ async def _load_side(
         rate,
         service.memo,
     )
+    return LoadedChainPage(page, chain, info, history)
 
 
 async def load_covered_calls(
@@ -600,11 +609,8 @@ async def load_covered_calls(
     moneyness: Moneyness | None = None,
     name: str | None = None,
     rate: Decimal | None = None,
-) -> CoveredCallPage:
-    return cast(
-        CoveredCallPage,
-        await _load_side(service, ticker, now, CALLS, "itm", moneyness, name, rate),
-    )
+) -> LoadedChainPage:
+    return await _load_side(service, ticker, now, CALLS, "itm", moneyness, name, rate)
 
 
 async def load_cash_secured_puts(
@@ -614,8 +620,5 @@ async def load_cash_secured_puts(
     moneyness: Moneyness | None = None,
     name: str | None = None,
     rate: Decimal | None = None,
-) -> CashSecuredPutPage:
-    return cast(
-        CashSecuredPutPage,
-        await _load_side(service, ticker, now, PUTS, "otm", moneyness, name, rate),
-    )
+) -> LoadedChainPage:
+    return await _load_side(service, ticker, now, PUTS, "otm", moneyness, name, rate)

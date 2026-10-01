@@ -122,6 +122,32 @@ def _install_inputs(
 
 
 @pytest.mark.asyncio
+@pytest.mark.asyncio
+async def test_page_pricing_context_matches_the_refresh_entry_quote(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from options_api.pricing_context import build_pricing_context
+
+    _install_inputs(monkeypatch)
+    service = FakeService()
+    curve = _curve()
+    dividends = DividendStatus("nonpayer", NOW)
+    async with httpx.AsyncClient() as client:
+        odds = MarketWatchOdds(service, client, lambda: NOW)
+        odds.schedule(["TEST"])
+        await asyncio.gather(*odds._tasks.values())
+        chain = await service.get_chain("TEST")
+        info = await service.get_info("TEST", NOW)
+        context = build_pricing_context("TEST", chain, info, NOW, None, curve, dividends)
+        assert not isinstance(context, str)
+        for side in ("call", "put"):
+            assert context.entry_quote(side, EXPIRY, Decimal("100")) == odds.entry_quote(
+                "TEST", side, EXPIRY, Decimal("100"), "TEST"
+            )
+        await odds.close()
+
+
+@pytest.mark.asyncio
 async def test_one_ticker_refresh_is_shared_by_calls_puts_and_concurrent_requests(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

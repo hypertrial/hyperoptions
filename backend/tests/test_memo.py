@@ -158,9 +158,9 @@ async def test_loader_reuses_the_service_memo(monkeypatch: pytest.MonkeyPatch) -
             return history
 
     service = _Service()
-    page = await load_covered_calls(service, "IREN", now, moneyness="all", rate=RATE)
+    loaded = await load_covered_calls(service, "IREN", now, moneyness="all", rate=RATE)
     built = calls["n"]
-    assert built == _contracts(page)
+    assert built == _contracts(loaded.page)
     again = await load_covered_calls(service, "IREN", now, moneyness="all", rate=RATE)
     assert calls["n"] == built
-    assert again == page
+    assert again.page == loaded.page

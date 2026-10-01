@@ -16,7 +16,7 @@ from options_api.greeks import (
 )
 from options_api.hypothetical_risk import compute_hypothetical_risk
 from options_api.market_calendar import session_close
-from options_api.market_watch import MarketWatchOdds
+from options_api.market_watch import EntryQuote, MarketWatchOdds
 from options_api.models import (
     HypotheticalRiskView,
     MarketOddsView,
@@ -34,6 +34,7 @@ from stocksweeper.forecast.ledger import ForecastIssuance
 from stocksweeper.forecast.predictive import PredictiveDistribution
 
 SSVI_VERSION = "ssvi-market-v1"
+_ENTRY_QUOTE_UNSET: object = object()
 
 
 @dataclass(frozen=True)
@@ -132,6 +133,7 @@ def quant_for_contract(
     terms_note: str = TERMS_NOTE,
     physical_shadow: PhysicalShadowCapture | None = None,
     forecast_model: PhysicalModel = "lognormal_ewma",
+    entry_quote: EntryQuote | object | None = _ENTRY_QUOTE_UNSET,
 ) -> LiveQuant:
     expiry_text = expiry.isoformat()
     market = market_odds.lookup(ticker, side, expiry_text, strike, root)
@@ -262,15 +264,19 @@ def quant_for_contract(
         if watched and market.status != "available"
         else None
     )
-    quote = market_odds.entry_quote(ticker, side, expiry_text, strike, root)
-    if (
-        quote is not None
-        and displayed_chain_fetched_at is not None
-        and (
-            quote.fetched_at != displayed_chain_fetched_at or quote.source != displayed_chain_source
-        )
-    ):
-        quote = None
+    if entry_quote is _ENTRY_QUOTE_UNSET:
+        quote = market_odds.entry_quote(ticker, side, expiry_text, strike, root)
+        if (
+            quote is not None
+            and displayed_chain_fetched_at is not None
+            and (
+                quote.fetched_at != displayed_chain_fetched_at
+                or quote.source != displayed_chain_source
+            )
+        ):
+            quote = None
+    else:
+        quote = entry_quote if isinstance(entry_quote, EntryQuote) else None
     if quote is None:
         return LiveQuant(
             market,

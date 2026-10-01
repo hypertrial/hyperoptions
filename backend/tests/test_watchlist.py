@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from options_api.chain import assemble_cash_secured_puts, assemble_covered_calls
+from options_api.chain import LoadedChainPage, assemble_cash_secured_puts, assemble_covered_calls
 from options_api.contract_identity import make_watch_key, parse_watch_key, row_identity
 from options_api.market_calendar import (
     first_session_after_completed,
@@ -899,7 +899,7 @@ def test_unverified_chain_contract_never_exposes_cached_numeric_odds(
     assert contract.watch_key is None
 
     async def load(*args, **kwargs):
-        return page
+        return LoadedChainPage(page, chain, info, history)
 
     monkeypatch.setattr("options_api.main.load_covered_calls", load)
     app = create_app(

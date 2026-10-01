@@ -19,7 +19,7 @@ from starlette.responses import PlainTextResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from options_api.cache import TickerCache
-from options_api.chain import load_cash_secured_puts, load_covered_calls
+from options_api.chain import LoadedChainPage, load_cash_secured_puts, load_covered_calls
 from options_api.greeks import empty_greeks
 from options_api.intraday_capture import capture_intraday_window
 from options_api.live_quant import SSVI_VERSION, quant_for_contract
@@ -226,7 +226,7 @@ async def search_tickers(
 async def _load_page(
     request: Request,
     ticker: str,
-    load: Callable[..., Awaitable[CoveredCallPage | CashSecuredPutPage]],
+    load: Callable[..., Awaitable[LoadedChainPage]],
     moneyness: ChainMoneyness | None,
     forecast_model: PhysicalModel,
 ) -> CoveredCallPage | CashSecuredPutPage:
@@ -236,15 +236,21 @@ async def _load_page(
     listing = universe.listing(normalized)
     service: OptionChainService = request.app.state.service
     try:
-        now = _page_now(request.app)
-        page = await load(
+        loaded = await load(
             service,
             normalized,
-            now,
+            _page_now(request.app),
             moneyness=moneyness,
             name=listing.name if listing else None,
         )
+        page = loaded.page
+        # A chain fetch can outlast the regular session. Price the quotes
+        # against the clock after that fetch, not the clock that started it.
+        now = _page_now(request.app)
         odds: MarketWatchOdds = request.app.state.market_odds
+        pricing = await odds.pricing_context_for(
+            normalized, loaded.chain, loaded.info, loaded.history, now
+        )
         predictive: PredictiveWatchOdds = request.app.state.predictive_odds
         market_snapshot_matches = False
         if page.expirations:
@@ -287,6 +293,11 @@ async def _load_page(
                     contract.greeks_rate_pct_tenths = None
                     contract.greeks_rate_as_of_session = None
                 else:
+                    priced_from_page = {}
+                    if pricing is not None:
+                        priced_from_page["entry_quote"] = pricing.entry_quote(
+                            side, contract.expiration, Decimal(contract.strike_exact)
+                        )
                     result = quant_for_contract(
                         odds,
                         predictive,
@@ -299,6 +310,7 @@ async def _load_page(
                         displayed_chain_source=page.chain_source,
                         physical_shadow=request.app.state.physical_shadow,
                         forecast_model=forecast_model,
+                        **priced_from_page,
                     )
                     if result.issuance is not None:
                         issuances.append(result.issuance)
