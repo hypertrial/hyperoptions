@@ -4,10 +4,11 @@ import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { ApiError, fetchChain, fetchCoveredCalls, fetchTickers } from "./api"
-import { samplePage } from "./testFixtures"
+import { samplePage, samplePutPage } from "./testFixtures"
+import { getWatchlist } from "./watchlist/api"
 
 describe("chain API", () => {
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers() })
 
   it("requests only the selected ticker and moneyness", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(samplePage({ ticker: "CIFR" })), {
@@ -106,6 +107,80 @@ describe("chain API", () => {
       headers: { "Content-Type": "application/json" },
     })))
     await expect(fetchCoveredCalls("IREN", "itm")).rejects.toThrow("Local API returned an invalid response")
+  })
+
+  function fakeDeadlines() {
+    vi.useFakeTimers()
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((milliseconds) => {
+      const controller = new AbortController()
+      setTimeout(() => controller.abort(new DOMException("Deadline exceeded", "TimeoutError")), milliseconds)
+      return controller.signal
+    })
+  }
+
+  it("permits the chain's sequential provider fallback to finish after 121 seconds", async () => {
+    fakeDeadlines()
+    vi.stubGlobal("fetch", vi.fn((_input, init?: RequestInit) => new Promise<Response>((resolve, reject) => {
+      init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason), { once: true })
+      setTimeout(() => resolve(new Response(JSON.stringify(samplePage()))), 121_000)
+    })))
+    const result = expect(fetchCoveredCalls("IREN", "itm")).resolves.toMatchObject({ ticker: "IREN" })
+    await vi.advanceTimersByTimeAsync(121_000)
+    await result
+  })
+
+  it.each([
+    ["calls", () => fetchCoveredCalls("IREN", "itm"), 150_000],
+    ["puts", () => fetchChain("IREN", "put", "otm"), 150_000],
+    ["tickers", () => fetchTickers("IRE"), 30_000],
+    ["watchlist", () => getWatchlist(), 60_000],
+  ] as const)("expires %s at its bounded deadline", async (_label, request, milliseconds) => {
+    fakeDeadlines()
+    vi.stubGlobal("fetch", vi.fn((_input, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason), { once: true })
+    })))
+    let settled = false
+    const pending = request().finally(() => { settled = true })
+    const result = expect(pending).rejects.toThrow("The API did not respond.")
+    expect(AbortSignal.timeout).toHaveBeenCalledWith(milliseconds)
+    await vi.advanceTimersByTimeAsync(milliseconds - 1)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    await result
+  })
+
+  it.each([
+    ["chain", () => fetchCoveredCalls("IREN", "itm"), 150_000],
+    ["watchlist", () => getWatchlist(), 60_000],
+  ] as const)("normalizes a %s timeout while consuming the response body", async (_label, request, milliseconds) => {
+    fakeDeadlines()
+    vi.stubGlobal("fetch", vi.fn(async (_input, init?: RequestInit) => ({
+      ok: true,
+      json: () => new Promise((_resolve, reject) => {
+        init!.signal!.addEventListener("abort", () => reject(new DOMException("Body aborted", "AbortError")), { once: true })
+      }),
+    })))
+    const result = expect(request()).rejects.toThrow("The API did not respond.")
+    await vi.advanceTimersByTimeAsync(milliseconds)
+    await result
+  })
+
+  it("passes selection cancellation through both chain strategies", async () => {
+    for (const side of ["call", "put"] as const) {
+      const controller = new AbortController()
+      const fetchMock = vi.fn((_input, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+        init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason), { once: true })
+      }))
+      vi.stubGlobal("fetch", fetchMock)
+      const result = expect(fetchChain("IREN", side, "itm", "lognormal_ewma", controller.signal)).rejects.toMatchObject({ name: "AbortError" })
+      controller.abort()
+      await result
+    }
+  })
+
+  it("keeps the put page contract after adding a deadline", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(samplePutPage()))))
+    await expect(fetchChain("IREN", "put", "otm")).resolves.toMatchObject({ moneyness: "otm" })
   })
 
   it("keeps frontend source off Nasdaq outside fixtures", () => {

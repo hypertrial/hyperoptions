@@ -99,7 +99,7 @@ describe("chain interactions", () => {
 
     await waitFor(() => expect(screen.getByRole("heading", { name: /2026-09-18/ })).toBeTruthy())
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(fetchMock).toHaveBeenCalledWith("IREN", "call", "itm")
+    expect(fetchMock).toHaveBeenCalledWith("IREN", "call", "itm", "lognormal_ewma", expect.any(AbortSignal))
     const first = screen.getByRole("heading", { name: /2026-09-18/ }).closest("section")
     const second = screen.getByRole("heading", { name: /2026-10-09/ }).closest("section")
     expect(first).not.toBeNull()
@@ -288,7 +288,7 @@ describe("chain interactions", () => {
     }))
     fetchMock.mockResolvedValue(oddsPage)
     render(<ItmChain forecastModel="student_t_ewma" />)
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "call", "itm", "student_t_ewma"))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "call", "itm", "student_t_ewma", expect.any(AbortSignal)))
     const sort = screen.getByRole("combobox", { name: "Sort by" })
     fireEvent.change(sort, { target: { value: "predictive_itm_pct_tenths" } })
     const first = document.querySelector(".mobile-option-row")!
@@ -433,7 +433,7 @@ describe("chain interactions", () => {
     expect(screen.getByRole("option", { name: "Searching tickers…" })).toBeTruthy()
     expect(screen.queryByRole("option", { name: "No matches" })).toBeNull()
 
-    await waitFor(() => expect(tickersMock).toHaveBeenCalledWith("ZZ"))
+    await waitFor(() => expect(tickersMock).toHaveBeenCalledWith("ZZ", 10, expect.any(AbortSignal)))
     release?.()
     await waitFor(() => expect(screen.getByRole("option", { name: "No matches" })).toBeTruthy())
     expect(listbox.getAttribute("aria-busy")).toBe("false")
@@ -495,7 +495,7 @@ describe("chain interactions", () => {
     expect(screen.getByRole("region", { name: "CIFR market summary" }).getAttribute("aria-busy")).toBe("true")
     release?.()
     await waitFor(() => expect(screen.queryByText("Loading CIFR market data")).toBeNull())
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("CIFR", "call", "itm"))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("CIFR", "call", "itm", "lognormal_ewma", expect.any(AbortSignal)))
     expect(fetchMock.mock.calls.map((item) => item[0])).toEqual(["IREN", "CIFR"])
   })
 
@@ -530,7 +530,7 @@ describe("chain interactions", () => {
 
     release?.()
     await waitFor(() => expect(screen.queryByText("Loading CIFR market data")).toBeNull())
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("CIFR", "call", "itm"))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("CIFR", "call", "itm", "lognormal_ewma", expect.any(AbortSignal)))
   })
 
   it("ignores a late IREN response after switching to CIFR", async () => {
@@ -554,7 +554,7 @@ describe("chain interactions", () => {
       })
     })
     render(<ItmChain />)
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "call", "itm"))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "call", "itm", "lognormal_ewma", expect.any(AbortSignal)))
     await selectTicker("CIFR")
     await waitFor(() => expect(screen.getByRole("heading", { name: /2026-11-20/ })).toBeTruthy())
     releaseIren?.()
@@ -708,7 +708,7 @@ describe("chain interactions", () => {
     await waitFor(() => expect(screen.getByRole("combobox")).toHaveProperty("disabled", false))
     expect(tickersMock).toHaveBeenCalledTimes(2)
     await selectTicker("CIFR")
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("CIFR", "call", "itm"))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("CIFR", "call", "itm", "lognormal_ewma", expect.any(AbortSignal)))
   })
 
   it("offers retry for a network failure instead of reporting no ticker matches", async () => {
@@ -835,7 +835,7 @@ describe("chain interactions", () => {
     expect(screen.queryByText("42.1%")).toBeNull()
 
     await selectTicker("CIFR")
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("CIFR", "call", "itm"))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("CIFR", "call", "itm", "lognormal_ewma", expect.any(AbortSignal)))
     expect((screen.getByLabelText("Min APR (net) (%)") as HTMLInputElement).value).toBe("50")
     expect((screen.getByLabelText("Contracts") as HTMLInputElement).value).toBe("2")
     expect(screen.queryByText("42.1%")).toBeNull()
@@ -912,7 +912,7 @@ describe("chain interactions", () => {
   it("maps an all-moneyness link to the side default and drops retired column params", async () => {
     window.history.replaceState(null, "", "/?t=IREN&side=call&m=all&cols=strike_cents,iv_pct_tenths")
     render(<ItmChain />)
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "call", "itm"))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "call", "itm", "lognormal_ewma", expect.any(AbortSignal)))
     expect(window.location.search).toBe("?t=IREN&side=call&m=itm")
     expect(screen.getByRole("columnheader", { name: "IV" })).toBeTruthy()
     expect(screen.getByRole("columnheader", { name: "Premium (net)" })).toBeTruthy()
@@ -1025,7 +1025,7 @@ describe("chain interactions", () => {
     await waitFor(() => expect(screen.getByText("$49.40")).toBeTruthy())
 
     fireEvent.click(screen.getByRole("radio", { name: "Cash-secured puts" }))
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "put", "otm"))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "put", "otm", "lognormal_ewma", expect.any(AbortSignal)))
     expect(screen.getByRole("heading", { name: "Cash-secured puts" })).toBeTruthy()
     expect(screen.getByText("Iris Energy Limited")).toBeTruthy()
     expect(screen.getByLabelText("Min Premium (net) ($)")).toBeTruthy()
@@ -1084,21 +1084,21 @@ describe("chain interactions", () => {
     expect(screen.getAllByRole("table")).toHaveLength(2)
 
     await selectTicker("CIFR")
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("CIFR", "call", "itm"))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("CIFR", "call", "itm", "lognormal_ewma", expect.any(AbortSignal)))
     expect(screen.getAllByRole("table")).toHaveLength(1)
     fireEvent.click(screen.getByRole("button", { name: "Expand all" }))
     expect(screen.getAllByRole("table")).toHaveLength(2)
 
     await selectTicker("IREN")
-    await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith("IREN", "call", "itm"))
+    await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith("IREN", "call", "itm", "lognormal_ewma", expect.any(AbortSignal)))
     expect(screen.getAllByRole("table")).toHaveLength(1)
   })
 
   it("refetches when moneyness changes and keeps the selected strategy", async () => {
     render(<ItmChain />)
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "call", "itm"))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "call", "itm", "lognormal_ewma", expect.any(AbortSignal)))
     fireEvent.click(screen.getByRole("radio", { name: "OTM" }))
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "call", "otm"))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "call", "otm", "lognormal_ewma", expect.any(AbortSignal)))
     expect(screen.queryByRole("radio", { name: "All" })).toBeNull()
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
@@ -1167,7 +1167,7 @@ describe("chain interactions", () => {
     fireEvent.change(input, { target: { value: "CIFR" } })
     const option = await screen.findByRole("option", { name: /CIFR/ })
     fireEvent.keyDown(input, { key: "Enter" })
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("CIFR", "call", "itm"))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("CIFR", "call", "itm", "lognormal_ewma", expect.any(AbortSignal)))
     expect(option).toBeTruthy()
   })
 

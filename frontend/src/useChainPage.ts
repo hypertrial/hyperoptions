@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 
 import { fetchChain } from "./api"
-import { DEFAULT_FORECAST_MODEL, type PhysicalModel } from "./forecastModels"
+import type { PhysicalModel } from "./forecastModels"
 import { isRegularMarketHours } from "./marketHours"
 import type { ChainPage, Moneyness, Side, Ticker } from "./types"
 
@@ -9,12 +9,15 @@ const REFRESH_MS = 5 * 60_000
 const PENDING_MS = 15_000
 const MAX_EVIDENCE_POLLS = 8
 
+type PendingLoad = { key: string; id: number; controller: AbortController; promise: Promise<void> }
+
 export function useChainPage(ticker: Ticker, side: Side, moneyness: Moneyness, forecastModel: PhysicalModel = "lognormal_ewma") {
   const [page, setPage] = useState<ChainPage | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const requestId = useRef(0)
   const lastRequestedAt = useRef(0)
+  const pendingLoad = useRef<PendingLoad | null>(null)
   const requestKey = `${ticker}|${side}|${moneyness}|${forecastModel}`
   const [evidencePolls, setEvidencePolls] = useState({ key: requestKey, count: 0 })
   const [activeKey, setActiveKey] = useState(requestKey)
@@ -26,33 +29,48 @@ export function useChainPage(ticker: Ticker, side: Side, moneyness: Moneyness, f
     setLoading(true)
   }
 
-  const load = useCallback(async (
+  const load = useCallback((
     selected: Ticker,
     nextSide: Side,
     nextMoneyness: Moneyness,
     nextModel: PhysicalModel,
     preservePage = false,
   ) => {
+    const key = `${selected}|${nextSide}|${nextMoneyness}|${nextModel}`
+    if (pendingLoad.current?.key === key) return pendingLoad.current.promise
     const id = ++requestId.current
+    const current: PendingLoad = { key, id, controller: new AbortController(), promise: Promise.resolve() }
+    pendingLoad.current = current
     lastRequestedAt.current = Date.now()
-    try {
-      const result = nextModel === DEFAULT_FORECAST_MODEL
-        ? await fetchChain(selected, nextSide, nextMoneyness)
-        : await fetchChain(selected, nextSide, nextMoneyness, nextModel)
-      if (id !== requestId.current) return
-      setPage(result)
-      setError(null)
-    } catch (cause) {
-      if (id !== requestId.current) return
-      if (!preservePage) setPage(null)
-      setError(cause instanceof Error ? cause.message : "Local API unavailable")
-    } finally {
-      if (id === requestId.current) setLoading(false)
-    }
+    current.promise = (async () => {
+      try {
+        const result = await fetchChain(selected, nextSide, nextMoneyness, nextModel, current.controller.signal)
+        if (id !== requestId.current || current.controller.signal.aborted) return
+        setPage(result)
+        setError(null)
+      } catch (cause) {
+        if (id !== requestId.current || current.controller.signal.aborted) return
+        if (!preservePage) setPage(null)
+        setError(cause instanceof Error ? cause.message : "Local API unavailable")
+      } finally {
+        if (pendingLoad.current === current) pendingLoad.current = null
+        if (id === requestId.current) setLoading(false)
+      }
+    })()
+    return current.promise
   }, [])
 
   useEffect(() => {
+    const key = `${ticker}|${side}|${moneyness}|${forecastModel}`
     void load(ticker, side, moneyness, forecastModel)
+    return () => {
+      requestId.current += 1
+      const current = pendingLoad.current
+      if (current?.key === key) {
+        pendingLoad.current = null
+        current.controller.abort()
+      }
+    }
   }, [load, ticker, side, moneyness, forecastModel])
 
   const pending = page?.expirations.some((group) => group.contracts.some(
@@ -74,6 +92,7 @@ export function useChainPage(ticker: Ticker, side: Side, moneyness: Moneyness, f
     const interval = pending || evidencePending ? PENDING_MS : REFRESH_MS
     const refresh = () => {
       if (document.hidden || loading || (!pending && !evidencePending && !retryableForecast && !isRegularMarketHours())) return
+      if (pendingLoad.current?.key === requestKey) return
       if (Date.now() - lastRequestedAt.current < interval) return
       if (evidencePending && !pending) setEvidencePolls((current) => ({
         key: requestKey,

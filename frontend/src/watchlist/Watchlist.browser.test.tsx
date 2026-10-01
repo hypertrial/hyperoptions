@@ -188,6 +188,24 @@ it("shares a pending retry with the next poll so responses cannot arrive out of 
   expect(reads).toBe(3)
 })
 
+it("retains watched cards when a later successful response violates the contract", async () => {
+  window.history.replaceState(null, "", "/watchlist")
+  let reads = 0
+  vi.stubGlobal("fetch", vi.fn(async () => {
+    reads += 1
+    return new Response(JSON.stringify(reads === 2 ? { items: null } : { items: [watched] }))
+  }))
+  render(<App />)
+  await screen.findByRole("region", { name: "Odds estimates" })
+  document.dispatchEvent(new Event("visibilitychange"))
+  const warning = await screen.findByRole("alert")
+  expect(warning.textContent).toContain("Local API returned an invalid response")
+  expect(warning.textContent).toContain("Showing the last loaded watchlist")
+  expect(screen.getByRole("region", { name: "Odds estimates" })).toBeTruthy()
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }))
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull())
+})
+
 it("does not revive an old real-world forecast when current market odds are unavailable", async () => {
   window.history.replaceState(null, "", "/watchlist")
   const item = {

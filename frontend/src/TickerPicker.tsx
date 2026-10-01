@@ -38,9 +38,10 @@ export default function TickerPicker({ ticker, disabled, onSelect }: Props) {
   useEffect(() => {
     if (disabled) return
     const id = ++requestId.current
+    const controller = new AbortController()
     const handle = window.setTimeout(() => {
       setLoading(true)
-      void fetchTickers(query).then((page) => {
+      void fetchTickers(query, 10, controller.signal).then((page) => {
         if (id !== requestId.current) return
         setUnavailable(false)
         setResults(page.results)
@@ -53,7 +54,11 @@ export default function TickerPicker({ ticker, disabled, onSelect }: Props) {
         setLoading(false)
       })
     }, DEBOUNCE_MS)
-    return () => window.clearTimeout(handle)
+    return () => {
+      window.clearTimeout(handle)
+      if (id === requestId.current) requestId.current += 1
+      controller.abort()
+    }
   }, [disabled, query, retry])
 
   const choose = (symbol: string) => {
