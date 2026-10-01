@@ -460,7 +460,12 @@ class ForecastLedger:
                    WHERE l.checked_at IS NULL
                       OR (l.status = 'valid' AND l.checked_at <= ?)
                       OR (l.status <> 'valid' AND l.checked_at <= ?)
-                   ORDER BY c.expiry_session, c.ticker, c.contract_key
+                   ORDER BY CASE
+                     WHEN l.checked_at IS NULL
+                       THEN CAST(c.expiry_session AS TIMESTAMP) AT TIME ZONE 'UTC'
+                     WHEN l.status = 'valid' THEN l.checked_at + INTERVAL '1 day'
+                     ELSE l.checked_at + INTERVAL '1 hour'
+                   END, c.expiry_session, c.ticker, c.contract_key, c.terms_note
                    LIMIT ?""",
                 [
                     latest_completed_session(now),
