@@ -94,8 +94,12 @@ def _replay_cohort(
             for origin in origins:
                 when = datetime.combine(origin, time(23), tzinfo=UTC)
                 for horizon in horizons:
-                    scheduled_units += 1
                     expiry = calendar.offset(origin, horizon)
+                    if (period == "screen" and expiry >= cutoff) or (
+                        period == "holdout" and origin < cutoff
+                    ):
+                        continue
+                    scheduled_units += 1
                     results = shadow.forecast_candidates(ticker, when, expiry)
                     baseline = results["lognormal_ewma"].distribution
                     if baseline is None:

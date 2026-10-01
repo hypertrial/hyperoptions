@@ -272,9 +272,12 @@ class _CalibrationLedger:
         self.rows = rows
         self.reads = 0
 
-    def calibration_rows(self, *, since: date) -> list[dict[str, object]]:
+    def calibration_rows(
+        self, *, since: date, label_as_of: datetime | None = None
+    ) -> list[dict[str, object]]:
         self.reads += 1
-        return [row for row in self.rows if row["input_session"] >= since]
+        return [row for row in self.rows if row["input_session"] >= since
+                and (label_as_of is None or row["label_checked_at"] <= label_as_of)]
 
 
 def _calibration_rows() -> list[dict[str, object]]:

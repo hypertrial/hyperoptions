@@ -117,7 +117,7 @@ def build_calibration(
         return calendar.horizon(origin, expiration)
 
     earliest: dict[tuple[str, str, date, str], dict[str, Any]] = {}
-    for row in ledger.calibration_rows(since=as_of.date() - _LOOKBACK):
+    for row in ledger.calibration_rows(since=as_of.date() - _LOOKBACK, label_as_of=as_of):
         if not _valid(row, as_of):
             continue
         # Fixed before the outcome: the first same-session issuance wins if

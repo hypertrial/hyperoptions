@@ -77,7 +77,7 @@ class JobManager:
                 raise JobBusy("background jobs are shutting down")
             if coalesce_key is not None and coalesce_key in self._keys:
                 existing = self.get(self._keys[coalesce_key])
-                if existing is not None:
+                if existing is not None and existing.state in {"queued", "running"}:
                     return existing
             if len(self._queued) >= 4:
                 raise JobBusy("background job queue is full")
@@ -131,7 +131,8 @@ class JobManager:
             self._run(job_id, worker)
             if key is not None:
                 with self._lock:
-                    self._keys.pop(key, None)
+                    if self._keys.get(key) == job_id:
+                        self._keys.pop(key, None)
 
     def _run(self, job_id: str, worker: Worker) -> None:
 

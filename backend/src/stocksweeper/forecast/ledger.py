@@ -786,16 +786,22 @@ class ForecastLedger:
             "bands": bands,
         }
 
-    def calibration_rows(self, *, since: date) -> list[dict[str, object]]:
+    def calibration_rows(
+        self, *, since: date, label_as_of: datetime | None = None
+    ) -> list[dict[str, object]]:
         """Scalar as-issued rows for daily calibration; do not load scenario arrays."""
+        label_filter = "WHERE checked_at <= ?" if label_as_of is not None else ""
+        params: list[object] = [_utc(label_as_of)] if label_as_of is not None else []
+        params.append(since)
         with connect(self.path) as connection:
             return rows(
                 connection,
-                """WITH latest_label AS (
+                f"""WITH latest_label AS (
                      SELECT *, row_number() OVER (
                        PARTITION BY contract_key, terms_note, expiry_session
                        ORDER BY checked_at DESC, idempotency_key DESC) AS revision_rank
                      FROM forecast_labels
+                     {label_filter}
                    )
                    SELECT i.idempotency_key, i.contract_key, i.ticker, i.root,
                           i.side, i.expiration, i.expiry_session, i.strike_exact,
@@ -818,7 +824,7 @@ class ForecastLedger:
                      AND l.status = 'valid'
                    ORDER BY i.ticker, i.input_session, i.expiry_session,
                             i.contract_key, i.issued_at, i.idempotency_key""",
-                [since],
+                params,
             )
 
     def coverage(self) -> list[dict[str, object]]:
