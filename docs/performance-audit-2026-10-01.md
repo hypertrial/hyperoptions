@@ -146,6 +146,8 @@ negative-cache or sharing change using representative outage observations.
 The normal production Vite build took 3,364.086 ms in its single bounded sample.
 Asset bytes below exclude source maps and font files; actual resource totals and
 navigation timings are included in the entrypoint's JSON output.
+Gzip bytes use Node's `gzipSync` defaults and can differ from Vite's displayed
+compression estimates. The local server does not serve compressed responses.
 
 | Asset | Raw bytes | Gzip bytes |
 | --- | ---: | ---: |
