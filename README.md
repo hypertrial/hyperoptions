@@ -23,7 +23,9 @@ From the directory containing `backend/`, `frontend/`, and `scripts/` (run `cd h
 dependencies, fast-forwards a clean checkout, and then starts both services.
 If the remote cannot be reached, it warns that the version is unverified and
 starts the clean local checkout. A feature branch, local changes, or divergent
-history stops startup with a repair message. While running, the UI checks for
+history stops startup with a repair message. A process already listening on
+port 8000 or 5173 is stopped, including its process group, so a new run replaces
+the previous one. While running, the UI checks for
 a newer remote revision; restart `./scripts/dev` to apply it. Open
 [http://127.0.0.1:5173](http://127.0.0.1:5173). Ctrl+C stops both processes.
 

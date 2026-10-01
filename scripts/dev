@@ -24,6 +24,47 @@ port_in_use() {
   lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
 }
 
+listener_pids() {
+  lsof -nP -t -iTCP:"$1" -sTCP:LISTEN 2>/dev/null || true
+}
+
+signal_listeners() {
+  sig=$1
+  pids=$2
+  self_pgid=$(ps -o pgid= -p $$ 2>/dev/null | tr -d '[:space:]')
+  for pid in $pids; do
+    pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d '[:space:]')
+    if [ -n "$self_pgid" ] && [ -n "$pgid" ] && [ "$pgid" != "$self_pgid" ] && [ "$pgid" != 1 ]; then
+      /bin/kill -"$sig" -- "-$pgid" 2>/dev/null || /bin/kill -"$sig" "$pid" 2>/dev/null || true
+    else
+      /bin/kill -"$sig" "$pid" 2>/dev/null || true
+    fi
+  done
+}
+
+reclaim_port() {
+  port=$1
+  name=$2
+  pids=$(listener_pids "$port")
+  [ -n "$pids" ] || return 0
+  printf 'stopping the previous %s on port %s\n' "$name" "$port"
+  signal_listeners TERM "$pids"
+  n=0
+  while [ "$n" -lt 30 ]; do
+    port_in_use "$port" || return 0
+    n=$((n + 1))
+    sleep 0.1
+  done
+  signal_listeners KILL "$(listener_pids "$port")"
+  n=0
+  while [ "$n" -lt 20 ]; do
+    port_in_use "$port" || return 0
+    n=$((n + 1))
+    sleep 0.1
+  done
+  die "port $port stayed in use ($name)"
+}
+
 http_ok() {
   curl -sf "$1" >/dev/null 2>&1
 }
@@ -120,12 +161,8 @@ OPTIONS_APP_SHA=$(git -C "$ROOT" rev-parse HEAD)
 VITE_APP_SHA=$OPTIONS_APP_SHA
 export OPTIONS_APP_SHA VITE_APP_SHA
 
-if port_in_use "$BACKEND_PORT"; then
-  die "port $BACKEND_PORT is already in use (backend)"
-fi
-if port_in_use "$FRONTEND_PORT"; then
-  die "port $FRONTEND_PORT is already in use (frontend)"
-fi
+reclaim_port "$BACKEND_PORT" backend
+reclaim_port "$FRONTEND_PORT" frontend
 
 printf 'syncing backend deps...\n'
 (cd "$ROOT/backend" && uv sync --frozen --group dev --group research)

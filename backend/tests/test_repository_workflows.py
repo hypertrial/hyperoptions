@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -137,6 +138,93 @@ def test_dev_cleanup_does_not_kill_a_later_port_owner(tmp_path: Path) -> None:
     finally:
         unrelated.terminate()
         unrelated.wait(timeout=5)
+
+
+def test_dev_stops_an_existing_listener_before_starting(tmp_path: Path) -> None:
+    shutil.copytree(ROOT / "scripts", tmp_path / "scripts")
+    (tmp_path / "backend").mkdir()
+    (tmp_path / "frontend").mkdir()
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _fake_dev_git(fake_bin)
+    child_pid_path = tmp_path / "child.pid"
+    # The reported listener is the child. A reload parent stays in the same
+    # session, so stopping only that pid would leave the leader alive.
+    leader = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import os, sys, time\n"
+            "child = os.fork()\n"
+            "if child == 0:\n"
+            "    time.sleep(30)\n"
+            "    raise SystemExit(0)\n"
+            "with open(sys.argv[1], 'w') as handle:\n"
+            "    handle.write(str(child))\n"
+            "os.wait()\n",
+            str(child_pid_path),
+        ],
+        start_new_session=True,
+    )
+    lsof_count = tmp_path / "lsof-count"
+    child_pid = ""
+    try:
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            if leader.poll() is not None:
+                raise AssertionError("session leader exited before the child started")
+            if child_pid_path.exists():
+                child_pid = child_pid_path.read_text().strip()
+                if child_pid.isdigit():
+                    break
+            time.sleep(0.05)
+        else:
+            raise AssertionError("listener child did not start")
+        _executable(fake_bin / "npm", "#!/bin/sh\nexit 0\n")
+        _executable(
+            fake_bin / "uv",
+            '#!/bin/sh\n[ "${1:-}" = sync ] && exit 0\nexit 1\n',
+        )
+        _executable(fake_bin / "curl", "#!/bin/sh\nexit 1\n")
+        _executable(
+            fake_bin / "lsof",
+            "#!/bin/sh\n"
+            "count=0\n"
+            '[ ! -f "$TEST_LSOF_COUNT" ] || count=$(cat "$TEST_LSOF_COUNT")\n'
+            "count=$((count + 1))\n"
+            'printf \'%s\' "$count" > "$TEST_LSOF_COUNT"\n'
+            '[ "$count" -eq 1 ] || exit 1\n'
+            'printf \'%s\\n\' "$TEST_LISTENER_PID"\n'
+            "exit 0\n",
+        )
+        env = {
+            **os.environ,
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "TEST_LSOF_COUNT": str(lsof_count),
+            "TEST_LISTENER_PID": child_pid,
+        }
+
+        result = subprocess.run(
+            ["sh", str(tmp_path / "scripts" / "dev")],
+            cwd=tmp_path,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+
+        leader.wait(timeout=2)
+        assert leader.returncode not in (None, 0)
+        assert "stopping the previous backend on port 8000" in result.stdout + result.stderr
+    finally:
+        if leader.poll() is None:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(leader.pid, signal.SIGKILL)
+            leader.wait(timeout=5)
+        if child_pid.isdigit():
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(int(child_pid), signal.SIGKILL)
 
 
 def test_dev_cleanup_signals_owned_descendants(tmp_path: Path) -> None:
