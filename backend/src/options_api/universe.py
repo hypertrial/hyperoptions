@@ -14,6 +14,7 @@ from options_api.nasdaq import NasdaqError, fetch_screener_payload
 from options_api.parser import parse_screener_listings
 
 UNIVERSE_TTL_SECONDS = 86_400.0
+UNIVERSE_FAILURE_COOLDOWN_SECONDS = 60.0
 NON_EQUITY_NAME = re.compile(r"\b(?:warrants?|rights?|units?|preferred|notes?|bonds?)\b", re.I)
 
 
@@ -31,6 +32,7 @@ class TickerUniverse:
         self._by_symbol: dict[str, TickerListing] = {}
         self._as_of: datetime | None = None
         self._stored_at: float | None = None
+        self._failed_at: float | None = None
         self._inflight: asyncio.Task[None] | None = None
         self._guard = asyncio.Lock()
 
@@ -60,6 +62,7 @@ class TickerUniverse:
         self._by_symbol = {item.symbol: item for item in kept}
         self._as_of = as_of or datetime.now(UTC)
         self._stored_at = self._monotonic()
+        self._failed_at = None
 
     def contains(self, symbol: str) -> bool:
         return symbol in self._by_symbol
@@ -94,10 +97,10 @@ class TickerUniverse:
             await task
 
     async def ensure(self) -> bool:
-        if self._fresh():
+        if self._fresh() or self._cooling_down():
             return True
         async with self._guard:
-            if self._fresh():
+            if self._fresh() or self._cooling_down():
                 return True
             task = self._inflight
             if task is None:
@@ -120,11 +123,20 @@ class TickerUniverse:
             return False
         return self._monotonic() - self._stored_at < UNIVERSE_TTL_SECONDS
 
+    def _cooling_down(self) -> bool:
+        return (
+            self.available
+            and self._failed_at is not None
+            and self._monotonic() - self._failed_at < UNIVERSE_FAILURE_COOLDOWN_SECONDS
+        )
+
     async def _refresh(self) -> None:
         try:
             payload = await fetch_screener_payload(self._client)
             listings = parse_screener_listings(payload)
         except (NasdaqError, ValueError):
-            return
+            listings = []
         if listings:
             self.seed(listings)
+        elif self.available:
+            self._failed_at = self._monotonic()
