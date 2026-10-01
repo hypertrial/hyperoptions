@@ -19,7 +19,7 @@ export type StrategySpec = {
 const FILTER_METRICS: StrategySpec["filterMetrics"] = {
   premium: { key: "net_premium_cents", label: "Min Premium (net) ($)", scale: 2 },
   apr: { key: "net_apr_pct_tenths", label: "Min APR (net) (%)", scale: 1 },
-  breakeven: { key: "breakeven_change_pct_tenths", label: "Min % to breakeven (%)", scale: 1 },
+  breakeven: { key: "breakeven_change_pct_tenths", label: "Min % to assignment (%)", scale: 1 },
 }
 
 export const STRATEGIES: Record<Side, StrategySpec> = {

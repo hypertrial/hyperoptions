@@ -62,8 +62,8 @@ exports[`strategy column metadata > matches the call snapshot 1`] = `
     "abbrev": true,
     "heatmap": true,
     "id": "breakeven_change_pct_tenths",
-    "info": "Absolute percent distance from the current price to breakeven. Always zero or higher.",
-    "label": "% to breakeven",
+    "info": "Percent the stock must rise from the current price to the strike before assignment. Negative when the stock is already above the strike. Contracts does not scale this.",
+    "label": "% to assignment",
   },
 ]
 `;
@@ -130,8 +130,8 @@ exports[`strategy column metadata > matches the put snapshot 1`] = `
     "abbrev": true,
     "heatmap": true,
     "id": "breakeven_change_pct_tenths",
-    "info": "Absolute percent distance from the current price to breakeven. Always zero or higher.",
-    "label": "% to breakeven",
+    "info": "Percent the stock must fall from the current price to the strike before assignment. Negative when the stock is already below the strike. Contracts does not scale this.",
+    "label": "% to assignment",
   },
 ]
 `;

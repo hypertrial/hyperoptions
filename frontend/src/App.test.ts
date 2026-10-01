@@ -111,7 +111,7 @@ describe("metric heatmap", () => {
     expect(metricRange([null, Number.NaN])).toBeNull()
   })
 
-  it("limits heatmaps to net premium, net APR, and percent to breakeven", () => {
+  it("limits heatmaps to net premium, net APR, and percent to assignment", () => {
     const heated = ["net_premium_cents", "net_apr_pct_tenths", "breakeven_change_pct_tenths"]
     expect(visibleColumns("call").filter((column) => column.heatmap).map((column) => column.id)).toEqual(heated)
     expect(visibleColumns("put").filter((column) => column.heatmap).map((column) => column.id)).toEqual(heated)
@@ -246,7 +246,7 @@ describe("row filters", () => {
     expect(passesFilters(negative, { ...openFilters, premium: parseThreshold("0") }, "call")).toBe(false)
   })
 
-  it("compares Premium (net), APR (net), and % to breakeven at displayed precision", () => {
+  it("compares Premium (net), APR (net), and % to assignment at displayed precision", () => {
     const displayedInclusive = {
       net_premium_cents: 5000,
       net_apr_pct_tenths: 421,
@@ -411,7 +411,7 @@ const clipboardHeaders = [
   "Premium (net)",
   "APR (net)",
   "Breakeven",
-  "% to breakeven",
+  "% to assignment",
 ]
 const pricedValues = ["$50.00", "$0.50", "$0.51", "2.0%", "55", "$50.00", "42.1%", "$49.40", "1.0%"]
 
@@ -438,7 +438,7 @@ describe("row clipboard", () => {
       [
         "IREN · 2026-09-18 · 7 DTE · Stock bid: $49.90",
         "",
-        "| Strike | Bid | Ask | Spread (%) | OI | Premium (net) | APR (net) | Breakeven | % to breakeven |",
+        "| Strike | Bid | Ask | Spread (%) | OI | Premium (net) | APR (net) | Breakeven | % to assignment |",
         "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         "| $50.00 | $0.50 | $0.51 | 2.0% | 55 | $50.00 | 42.1% | $49.40 | 1.0% |",
       ].join("\n"),

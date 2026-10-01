@@ -170,15 +170,20 @@ def _intrinsic(side: Side, current: Decimal, strike: Decimal) -> Decimal:
     return raw if raw > ZERO else ZERO
 
 
+def _to_assignment_pct(side: Side, current: Decimal, strike: Decimal) -> Decimal | None:
+    move = strike - current if side == "call" else current - strike
+    return _ratio_pct(move, current)
+
+
 def _decision_metrics(
     side: Side,
     current: Decimal,
     strike: Decimal,
     bid: Decimal | None,
     dte: int,
-) -> tuple[Decimal | None, Decimal | None, Decimal | None, Decimal | None]:
+) -> tuple[Decimal | None, Decimal | None, Decimal | None]:
     if bid is None:
-        return None, None, None, None
+        return None, None, None
     shares = Decimal(SHARES_PER_CONTRACT)
     net_premium = shares * (bid - _intrinsic(side, current, strike))
     breakeven = current - bid if side == "call" else strike - bid
@@ -186,8 +191,7 @@ def _decision_metrics(
     net_apr = None
     if capital > ZERO and dte > 0:
         net_apr = net_premium / capital * DAYS_PER_YEAR / Decimal(dte) * HUNDRED
-    change = _ratio_pct(abs(current - breakeven), current)
-    return net_premium, net_apr, breakeven, change
+    return net_premium, net_apr, breakeven
 
 
 def _call_contract(
@@ -219,9 +223,10 @@ def _call_contract(
     drop_to_breakeven = (
         _ratio_pct(current - effective_cost, current) if effective_cost is not None else None
     )
-    net_premium, net_apr, breakeven, breakeven_change = _decision_metrics(
+    net_premium, net_apr, breakeven = _decision_metrics(
         "call", current, row.strike, bid, dte
     )
+    to_assignment = _to_assignment_pct("call", current, row.strike)
     greeks = compute_greeks("call", current, row.strike, dte, rate, row.call_bid, row.call_ask)
     return CoveredCallContract(
         expiration=row.expiration,
@@ -249,7 +254,7 @@ def _call_contract(
         net_premium_cents=optional_cents(net_premium),
         net_apr_pct_tenths=optional_pct_tenths(net_apr),
         breakeven_cents=optional_cents(breakeven),
-        breakeven_change_pct_tenths=optional_pct_tenths(breakeven_change),
+        breakeven_change_pct_tenths=optional_pct_tenths(to_assignment),
         **_vs_lows(row.strike, lows),
         iv_pct_tenths=greeks.iv_pct_tenths,
         delta_e4=greeks.delta_e4,
@@ -286,9 +291,10 @@ def _put_contract(
     cushion = _ratio_pct(current - row.strike, current)
     assert cushion is not None
     cushion_be = _ratio_pct(current - breakeven, current) if breakeven is not None else None
-    net_premium, net_apr, _, breakeven_change = _decision_metrics(
+    net_premium, net_apr, _ = _decision_metrics(
         "put", current, row.strike, bid, dte
     )
+    to_assignment = _to_assignment_pct("put", current, row.strike)
     greeks = compute_greeks("put", current, row.strike, dte, rate, row.put_bid, row.put_ask)
     return CashSecuredPutContract(
         expiration=row.expiration,
@@ -313,7 +319,7 @@ def _put_contract(
         cushion_to_breakeven_pct_tenths=optional_pct_tenths(cushion_be),
         net_premium_cents=optional_cents(net_premium),
         net_apr_pct_tenths=optional_pct_tenths(net_apr),
-        breakeven_change_pct_tenths=optional_pct_tenths(breakeven_change),
+        breakeven_change_pct_tenths=optional_pct_tenths(to_assignment),
         **_vs_lows(row.strike, lows),
         iv_pct_tenths=greeks.iv_pct_tenths,
         delta_e4=greeks.delta_e4,

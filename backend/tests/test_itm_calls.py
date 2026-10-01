@@ -816,12 +816,12 @@ def _net_metrics(side: str, current: Decimal, strike: Decimal, bid: Decimal, dte
     apr = None
     if capital > D(0) and dte > 0:
         apr = net / capital * D(365) / D(dte) * D(100)
-    change = abs(current - breakeven) / current * D(100)
+    move = (strike - current) if side == "call" else (current - strike)
     return (
         to_cents(net),
         None if apr is None else to_pct_tenths(apr),
         to_cents(breakeven),
-        to_pct_tenths(change),
+        to_pct_tenths(move / current * D(100)),
     )
 
 
@@ -875,7 +875,12 @@ def test_net_premium_apr_and_breakeven_follow_moneyness() -> None:
     assert missing.net_premium_cents is None
     assert missing.net_apr_pct_tenths is None
     assert missing.breakeven_cents is None
-    assert missing.breakeven_change_pct_tenths is None
+    assert missing.breakeven_change_pct_tenths == to_pct_tenths(
+        (D(45) - current) / current * D(100)
+    )
+    assert calls[("2026-09-18", 6000)].breakeven_change_pct_tenths > otm.breakeven_change_pct_tenths
+    assert weekly.breakeven_change_pct_tenths < 0
+    assert atm.breakeven_change_pct_tenths == 0
     expired = calls[("2026-09-11", 4000)]
     assert expired.dte == 0
     assert expired.net_apr_pct_tenths is None
@@ -903,11 +908,18 @@ def test_net_premium_apr_and_breakeven_follow_moneyness() -> None:
     itm_put = puts[5500]
     assert itm_put.in_the_money is True
     _seen(itm_put, "put", D(55), D(8), 7)
+    assert itm_put.breakeven_change_pct_tenths < 0
     otm_put = puts[4000]
     assert otm_put.in_the_money is False
     _seen(otm_put, "put", D(40), D("1.5"), 7)
+    assert otm_put.breakeven_change_pct_tenths > itm_put.breakeven_change_pct_tenths
     assert puts[4990].net_premium_cents == to_cents(D(200))
+    assert puts[4990].breakeven_change_pct_tenths == 0
     assert puts[4500].net_premium_cents is None
+    assert puts[4500].breakeven_cents is None
+    assert puts[4500].breakeven_change_pct_tenths == to_pct_tenths(
+        (current - D(45)) / current * D(100)
+    )
     rich_put = puts[3000]
     assert rich_put.net_apr_pct_tenths is None
     assert rich_put.breakeven_change_pct_tenths >= 0

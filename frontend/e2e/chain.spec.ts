@@ -103,7 +103,7 @@ test("searches a ticker, toggles strategy and moneyness, and round-trips the URL
   await expect(page).toHaveURL(/m=itm/)
   await expect(page).not.toHaveURL(/cols=/)
   await expect(page.getByRole("columnheader", { name: "Premium (net)" })).toBeVisible()
-  await expect(page.getByRole("columnheader", { name: "% to breakeven" })).toBeVisible()
+  await expect(page.getByRole("columnheader", { name: "% to assignment" })).toBeVisible()
   await page.reload()
   await expect(page.getByRole("heading", { name: "Cash-secured puts" })).toBeVisible()
   await expect(page.getByRole("radio", { name: "Cash-secured puts" })).toBeChecked()

@@ -150,7 +150,7 @@ describe("chain interactions", () => {
       "Premium (net)",
       "APR (net)",
       "Breakeven",
-      "% to breakeven",
+      "% to assignment",
       "Watch",
       "Copy",
     ])
@@ -163,7 +163,7 @@ describe("chain interactions", () => {
     expect(screen.getByRole("button", { name: "Filters" }).getAttribute("aria-expanded")).toBe("false")
     expect(screen.getByLabelText("Min Premium (net) ($)")).toBeTruthy()
     expect(screen.getByLabelText("Min APR (net) (%)")).toBeTruthy()
-    expect(screen.getByLabelText("Min % to breakeven (%)")).toBeTruthy()
+    expect(screen.getByLabelText("Min % to assignment (%)")).toBeTruthy()
     expect(screen.getByLabelText("Max DTE")).toBeTruthy()
     expect(screen.queryByLabelText("Min DTE")).toBeNull()
     expect(screen.queryByRole("button", { name: "Columns" })).toBeNull()
@@ -748,7 +748,7 @@ describe("chain interactions", () => {
     expect(screen.queryByRole("heading", { name: /2026-09-18/ })).toBeNull()
 
     fireEvent.change(screen.getByLabelText("Min APR (net) (%)"), { target: { value: "" } })
-    fireEvent.change(screen.getByLabelText("Min % to breakeven (%)"), { target: { value: "5" } })
+    fireEvent.change(screen.getByLabelText("Min % to assignment (%)"), { target: { value: "5" } })
     expect(screen.getByText("16.0%")).toBeTruthy()
     expect(screen.getByText("$42.00")).toBeTruthy()
     expect(screen.queryByText("$50.00")).toBeNull()
@@ -890,7 +890,7 @@ describe("chain interactions", () => {
     expect(window.location.search).toBe("?t=IREN&side=call&m=itm")
     expect(screen.queryByRole("columnheader", { name: "IV" })).toBeNull()
     expect(screen.getByRole("columnheader", { name: "Premium (net)" })).toBeTruthy()
-    expect(screen.getByRole("columnheader", { name: "% to breakeven" })).toBeTruthy()
+    expect(screen.getByRole("columnheader", { name: "% to assignment" })).toBeTruthy()
   })
 
   it("copies displayed row values with headers and context, including contract scaling", async () => {
@@ -1004,7 +1004,7 @@ describe("chain interactions", () => {
     expect(screen.getByText("Iris Energy Limited")).toBeTruthy()
     expect(screen.getByLabelText("Min Premium (net) ($)")).toBeTruthy()
     expect(screen.getByLabelText("Min APR (net) (%)")).toBeTruthy()
-    expect(screen.getByLabelText("Min % to breakeven (%)")).toBeTruthy()
+    expect(screen.getByLabelText("Min % to assignment (%)")).toBeTruthy()
     expect(screen.getByLabelText("Max DTE")).toBeTruthy()
     expect(screen.getByText("$45.00")).toBeTruthy()
     expect(screen.getByText("$44.20")).toBeTruthy()
@@ -1020,7 +1020,7 @@ describe("chain interactions", () => {
       "Premium (net)",
       "APR (net)",
       "Breakeven",
-      "% to breakeven",
+      "% to assignment",
       "Watch",
       "Copy",
     ])

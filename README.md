@@ -48,7 +48,7 @@ The first load is IREN covered-call ITM when the URL has no `t` parameter. Ticke
 
 The workstation navigation shows the option chain at `/` and selected contracts at `/watchlist`. Former `/research/*` browser links redirect to the watchlist; an unknown path shows links back to both pages. There is no manual Research dashboard, data update action, or full-catalog backtest API. The durable background queue handles expiry-close results. A restart marks interrupted jobs as failed. The queue admits one running job and up to four pending jobs, and a second app instance cannot use the same local data directory.
 
-Calls and puts show the same columns: **Strike, Expiry odds, Bid, Ask, Spread (%), OI, Premium (net), APR (net), Breakeven, % to breakeven, Watch, and Copy**. There is no column picker.
+Calls and puts show the same columns: **Strike, Expiry odds, Bid, Ask, Spread (%), OI, Premium (net), APR (net), Breakeven, % to assignment, Watch, and Copy**. There is no column picker.
 
 `current` is the valid stock bid, or the chain last trade when bid is missing. Calls are ITM when `strike < current`; puts are ITM when `strike > current`. Equality is ATM and is excluded from both the ITM and OTM chain filters. The public chain query accepts only `itm` or `otm`; `moneyness=all` is rejected with 422. The public API sends these as integers: `*_cents` for currency, `*_pct_tenths` for one-decimal percentages, and `*_e4` for Greeks (×10,000). Backend calculations use `Decimal` and quantize with `ROUND_HALF_UP` at the response boundary. The browser compares filters to those scaled integers through exact decimal tokens, not by formatting then parsing.
 
@@ -58,7 +58,7 @@ Displayed decision metrics, for one contract:
 - `Premium (net) = 100 × (bid − intrinsic)`. This is time value only. A bid below intrinsic is negative and fails a positive minimum.
 - Call `APR (net) = net premium / (100 × (current − bid)) × 365 / DTE`. Put `APR (net) = net premium / (100 × (strike − bid)) × 365 / DTE`. APR is blank when capital is 0 or less, or when DTE is 0.
 - Call `Breakeven = current − bid`. Put `Breakeven = strike − bid`.
-- `% to breakeven = |current − breakeven| / current`, always 0 or higher.
+- `% to assignment = (strike − current) / current` for calls and `(current − strike) / current` for puts. Positive is room left before the strike. Negative means the stock is already through the strike. The bid is not used.
 
 Older buy-write and cash-secured-put fields remain on each contract for compatibility. They are not columns.
 
@@ -86,21 +86,21 @@ One-contract cash-secured put:
 - `cushion to strike = (current − strike) / current`
 - `cushion to breakeven = (current − breakeven) / current`
 
-The Contracts field is a whole number of 100-share lots. Premium (net) is multiplied by that count, as are the older stock-cost, premium, outlay, called P&L, collateral, and net-collateral fields. Bid, ask, spread, open interest, APR (net), breakeven, and % to breakeven stay one-contract. Leave Contracts empty to keep the one-contract view. `0`, negatives, decimals, values too large for exact integer calculations, or other invalid text show validation and fall back to one contract.
+The Contracts field is a whole number of 100-share lots. Premium (net) is multiplied by that count, as are the older stock-cost, premium, outlay, called P&L, collateral, and net-collateral fields. Bid, ask, spread, open interest, APR (net), breakeven, and % to assignment stay one-contract. Leave Contracts empty to keep the one-contract view. `0`, negatives, decimals, values too large for exact integer calculations, or other invalid text show validation and fall back to one contract.
 
-Filters start closed. **Min Premium (net)**, **Min APR (net)**, **Min % to breakeven**, and **Max DTE** combine with AND. Values compare directly with the API's scaled integers. Enter percent points (`40` means 40%). Invalid tokens show inline validation and are otherwise ignored; null metrics fail only their active filter. Valid filters count as applied; invalid entries show a separate **Fix** count. Each entry has its own clearable chip, and Clear all restores the full chain and does not clear Contracts.
+Filters start closed. **Min Premium (net)**, **Min APR (net)**, **Min % to assignment**, and **Max DTE** combine with AND. Values compare directly with the API's scaled integers. Enter percent points (`40` means 40%). Invalid tokens show inline validation and are otherwise ignored; null metrics fail only their active filter. Valid filters count as applied; invalid entries show a separate **Fix** count. Each entry has its own clearable chip, and Clear all restores the full chain and does not clear Contracts.
 
 Calls or puts with side open interest below 5, or with missing OI, are omitted.
 
 Greeks are still calculated as a European, no-dividend Black-Scholes approximation of American equity options; early exercise and dividends are not modeled. They are not shown as columns. Implied volatility uses a valid bid/ask midpoint within no-arbitrage bounds. The calculation uses the coherent quote session and time remaining until the listed expiry session close, with the same dated rate as the market-odds snapshot.
 
-Hover a column name for its definition. Subtle per-expiration heat is limited to Premium (net), APR (net), and % to breakeven. Price and liquidity remain neutral, so color is never required to interpret a value. Each desktop and tablet table scrolls horizontally when every column cannot fit. Strike stays visible on the left and Copy on the right. Copy includes every column plus ticker, expiration, DTE, current price, and contract-count context. If Nasdaq reaches its 5,000-row cap, the backend attempts a complete Yahoo chain replacement and labels any remaining coverage gap.
+Hover a column name for its definition. Subtle per-expiration heat is limited to Premium (net), APR (net), and % to assignment. Price and liquidity remain neutral, so color is never required to interpret a value. Each desktop and tablet table scrolls horizontally when every column cannot fit. Strike stays visible on the left and Copy on the right. Copy includes every column plus ticker, expiration, DTE, current price, and contract-count context. If Nasdaq reaches its 5,000-row cap, the backend attempts a complete Yahoo chain replacement and labels any remaining coverage gap.
 
 Every matching expiration has a collapsible header with date, DTE, and row count. Only the nearest expiration opens after ticker, strategy, or moneyness changes. Expand all and Collapse all are available; filtering, sorting, and density preserve session-local expansion choices. Collapsed bodies are unmounted. When a table overflows horizontally, it shows a scroll cue and can receive keyboard focus; narrow phones use expandable contract cards.
 
 Large filtered result sets render progressively across expanded groups only: all expiration headers remain discoverable, while the first 250 expanded rows mount. Accessible **Show 250 more** (or the remaining count, when fewer than 250 rows are left) and **Show all** controls reveal the rest. Heat ranges still use the complete filtered expiration. The reveal limit resets when the chain identity or filters change.
 
-Below 40rem, the table becomes compact disclosure rows. Each summary shows Strike, Bid, APR (net), and % to breakeven. Opening a row shows the remaining metrics and Copy. Sorting remains available above the mobile rows.
+Below 40rem, the table becomes compact disclosure rows. Each summary shows Strike, Bid, APR (net), and % to assignment. Opening a row shows the remaining metrics and Copy. Sorting remains available above the mobile rows.
 
 A ticker with no options shows `Options are not available for {ticker}`. A priced ticker with no rows after the moneyness filter shows `No {ITM|OTM} {calls|puts} for {ticker}`.
 
