@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections import OrderedDict
 from collections.abc import Iterable, Iterator
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, date, datetime, timedelta
@@ -526,6 +527,7 @@ class ForecastLedger:
         with_crps: bool = False,
         label_as_of: datetime | None = None,
         page_size: int = 512,
+        crps_cache: OrderedDict[tuple[str, str], float] | None = None,
     ) -> Iterator[dict[str, object]]:
         """Page scalar issuances; release the database lock between pages."""
         if not 1 <= page_size <= 4096:
@@ -620,12 +622,33 @@ class ForecastLedger:
                     and (label_as_of is None or item["label_checked_at"] <= label_as_of)
                     and item["issued_at"] < session_close(item["expiry_session"])
                 }
-                missing = keys - scores.keys()
-                scores.update({key: None for key in missing})
-                scores.update(self.crps_scores(missing))
+                if crps_cache is None:
+                    missing = keys - scores.keys()
+                    scores.update({key: None for key in missing})
+                    scores.update(self.crps_scores(missing))
+                    page_scores = {key: scores.get(key) for key in keys}
+                else:
+                    # Snapshot this page before LRU eviction; missing records
+                    # remain local to this iterator, never the shared cache.
+                    page_scores = {}
+                    for key in sorted(keys):
+                        if key in crps_cache:
+                            page_scores[key] = crps_cache[key]
+                            crps_cache.move_to_end(key)
+                        elif key in scores:
+                            page_scores[key] = scores[key]
+                    missing = keys - page_scores.keys()
+                    fresh = self.crps_scores(missing)
+                    scores.update({key: None for key in missing - fresh.keys()})
+                    page_scores.update(fresh)
+                    for key in sorted(fresh):
+                        crps_cache[key] = fresh[key]
+                        crps_cache.move_to_end(key)
+                        while len(crps_cache) > 4096:
+                            crps_cache.popitem(last=False)
                 for item in page:
                     key = (item["distribution_hash"], item["selected_close_exact"])
-                    item["crps"] = scores.get(key) if key in keys else None
+                    item["crps"] = page_scores.get(key) if key in keys else None
             yield from page
 
     def crps_scores(

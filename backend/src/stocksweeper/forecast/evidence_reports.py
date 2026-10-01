@@ -9,6 +9,8 @@ import hashlib
 import json
 import os
 import tempfile
+from collections import OrderedDict
+from collections.abc import Iterable, Sequence
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -48,38 +50,13 @@ CANDIDATE_VERSIONS = {
     "iv_physical": "iv-physical-v1",
 }
 BANDS = {"1": range(1, 2), "2-5": range(2, 6), "6-25": range(6, 26)}
+_BASELINE_REUSE_LIMIT = 10_000
 
 
-def ledger_band_rows(
-    ledger: ForecastLedger,
-    calendar: SessionCalendar,
-    provenance: str,
-    candidate: str,
-    holdout_start: date | None,
-    period: str,
-    band: str,
-    as_of: datetime | None = None,
-    since: date | None = None,
-    current_version_only: bool = False,
-) -> list[ContestRow]:
-    """Adapt first-party issuance rows to the paired evaluator's exact grain."""
-    horizons = BANDS[band]
-    start = max(
-        (day for day in (since, holdout_start if period == "holdout" else None) if day),
-        default=None,
-    )
-    issues = ledger.iter_evaluation_rows(
-        provenance=provenance,
-        since=start,
-        expiry_before=holdout_start if period == "screen" else None,
-        methods=("lognormal_ewma", candidate),
-        horizon_range=(horizons.start, horizons.stop - 1),
-        with_crps=True,
-        issued_before=as_of,
-        label_as_of=as_of,
-    )
-    rows: list[ContestRow] = []
-    candidate_keys: set[tuple[object, ...]] = set()
+def _contest_rows(
+    issues: Iterable[dict[str, object]], calendar: SessionCalendar,
+    provenance: str, candidate: str, current_version_only: bool,
+) -> Iterable[ContestRow]:
     for item in issues:
         origin = item["input_session"]
         method = item["method"]
@@ -105,7 +82,7 @@ def ledger_band_rows(
             "near_atm" if relative <= 0.05 else
             "moderate" if relative <= 0.15 else "tail"
         )
-        row = ContestRow(
+        yield ContestRow(
             ticker=item["ticker"], origin=origin,
             expiry_session=item["expiry_session"],
             horizon=calendar.horizon(origin, item["expiration"]),
@@ -121,17 +98,56 @@ def ledger_band_rows(
             crps=(item["crps"] if label_valid else None),
             prepare_ms=item["prepare_ms"], lookup_ms=item["lookup_ms"],
         )
-        if current_version_only and candidate != "lognormal_ewma":
-            key = (row.ticker, row.origin, row.expiry_session, row.contract_id)
-            if method == candidate:
-                candidate_keys.add(key)
-        rows.append(row)
+
+
+def _contract_key(row: ContestRow) -> tuple[object, ...]:
+    return row.ticker, row.origin, row.expiry_session, row.contract_id
+
+
+def ledger_band_rows(
+    ledger: ForecastLedger,
+    calendar: SessionCalendar,
+    provenance: str,
+    candidate: str,
+    holdout_start: date | None,
+    period: str,
+    band: str,
+    as_of: datetime | None = None,
+    since: date | None = None,
+    current_version_only: bool = False,
+    *,
+    baseline_rows: Sequence[ContestRow] | None = None,
+    crps_cache: OrderedDict[tuple[str, str], float] | None = None,
+) -> list[ContestRow]:
+    """Adapt first-party issuance rows to the paired evaluator's exact grain."""
+    horizons = BANDS[band]
+    start = max(
+        (day for day in (since, holdout_start if period == "holdout" else None) if day),
+        default=None,
+    )
+    issues = ledger.iter_evaluation_rows(
+        provenance=provenance,
+        since=start,
+        expiry_before=holdout_start if period == "screen" else None,
+        methods=(("lognormal_ewma", candidate) if baseline_rows is None else (candidate,)),
+        horizon_range=(horizons.start, horizons.stop - 1),
+        with_crps=True,
+        issued_before=as_of,
+        label_as_of=as_of,
+        crps_cache=crps_cache,
+    )
+    rows = list(_contest_rows(issues, calendar, provenance, candidate, current_version_only))
+    if baseline_rows is not None:
+        candidate_keys = {_contract_key(row) for row in rows if row.method == candidate}
+        # Restrict before vintage selection: unrelated earlier baselines must not
+        # change the first input vintage of candidate-covered contracts.
+        rows.extend(row for row in baseline_rows if _contract_key(row) in candidate_keys)
+        rows.sort(key=lambda row: row.issuance_key or "")
     if current_version_only and candidate != "lognormal_ewma":
+        candidate_keys = {_contract_key(row) for row in rows if row.method == candidate}
         return [
             row for row in rows
-            if row.method == candidate
-            or (row.ticker, row.origin, row.expiry_session, row.contract_id)
-            in candidate_keys
+            if row.method == candidate or _contract_key(row) in candidate_keys
         ]
     return rows
 
@@ -308,10 +324,20 @@ def build_model_evidence(
     since = as_of.date() - timedelta(days=1096)
     capture_counts = capture_window_counts(data_dir, as_of - timedelta(days=35), as_of)
     result: dict[tuple[str, str], dict[str, Any]] = {}
+    crps_cache: OrderedDict[tuple[str, str], float] = OrderedDict()
+    skipped = ledger.evaluation_skipped_attempts("as_issued")
+    coverage = ledger.panel_coverage(since=since, before=None, as_of=as_of)
+    prospective_reports = {
+        candidate: {
+            "source": "append-only forecast ledger", "provenance": "as_issued",
+            "skipped_attempts": skipped, "prospective_panel_coverage": coverage, "bands": {},
+        }
+        for candidate in CANDIDATE_VERSIONS
+    }
     for band in BANDS:
         baseline_rows = ledger_band_rows(
             ledger, calendar, "as_issued", "lognormal_ewma", None, "all", band,
-            as_of=as_of, since=since, current_version_only=True,
+            as_of=as_of, since=since, current_version_only=True, crps_cache=crps_cache,
         )
         reference = evaluate_band(
             [*baseline_rows, *(replace(row, method="baseline_reference") for row in baseline_rows)],
@@ -327,11 +353,22 @@ def build_model_evidence(
             ),
             "retrospective": None,
         }
+        # ponytail: reuse at most 10,000 baseline rows per band; larger bands
+        # use existing paired scans instead of retaining a whole-ledger cache.
+        if len(baseline_rows) > _BASELINE_REUSE_LIMIT:
+            baseline_rows = None
+        for candidate in CANDIDATE_VERSIONS:
+            prospective_reports[candidate]["bands"][band] = evaluate_band(
+                ledger_band_rows(
+                    ledger, calendar, "as_issued", candidate, None, "all", band,
+                    as_of=as_of, since=since, current_version_only=True,
+                    baseline_rows=baseline_rows, crps_cache=crps_cache,
+                ),
+                candidate, band, calendar=calendar,
+            )
+        del baseline_rows
     for candidate, version in CANDIDATE_VERSIONS.items():
-        prospective = ledger_contest(
-            ledger, calendar, "as_issued", candidate, None, "all", as_of=as_of,
-            since=since, current_version_only=True,
-        )
+        prospective = prospective_reports[candidate]
         replay = load_replay_report(data_dir, candidate)
         prospective_hash = _digest(prospective)
         for band in BANDS:
