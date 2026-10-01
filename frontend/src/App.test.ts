@@ -124,6 +124,7 @@ describe("metric heatmap", () => {
       "call_bid_cents",
       "call_ask_cents",
       "call_spread_pct_tenths",
+      "iv_pct_tenths",
       "call_open_interest",
       "net_premium_cents",
       "net_apr_pct_tenths",
@@ -407,20 +408,21 @@ const clipboardHeaders = [
   "Bid",
   "Ask",
   "Spread (%)",
+  "IV",
   "OI",
   "Premium (net)",
   "APR (net)",
   "Breakeven",
   "% to assignment",
 ]
-const pricedValues = ["$50.00", "$0.50", "$0.51", "2.0%", "55", "$50.00", "42.1%", "$49.40", "1.0%"]
+const pricedValues = ["$50.00", "$0.50", "$0.51", "2.0%", "45.0%", "55", "$50.00", "42.1%", "$49.40", "1.0%"]
 
 describe("row clipboard", () => {
   it("formats displayed values, em dashes, and ChatGPT markdown with optional contract context", () => {
     expect(COLUMN_HEADERS.map((column) => column.label)).toEqual([...COPY_HEADERS])
     expect([...COPY_HEADERS]).toEqual(clipboardHeaders)
     expect(formatContractValues(pricedContract, COLUMN_HEADERS)).toEqual(pricedValues)
-    expect(formatContractValues(missingRow, COLUMN_HEADERS)).toEqual(["$40.50", "—", "—", "—", "—", "—", "—", "—", "—"])
+    expect(formatContractValues(missingRow, COLUMN_HEADERS)).toEqual(["$40.50", "—", "—", "—", "—", "—", "—", "—", "—", "—"])
     expect(copyRowAccessibleName("IREN", "2026-09-18", "$50.00")).toBe("Copy row IREN 2026-09-18 strike $50.00")
     expect(copyRowStateKey("IREN", "2026-12-18", 5)).toBe("IREN-2026-12-18-5")
     expect(copyRowStateKey("CIFR", "2026-12-18", 5)).toBe("CIFR-2026-12-18-5")
@@ -438,12 +440,12 @@ describe("row clipboard", () => {
       [
         "IREN · 2026-09-18 · 7 DTE · Stock bid: $49.90",
         "",
-        "| Strike | Bid | Ask | Spread (%) | OI | Premium (net) | APR (net) | Breakeven | % to assignment |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
-        "| $50.00 | $0.50 | $0.51 | 2.0% | 55 | $50.00 | 42.1% | $49.40 | 1.0% |",
+        "| Strike | Bid | Ask | Spread (%) | IV | OI | Premium (net) | APR (net) | Breakeven | % to assignment |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| $50.00 | $0.50 | $0.51 | 2.0% | 45.0% | 55 | $50.00 | 42.1% | $49.40 | 1.0% |",
       ].join("\n"),
     )
-    expect(formatRowClipboard(baseContext, COPY_HEADERS, formatContractValues(missingRow, COLUMN_HEADERS))).toContain("| $40.50 | — | — | — | — | — | — | — | — |")
+    expect(formatRowClipboard(baseContext, COPY_HEADERS, formatContractValues(missingRow, COLUMN_HEADERS))).toContain("| $40.50 | — | — | — | — | — | — | — | — | — |")
     expect(formatRowClipboard(baseContext, COPY_HEADERS, formatContractValues(pricedContract, COLUMN_HEADERS))).not.toContain("Copy")
 
     const sized = formatRowClipboard(
@@ -456,7 +458,7 @@ describe("row clipboard", () => {
     )
     expect(sized).toContain("IREN · 2026-09-18 · 7 DTE · Stock bid: $49.90 · 2 contracts · 200 sh")
     expect(sized).not.toContain("budget")
-    expect(sized).toContain("| $50.00 | $0.50 | $0.51 | 2.0% | 55 | $100.00 | 42.1% | $49.40 | 1.0% |")
+    expect(sized).toContain("| $50.00 | $0.50 | $0.51 | 2.0% | 45.0% | 55 | $100.00 | 42.1% | $49.40 | 1.0% |")
   })
 
   it("scales net premium for a five-contract row and leaves the other chain columns one-contract", () => {
@@ -491,6 +493,7 @@ describe("row clipboard", () => {
       "$4.40",
       "$4.50",
       "2.0%",
+      "45.0%",
       "55",
       "$2,200.00",
       "63.4%",

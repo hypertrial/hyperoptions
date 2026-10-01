@@ -122,13 +122,15 @@ describe("chain interactions", () => {
     expect(pricedCells[0].textContent).toContain("Market odds are unavailable")
     expect(pricedCells[1].textContent).toBe("$0.50")
     expect(pricedCells[1].hasAttribute("data-heat")).toBe(false)
-    expect(pricedCells[5].textContent).toBe("$50.00")
-    expect(pricedCells[5].getAttribute("data-heat")).toBe("0.50")
+    expect(pricedCells[4].textContent).toBe("45.0%")
+    expect(pricedCells[4].hasAttribute("data-heat")).toBe(false)
+    expect(pricedCells[6].textContent).toBe("$50.00")
+    expect(pricedCells[6].getAttribute("data-heat")).toBe("0.50")
     const missingRowCells = within(first!).getAllByRole("row")[2].querySelectorAll("td")
-    expect(missingRowCells[5].textContent).toBe("—")
-    expect(missingRowCells[5].hasAttribute("data-heat")).toBe(false)
+    expect(missingRowCells[6].textContent).toBe("—")
+    expect(missingRowCells[6].hasAttribute("data-heat")).toBe(false)
     const missingCells = [...missingRowCells].map((cell) => cell.textContent)
-    expect(missingCells.slice(1, 9)).toEqual(["—", "—", "—", "—", "—", "—", "—", "—"])
+    expect(missingCells.slice(1, 10)).toEqual(["—", "—", "—", "—", "—", "—", "—", "—", "—"])
     expect(screen.queryByText("Suggested trade")).toBeNull()
     expect(screen.getByRole("button", { name: "Copy row IREN 2026-09-18 strike $50.00" })).toBeTruthy()
     expect(screen.getByText("Market open at fetch")).toBeTruthy()
@@ -146,6 +148,7 @@ describe("chain interactions", () => {
       "Bid",
       "Ask",
       "Spread (%)",
+      "IV",
       "OI",
       "Premium (net)",
       "APR (net)",
@@ -154,10 +157,10 @@ describe("chain interactions", () => {
       "Watch",
       "Copy",
     ])
-    expect(headers.some((header) => header.textContent === "IV")).toBe(false)
-    expect(headers[5].querySelector("abbr")?.getAttribute("title")).toBe(headers[5].getAttribute("title"))
-    expect(headers[5].getAttribute("title")).toContain("open interest")
-    expect(headers[6].getAttribute("title")).toContain("Time value")
+    expect(headers[5].getAttribute("title")).toContain("implied volatility")
+    expect(headers[6].querySelector("abbr")?.getAttribute("title")).toBe(headers[6].getAttribute("title"))
+    expect(headers[6].getAttribute("title")).toContain("open interest")
+    expect(headers[7].getAttribute("title")).toContain("Time value")
     expect(headers[2].getAttribute("title")).toContain("100 × (bid − intrinsic)")
     expect(screen.getByRole("main").getAttribute("aria-busy")).toBe("false")
     expect(screen.getByRole("button", { name: "Filters" }).getAttribute("aria-expanded")).toBe("false")
@@ -888,7 +891,7 @@ describe("chain interactions", () => {
     render(<ItmChain />)
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("IREN", "call", "itm"))
     expect(window.location.search).toBe("?t=IREN&side=call&m=itm")
-    expect(screen.queryByRole("columnheader", { name: "IV" })).toBeNull()
+    expect(screen.getByRole("columnheader", { name: "IV" })).toBeTruthy()
     expect(screen.getByRole("columnheader", { name: "Premium (net)" })).toBeTruthy()
     expect(screen.getByRole("columnheader", { name: "% to assignment" })).toBeTruthy()
   })
@@ -921,7 +924,7 @@ describe("chain interactions", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2))
     const sized = writeText.mock.calls[1][0] as string
     expect(sized).toContain("IREN · 2026-09-18 · 7 DTE · Stock bid: $49.90 · 2 contracts · 200 sh")
-    expect(sized).toContain("| $50.00 | $0.50 | $0.51 | 2.0% | 55 | $100.00 | 42.1% | $49.40 | 1.0% |")
+    expect(sized).toContain("| $50.00 | $0.50 | $0.51 | 2.0% | 45.0% | 55 | $100.00 | 42.1% | $49.40 | 1.0% |")
 
     fireEvent.change(screen.getByLabelText("Contracts"), { target: { value: "0" } })
     fireEvent.click(screen.getByRole("button", { name: "Copy row IREN 2026-09-18 strike $50.00" }))
@@ -1016,6 +1019,7 @@ describe("chain interactions", () => {
       "Bid",
       "Ask",
       "Spread (%)",
+      "IV",
       "OI",
       "Premium (net)",
       "APR (net)",

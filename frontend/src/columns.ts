@@ -62,6 +62,15 @@ export function chainColumns(side: Side): ColumnDef[] {
       format: (row) => unsignedPercentTenths(quote(side, row, "spread_pct_tenths")),
     },
     {
+      id: "iv_pct_tenths",
+      label: "IV",
+      info: "European no-dividend Black-Scholes implied volatility from the bid/ask midpoint. Blank when that midpoint is outside no-arbitrage bounds. Contracts does not scale this.",
+      abbrev: true,
+      heatmap: false,
+      accessor: (row) => row.iv_pct_tenths,
+      format: (row) => unsignedPercentTenths(row.iv_pct_tenths),
+    },
+    {
       id: `${side}_open_interest`,
       label: "OI",
       info: `${name} open interest for this strike and expiration.`,
