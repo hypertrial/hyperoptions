@@ -9,7 +9,7 @@ export function parseThreshold(raw: string): ExactDecimal | null {
   return parseExactToken(raw, /[$%,\s]/g)
 }
 
-export type FilterId = "premium" | "apr" | "breakeven" | "maxDte"
+export type FilterId = "premium" | "apr" | "breakeven" | "minIv" | "maxDte"
 
 export type FilterTexts = Record<FilterId, string>
 
@@ -17,6 +17,7 @@ export const EMPTY_FILTER_TEXTS: FilterTexts = {
   premium: "",
   apr: "",
   breakeven: "",
+  minIv: "",
   maxDte: "",
 }
 
@@ -65,6 +66,16 @@ export function filterFieldSpecs(side: Side): FilterFieldSpec[] {
       rowKey: metrics.breakeven.key,
     },
     {
+      id: "minIv",
+      inputId: "min-iv",
+      label: "Min IV (%)",
+      chipLabel: "IV (%)",
+      chipKey: "min-iv",
+      bound: "min",
+      scale: 1,
+      rowKey: "iv_pct_tenths",
+    },
+    {
       id: "maxDte",
       inputId: "max-dte",
       label: "Max DTE",
@@ -81,6 +92,7 @@ export type FilterState = {
   premium: ExactDecimal | null
   apr: ExactDecimal | null
   breakeven: ExactDecimal | null
+  minIv: ExactDecimal | null
   maxDte: ExactDecimal | null
 }
 
@@ -94,6 +106,7 @@ export function passesFilters(
     meetsScaledMinimum(row[metrics.premium.key], filters.premium, metrics.premium.scale)
     && meetsScaledMinimum(row[metrics.apr.key], filters.apr, metrics.apr.scale)
     && meetsScaledMinimum(row[metrics.breakeven.key], filters.breakeven, metrics.breakeven.scale)
+    && meetsScaledMinimum(row.iv_pct_tenths, filters.minIv, 1)
     && meetsScaledMaximum(row.dte, filters.maxDte, 0)
   )
 }

@@ -168,7 +168,7 @@ describe("contract sizing", () => {
   })
 })
 
-const openFilters = { premium: null, apr: null, breakeven: null, maxDte: null }
+const openFilters = { premium: null, apr: null, breakeven: null, minIv: null, maxDte: null }
 
 describe("row filters", () => {
   it("parses optional signed thresholds and ANDs minimums", () => {
@@ -313,6 +313,32 @@ describe("row filters", () => {
     expect(passesFilters(row, { ...openFilters, apr: parseThreshold("94.51") }, "put")).toBe(false)
     expect(passesFilters(row, { ...openFilters, breakeven: parseThreshold("11.41") }, "put")).toBe(false)
     expect(passesFilters(row, { ...openFilters, premium: parseThreshold("80.01") }, "put")).toBe(false)
+  })
+
+  it("applies an inclusive minimum IV at displayed tenths and ANDs it with other floors", () => {
+    const priced = { net_premium_cents: 5000, net_apr_pct_tenths: 421, breakeven_change_pct_tenths: 10, iv_pct_tenths: 450, dte: 7 }
+    const below = { ...priced, iv_pct_tenths: 449 }
+    const blank = { ...priced, iv_pct_tenths: null }
+    expect(unsignedPercentTenths(priced.iv_pct_tenths)).toBe("45.0%")
+    expect(passesFilters(priced, openFilters, "call")).toBe(true)
+    expect(passesFilters(priced, { ...openFilters, minIv: parseThreshold("45") }, "call")).toBe(true)
+    expect(passesFilters(priced, { ...openFilters, minIv: parseThreshold("45.0") }, "call")).toBe(true)
+    expect(passesFilters(priced, { ...openFilters, minIv: parseThreshold("45.1") }, "call")).toBe(false)
+    expect(passesFilters(below, { ...openFilters, minIv: parseThreshold("45") }, "call")).toBe(false)
+    expect(passesFilters(blank, openFilters, "call")).toBe(true)
+    expect(passesFilters(blank, { ...openFilters, minIv: parseThreshold("0") }, "call")).toBe(false)
+    expect(passesFilters(priced, { ...openFilters, minIv: parseThreshold("45"), apr: parseThreshold("50") }, "call")).toBe(false)
+    expect(passesFilters(priced, { ...openFilters, minIv: parseThreshold("45"), apr: parseThreshold("42.1") }, "call")).toBe(true)
+    expect(passesFilters(
+      { net_premium_cents: 8000, net_apr_pct_tenths: 945, breakeven_change_pct_tenths: 114, iv_pct_tenths: 380, dte: 7 },
+      { ...openFilters, minIv: parseThreshold("38") },
+      "put",
+    )).toBe(true)
+    expect(passesFilters(
+      { net_premium_cents: 8000, net_apr_pct_tenths: 945, breakeven_change_pct_tenths: 114, iv_pct_tenths: 380, dte: 7 },
+      { ...openFilters, minIv: parseThreshold("38.1") },
+      "put",
+    )).toBe(false)
   })
 
   it("mounts only expanded expiration rows while retaining every header group", () => {

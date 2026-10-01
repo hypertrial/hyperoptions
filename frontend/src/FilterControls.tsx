@@ -82,6 +82,7 @@ export default function FilterControls({
     premium: parsed.premium,
     apr: parsed.apr,
     breakeven: parsed.breakeven,
+    minIv: parsed.minIv,
     maxDte: parsed.maxDte,
   }
   const chips = specs

@@ -167,6 +167,7 @@ describe("chain interactions", () => {
     expect(screen.getByLabelText("Min Premium (net) ($)")).toBeTruthy()
     expect(screen.getByLabelText("Min APR (net) (%)")).toBeTruthy()
     expect(screen.getByLabelText("Min % to assignment (%)")).toBeTruthy()
+    expect(screen.getByLabelText("Min IV (%)")).toBeTruthy()
     expect(screen.getByLabelText("Max DTE")).toBeTruthy()
     expect(screen.queryByLabelText("Min DTE")).toBeNull()
     expect(screen.queryByRole("button", { name: "Columns" })).toBeNull()
@@ -886,6 +887,28 @@ describe("chain interactions", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  it("hides blank and below-floor IV while keeping an exact displayed percent", async () => {
+    render(<ItmChain />)
+    await waitFor(() => expect(screen.getByRole("heading", { name: /2026-09-18/ })).toBeTruthy())
+    fireEvent.click(screen.getByRole("button", { name: "Expand all" }))
+    expect(screen.getAllByText("45.0%").length).toBeGreaterThan(0)
+    expect(screen.getByText("$40.50")).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText("Min IV (%)"), { target: { value: "45" } })
+    expect(screen.getByRole("button", { name: "Remove filter IV (%) 45" })).toBeTruthy()
+    expect(screen.getAllByText("45.0%").length).toBeGreaterThan(0)
+    expect(screen.queryByText("$40.50")).toBeNull()
+
+    fireEvent.change(screen.getByLabelText("Contracts"), { target: { value: "2" } })
+    expect(screen.getAllByText("45.0%").length).toBeGreaterThan(0)
+    expect(screen.queryByText("$40.50")).toBeNull()
+
+    fireEvent.change(screen.getByLabelText("Min IV (%)"), { target: { value: "45.1" } })
+    expect(screen.queryByText("45.0%")).toBeNull()
+    expect(screen.getByText("No rows match the current filters.")).toBeTruthy()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it("maps an all-moneyness link to the side default and drops retired column params", async () => {
     window.history.replaceState(null, "", "/?t=IREN&side=call&m=all&cols=strike_cents,iv_pct_tenths")
     render(<ItmChain />)
@@ -1008,6 +1031,7 @@ describe("chain interactions", () => {
     expect(screen.getByLabelText("Min Premium (net) ($)")).toBeTruthy()
     expect(screen.getByLabelText("Min APR (net) (%)")).toBeTruthy()
     expect(screen.getByLabelText("Min % to assignment (%)")).toBeTruthy()
+    expect(screen.getByLabelText("Min IV (%)")).toBeTruthy()
     expect(screen.getByLabelText("Max DTE")).toBeTruthy()
     expect(screen.getByText("$45.00")).toBeTruthy()
     expect(screen.getByText("$44.20")).toBeTruthy()

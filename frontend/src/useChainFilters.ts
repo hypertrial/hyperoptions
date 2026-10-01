@@ -12,8 +12,9 @@ export function useChainFilters() {
     premium: parseThreshold(texts.premium),
     apr: parseThreshold(texts.apr),
     breakeven: parseThreshold(texts.breakeven),
+    minIv: parseThreshold(texts.minIv),
     maxDte: parseThreshold(texts.maxDte),
   }
-  const key = `${texts.premium}|${texts.apr}|${texts.breakeven}|${texts.maxDte}`
+  const key = `${texts.premium}|${texts.apr}|${texts.breakeven}|${texts.minIv}|${texts.maxDte}`
   return { texts, parsed, setText, clear, key }
 }
