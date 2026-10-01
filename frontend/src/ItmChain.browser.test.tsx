@@ -94,6 +94,18 @@ describe("chain interactions", () => {
   })
   afterEach(cleanup)
 
+  it("shows clipboard denial and clears it after a successful retry", async () => {
+    writeText.mockRejectedValueOnce(new Error("Clipboard access denied"))
+    render(<ItmChain />)
+    const button = (await screen.findAllByRole("button", { name: /Copy row IREN/ }))[0]
+    fireEvent.click(button)
+    expect((await screen.findByRole("alert")).textContent).toContain("Allow clipboard access")
+    fireEvent.click(button)
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull())
+    expect(writeText).toHaveBeenCalledTimes(2)
+    expect(screen.getByText("Copied")).toBeTruthy()
+  })
+
   it("loads IREN first, groups expirations, and sorts strikes high to low", async () => {
     render(<ItmChain />)
 

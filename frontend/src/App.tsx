@@ -48,7 +48,7 @@ function Workspace() {
       <Routes>
         <Route path="/" element={<ItmChain forecastModel={forecastModel} />} />
         <Route path="/research/*" element={<Navigate to="/watchlist" replace />} />
-        <Route path="/watchlist" element={<Suspense fallback={<p>Loading watchlist…</p>}><Watchlist chainUrl={lastChainUrl} forecastModel={forecastModel} /></Suspense>} />
+        <Route path="/watchlist" element={<Suspense fallback={<main id="main-content" className="watchlist-page" tabIndex={-1} aria-busy="true"><p role="status">Loading watchlist…</p></main>}><Watchlist chainUrl={lastChainUrl} forecastModel={forecastModel} /></Suspense>} />
         <Route path="*" element={<main id="main-content" className="empty-state route-not-found"><h1>Page not found</h1><p>This address does not match a workstation page.</p><p><Link to={chainUrl}>Open the option chain</Link> or <Link to="/watchlist">go to the watchlist</Link>.</p></main>} />
       </Routes>
     </div>

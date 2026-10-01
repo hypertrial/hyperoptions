@@ -270,7 +270,7 @@
   .model-evidence > summary { width: fit-content; color: var(--foreground); cursor: pointer; }
   .model-evidence > summary::before { content: '▸ '; }
   .model-evidence[open] > summary::before { content: '▾ '; }
-  .model-evidence-content { display: grid; gap: 5px; padding: 8px 0 2px 12px; }
+  .model-evidence-content { display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; padding: 8px 0 2px 12px; }
   .model-evidence-empty { font-size: .78rem; }
   @media (max-width: 600px) {
     .model-comparison-dialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
@@ -815,6 +815,9 @@
     justify-content: space-between;
     gap: 12px;
   }
+  .copy-error { inset: auto 16px 16px; z-index: 80; max-width: calc(100vw - 32px); margin: 0 auto; box-shadow: 0 6px 24px rgb(0 0 0 / .18); }
+  .copy-error [data-slot="alert-description"] { display: flex; align-items: center; gap: 12px; }
+  .copy-error button { flex: none; }
   .empty-state,
   .error-state,
   .loading-state {

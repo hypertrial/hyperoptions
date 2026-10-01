@@ -67,6 +67,7 @@ export default function ItmChain({ forecastModel = DEFAULT_FORECAST_MODEL }: { f
   const [contractsText, setContractsText] = useState("")
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [copiedNotice, setCopiedNotice] = useState("")
+  const [copyError, setCopyError] = useState<string | null>(null)
   const [watchStates, setWatchStates] = useState<Record<string, WatchActionState>>({})
   const [sort, setSort] = useState<SortState>(DEFAULT_SORT)
   const filtersState = useChainFilters()
@@ -118,6 +119,7 @@ export default function ItmChain({ forecastModel = DEFAULT_FORECAST_MODEL }: { f
     if (copiedClear.current != null) window.clearTimeout(copiedClear.current)
     setCopiedKey(null)
     setCopiedNotice("")
+    setCopyError(null)
     expansion.reset(`${item}|${side}|${moneyness}`)
     beginTickerChange()
     setState({ ...state, ticker: item })
@@ -160,6 +162,7 @@ export default function ItmChain({ forecastModel = DEFAULT_FORECAST_MODEL }: { f
   }
 
   const copyVisibleRow = async (row: { expiration: string; strike_cents: number; strike_exact?: string }, group: { expiration: string; dte: number }) => {
+    setCopyError(null)
     const text = formatRowClipboard(
       {
         ticker,
@@ -175,6 +178,7 @@ export default function ItmChain({ forecastModel = DEFAULT_FORECAST_MODEL }: { f
     try {
       await navigator.clipboard.writeText(text)
     } catch {
+      setCopyError("Couldn’t copy this row. Allow clipboard access and try again.")
       return
     }
     markCopied(copyRowStateKey(ticker, row.expiration, row.strike_exact ?? row.strike_cents))
@@ -306,6 +310,10 @@ export default function ItmChain({ forecastModel = DEFAULT_FORECAST_MODEL }: { f
           ) : null}
 
           <p className="visually-hidden" role="status" aria-live="polite">{copiedNotice}</p>
+          {copyError ? <Alert role="alert" className="banner copy-error fixed w-fit"><AlertDescription>
+            <span>{copyError}</span>
+            <Button type="button" variant="outline" size="sm" onClick={() => setCopyError(null)}>Dismiss</Button>
+          </AlertDescription></Alert> : null}
           {view.remainingCount > 0 ? (
             <div className="reveal-cluster">
               <p className="control-note">Displaying {view.mountedCount.toLocaleString("en-US")} of {view.expandedVisibleCount.toLocaleString("en-US")} {plural(view.expandedVisibleCount, "row")} in expanded expirations</p>

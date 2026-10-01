@@ -1,10 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react"
 
-import {
-  Combobox,
-  ComboboxInput,
-} from "@/components/ui/combobox"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { fetchTickers } from "./api"
 import type { TickerListing } from "./types"
 
@@ -59,7 +56,13 @@ export default function TickerPicker({ ticker, disabled, onSelect }: Props) {
       if (id === requestId.current) requestId.current += 1
       controller.abort()
     }
-  }, [disabled, query, retry])
+  }, [disabled, query, retry, ticker])
+
+  useEffect(() => {
+    if (open && results[active]) {
+      document.getElementById(`${listId}-${results[active].symbol}`)?.scrollIntoView?.({ block: "nearest" })
+    }
+  }, [open, active, results, listId])
 
   const choose = (symbol: string) => {
     onSelect(symbol)
@@ -68,43 +71,37 @@ export default function TickerPicker({ ticker, disabled, onSelect }: Props) {
   }
 
   const changeQuery = (value: string) => {
+    const next = value.toUpperCase()
+    setOpen(true)
+    if (next === query) return
     requestId.current += 1
-    setQuery(value.toUpperCase())
+    setQuery(next)
     setResults([])
     setActive(0)
     setLoading(true)
-    setOpen(true)
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "ArrowDown") {
       event.preventDefault()
       setOpen(true)
-      setActive((index) => Math.min(index + 1, Math.max(results.length - 1, 0)))
+      setActive((index) => open ? Math.min(index + 1, Math.max(results.length - 1, 0)) : 0)
       return
     }
     if (event.key === "ArrowUp") {
       event.preventDefault()
-      setActive((index) => Math.max(index - 1, 0))
+      setOpen(true)
+      setActive((index) => open ? Math.max(index - 1, 0) : Math.max(results.length - 1, 0))
       return
     }
-    if (event.key === "Home") {
-      event.preventDefault()
-      setActive(0)
-      return
-    }
-    if (event.key === "End") {
-      event.preventDefault()
-      setActive(Math.max(results.length - 1, 0))
-      return
-    }
-    if (event.key === "Enter") {
+    if (event.key === "Enter" && open) {
       event.preventDefault()
       const selected = results[active]
       if (selected && !unavailable) choose(selected.symbol)
       return
     }
     if (event.key === "Escape") {
+      if (open) event.stopPropagation()
       setOpen(false)
     }
   }
@@ -115,33 +112,24 @@ export default function TickerPicker({ ticker, disabled, onSelect }: Props) {
     <div className="ticker-picker">
       <label className="control-field w-full">
         <span>Ticker</span>
-        <Combobox
-          items={results}
-          value={results.find((item) => item.symbol === ticker) ?? null}
-          inputValue={query}
-          onInputValueChange={changeQuery}
-          filter={null}
-          itemToStringValue={(item) => item.symbol}
+        <Input
+          id="ticker-picker"
+          role="combobox"
+          value={query}
+          autoComplete="off"
+          spellCheck={false}
           disabled={blocked}
-        >
-          <ComboboxInput
-            id="ticker-picker"
-            autoComplete="off"
-            spellCheck={false}
-            disabled={blocked}
-            aria-controls={listId}
-            aria-activedescendant={open && results[active] ? `${listId}-${results[active].symbol}` : undefined}
-            onFocus={() => setOpen(true)}
-            onBlur={(event) => {
-              const next = event.relatedTarget as Node | null
-              if (next && event.currentTarget.closest(".ticker-picker")?.contains(next)) return
-              window.setTimeout(() => setOpen(false), 150)
-            }}
-            onKeyDown={onKeyDown}
-            onChange={(event) => changeQuery(event.currentTarget.value)}
-            className="w-full"
-          />
-        </Combobox>
+          aria-autocomplete="list"
+          aria-expanded={open && !blocked}
+          aria-controls={open && !blocked ? listId : undefined}
+          aria-activedescendant={open && !blocked && results[active] ? `${listId}-${results[active].symbol}` : undefined}
+          onFocus={() => setOpen(true)}
+          onClick={() => setOpen(true)}
+          onBlur={() => setOpen(false)}
+          onKeyDown={onKeyDown}
+          onChange={(event) => changeQuery(event.currentTarget.value)}
+          className="w-full"
+        />
       </label>
       {unavailable ? (
         <div>
@@ -152,7 +140,7 @@ export default function TickerPicker({ ticker, disabled, onSelect }: Props) {
           }}>Retry ticker list</Button>
         </div>
       ) : null}
-      {open && !unavailable ? (
+      {open && !blocked ? (
         <ul
           id={listId}
           role="listbox"
@@ -168,6 +156,7 @@ export default function TickerPicker({ ticker, disabled, onSelect }: Props) {
               role="option"
               aria-selected={index === active}
               className={index === active ? "active" : undefined}
+              onPointerDown={(event) => event.preventDefault()}
               onClick={() => choose(item.symbol)}
             >
               <strong>{item.symbol}</strong>
