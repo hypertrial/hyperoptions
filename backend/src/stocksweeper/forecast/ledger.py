@@ -645,17 +645,18 @@ class ForecastLedger:
             batch = digests[start : start + 64]
             placeholders = ",".join("?" for _ in batch)
             with connect(self.path) as connection:
-                for row in rows(
+                distributions = rows(
                     connection,
                     "SELECT distribution_hash, terminal_prices, weights "
                     f"FROM forecast_distributions WHERE distribution_hash IN ({placeholders})",
                     batch,
-                ):
-                    digest = row["distribution_hash"]
-                    prices = tuple(row["terminal_prices"])
-                    weights = tuple(row["weights"])
-                    for close in closes_by_hash[digest]:
-                        scores[(digest, close)] = crps(prices, weights, float(Decimal(close)))
+                )
+            for row in distributions:
+                digest = row["distribution_hash"]
+                prices = tuple(row["terminal_prices"])
+                weights = tuple(row["weights"])
+                for close in closes_by_hash[digest]:
+                    scores[(digest, close)] = crps(prices, weights, float(Decimal(close)))
         return scores
 
     def evaluation_skipped_attempts(self, provenance: Provenance) -> dict[str, int]:
