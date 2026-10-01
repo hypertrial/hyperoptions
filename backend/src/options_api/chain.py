@@ -496,7 +496,7 @@ def _assemble(
                 )
                 if cached is not None:
                     cached[key] = contract
-            grouped.setdefault(row.expiration, []).append(contract)
+            grouped.setdefault(row.expiration, []).append(contract.model_copy())
     expirations = []
     for expiration, contracts in sorted(grouped.items()):
         kept = sorted(contracts, key=lambda item: Decimal(item.strike_exact), reverse=True)

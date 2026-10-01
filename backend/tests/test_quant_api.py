@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -316,6 +317,57 @@ def _row_with_iv(body: dict) -> dict:
             if contract["iv_pct_tenths"] is not None and contract["expiration"] == "2026-09-25":
                 return contract
     raise AssertionError("no implied volatility on the displayed chain")
+
+
+@pytest.mark.parametrize("route", ["covered-calls", "cash-secured-puts"])
+def test_concurrent_chain_responses_keep_their_selected_forecast(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, route: str,
+) -> None:
+    _install_quotes(monkeypatch)
+    entered = threading.Event()
+    release = threading.Event()
+    ledger_calls = 0
+
+    def record_batch(_entries) -> None:
+        nonlocal ledger_calls
+        ledger_calls += 1
+        if ledger_calls == 1:
+            entered.set()
+            assert release.wait(timeout=10), "first ledger write was not released"
+
+    app = _app(tmp_path, lambda: NOW)
+    feed = _ChainFeed()
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        app.state.universe.seed([TickerListing(symbol="IREN", name="IREN")])
+        monkeypatch.setattr(app.state.service, "get_chain", feed.get_chain)
+        monkeypatch.setattr(app.state.service, "get_info", feed.get_info)
+        monkeypatch.setattr(app.state.service, "get_history", feed.get_history)
+        monkeypatch.setattr(app.state.market_odds, "schedule", lambda _tickers: None)
+        monkeypatch.setattr(app.state.market_odds, "schedule_for_chain", lambda *_args: False)
+        monkeypatch.setattr(app.state.physical_shadow, "submit", lambda _entries: None)
+        monkeypatch.setattr(app.state.predictive_odds.ledger, "record_batch", record_batch)
+        _forecast(monkeypatch, app, "2026-09-25")
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(
+                client.get, f"/api/{route}/IREN?forecast_model=empirical_scaled"
+            )
+            try:
+                assert entered.wait(timeout=10), "first request did not reach the ledger"
+                second = pool.submit(
+                    client.get, f"/api/{route}/IREN?forecast_model=lognormal_ewma"
+                ).result(timeout=10)
+            finally:
+                release.set()
+            first_response = first.result(timeout=10)
+
+    for response, method in (
+        (first_response, "empirical_scaled"), (second, "lognormal_ewma")
+    ):
+        assert response.status_code == 200
+        rows = [row for group in response.json()["expirations"] for row in group["contracts"]]
+        assert rows
+        assert all(row["predictive_odds"]["method"] == method for row in rows)
+        assert all(row["hypothetical_risk"]["forecast_method"] == method for row in rows)
 
 
 def test_chain_page_greeks_arrive_while_the_market_fit_is_blocked(

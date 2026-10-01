@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 
-from options_api.chain import assemble_covered_calls, load_covered_calls
+from options_api.chain import assemble_cash_secured_puts, assemble_covered_calls, load_covered_calls
 from options_api.greeks import compute_greeks
 from options_api.memo import ContractMemo
 from options_api.service import OptionChainService
@@ -43,6 +43,30 @@ def test_second_identical_request_skips_greeks(monkeypatch: pytest.MonkeyPatch) 
     )
     assert calls["n"] == built
     assert second == first
+
+
+@pytest.mark.parametrize("assemble", [assemble_covered_calls, assemble_cash_secured_puts])
+def test_memoized_contracts_are_isolated_between_pages(
+    monkeypatch: pytest.MonkeyPatch, assemble,
+) -> None:
+    calls = _spy(monkeypatch)
+    chain, info, history, today, now = synthetic_context()
+    memo = ContractMemo()
+    first = assemble(chain, info, history, today, now, "all", rate=RATE, memo=memo)
+    original = first.model_dump()
+    built = calls["n"]
+    second = assemble(chain, info, history, today, now, "all", rate=RATE, memo=memo)
+
+    first_row = first.expirations[0].contracts[0]
+    second_row = second.expirations[0].contracts[0]
+    assert second_row is not first_row
+    second_row.predictive_odds = second_row.predictive_odds.model_copy(
+        update={"method": "empirical_scaled"}
+    )
+    second_row.iv_pct_tenths = 999
+    assert first.model_dump() == original
+    assert assemble(chain, info, history, today, now, "all", rate=RATE, memo=memo) == first
+    assert calls["n"] == built
 
 
 def test_itm_then_all_builds_only_missing_contracts(monkeypatch: pytest.MonkeyPatch) -> None:
