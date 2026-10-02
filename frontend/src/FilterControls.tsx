@@ -78,19 +78,12 @@ export default function FilterControls({
   onClearFilters,
 }: Props) {
   const specs = filterFieldSpecs(side)
-  const parsedById: Record<FilterId, ExactDecimal | null> = {
-    premium: parsed.premium,
-    apr: parsed.apr,
-    breakeven: parsed.breakeven,
-    minIv: parsed.minIv,
-    maxDte: parsed.maxDte,
-  }
   const chips = specs
     .map((spec) => ({
       key: spec.chipKey,
       label: spec.chipLabel,
       value: texts[spec.id],
-      valid: parsedById[spec.id] !== null,
+      valid: parsed[spec.id] !== null,
       clear: () => onTextChange(spec.id, ""),
     }))
     .filter((chip) => chip.value.trim() !== "")
@@ -154,7 +147,7 @@ export default function FilterControls({
               id={spec.inputId}
               label={spec.label}
               value={texts[spec.id]}
-              parsed={parsedById[spec.id]}
+              parsed={parsed[spec.id]}
               onChange={(value) => onTextChange(spec.id, value)}
             />
           ))}

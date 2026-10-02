@@ -27,9 +27,6 @@ export type FilterFieldSpec = {
   label: string
   chipLabel: string
   chipKey: string
-  bound: "min" | "max"
-  scale: number
-  rowKey: string
 }
 
 export function filterFieldSpecs(side: Side): FilterFieldSpec[] {
@@ -41,9 +38,6 @@ export function filterFieldSpecs(side: Side): FilterFieldSpec[] {
       label: metrics.premium.label,
       chipLabel: metrics.premium.label.replace(/^Min /, ""),
       chipKey: "premium",
-      bound: "min",
-      scale: metrics.premium.scale,
-      rowKey: metrics.premium.key,
     },
     {
       id: "apr",
@@ -51,9 +45,6 @@ export function filterFieldSpecs(side: Side): FilterFieldSpec[] {
       label: metrics.apr.label,
       chipLabel: metrics.apr.label.replace(/^Min /, ""),
       chipKey: "apr",
-      bound: "min",
-      scale: metrics.apr.scale,
-      rowKey: metrics.apr.key,
     },
     {
       id: "breakeven",
@@ -61,9 +52,6 @@ export function filterFieldSpecs(side: Side): FilterFieldSpec[] {
       label: metrics.breakeven.label,
       chipLabel: metrics.breakeven.label.replace(/^Min /, ""),
       chipKey: "breakeven",
-      bound: "min",
-      scale: metrics.breakeven.scale,
-      rowKey: metrics.breakeven.key,
     },
     {
       id: "minIv",
@@ -71,9 +59,6 @@ export function filterFieldSpecs(side: Side): FilterFieldSpec[] {
       label: "Min IV (%)",
       chipLabel: "IV (%)",
       chipKey: "min-iv",
-      bound: "min",
-      scale: 1,
-      rowKey: "iv_pct_tenths",
     },
     {
       id: "maxDte",
@@ -81,9 +66,6 @@ export function filterFieldSpecs(side: Side): FilterFieldSpec[] {
       label: "Max DTE",
       chipLabel: "DTE ≤",
       chipKey: "max-dte",
-      bound: "max",
-      scale: 0,
-      rowKey: "dte",
     },
   ]
 }
