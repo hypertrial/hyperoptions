@@ -152,7 +152,15 @@ def test_failed_shadow_issuance_cannot_enter_live_cache(tmp_path) -> None:
     assert not capture._live
 
 
-def test_as_issued_report_includes_persisted_preparation_and_lookup_latency(tmp_path) -> None:
+def test_as_issued_report_includes_persisted_preparation_and_lookup_latency(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class CaptureClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return ISSUED.astimezone(tz) if tz is not None else ISSUED.replace(tzinfo=None)
+
+    monkeypatch.setattr("options_api.physical_shadow_capture.datetime", CaptureClock)
     capture = _capture(tmp_path)
     candidates = _candidates()
     candidates["student_t_ewma"] = ShadowForecast(
