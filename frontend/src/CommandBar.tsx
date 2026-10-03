@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { dateTime, moneyCents } from "./format"
 import { MoneynessToggle, StrategyToggle } from "./Segmented"
-import ThemeToggle from "./ThemeToggle"
 import TickerPicker from "./TickerPicker"
 import type { ChainPage, Moneyness, Side } from "./types"
 import { useMediaQuery } from "./useMediaQuery"
@@ -72,7 +71,6 @@ function MarketControls({
           <p className="eyebrow">Options workstation</p>
           <p className="market-brand">HyperOptions</p>
         </div>
-        <ThemeToggle />
       </div>
 
       <TickerPicker ticker={ticker} onSelect={onSelectTicker} />

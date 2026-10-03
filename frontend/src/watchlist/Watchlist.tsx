@@ -169,7 +169,7 @@ export default function Watchlist({ chainUrl = "/", forecastModel = DEFAULT_FORE
 
   const jobBusy = jobId != null && (!job || job.state === "queued" || job.state === "running")
   return (
-    <main id="main-content" className="watchlist-page">
+    <main id="main-content" tabIndex={-1} className="watchlist-page">
       <header className="watchlist-header">
         <div>
           <p className="eyebrow">Selected option contracts</p>
