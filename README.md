@@ -147,6 +147,8 @@ Nasdaq fetches use a bounded policy: the required option chain has two attempts,
 
 Watch jobs, watched contracts, close-based observations, append-only forecast issuances and label revisions, market-curve shadow reports, the latest-session watched market value, and legacy forecast snapshots are stored in separate tables of `.local/research/results.duckdb`. Verified Yahoo history and manifests live under `.local/research/`; immutable 50-ticker audit inputs are explicitly labeled current-vintage retrospective snapshots. Existing legacy files and Research tables remain untouched. Set `STOCKSWEEPER_DATA_DIR` to use another local data directory. These files are excluded from Git. Any leftover `.local/options.duckdb` or `.local/options.sqlite3` file is left untouched.
 
+Watch-job session storage is optional: blocked reads, full storage, or failed removal do not prevent loading, adding watches, or following refresh progress. Chain assembly and watch creation recheck expiry eligibility after acquiring provider inputs, including early session closes.
+
 ## Forecast evaluation
 
 Historical calibration uses the latest label revision known at its evaluation cutoff.
@@ -159,7 +161,7 @@ Live forecast attempts for each method are recorded in an append-only DuckDB led
 
 The [source-rights audit](docs/source-rights.md) explains why this release does not expand Yahoo downloads or store Nasdaq option quotes for training. Pooled NGBoost also needs its exact trained-artifact hash recorded with each issued forecast before live numbers can be shown. Earnings-jump, IV-informed physical, and SSVI market estimates require qualified inputs; their unavailable reasons remain visible in the comparison dialog.
 
-`uv run --group research python scripts/evaluate_intraday_open.py IREN` screens the intraday method on historical Opens; prospectively timestamped 10:00, 13:00, and 15:30 ET snapshots are recorded for separate accuracy measurement. `uv run --group research python scripts/evaluate_intraday_prospective.py` scores matched, matured as-issued snapshots against both the dated-close forecast and simple quote reanchor, with window coverage and latency. `uv run --group research python scripts/evaluate_market_curve.py` reports market-curve quote fit, coverage, rejections, and latency. Market-implied odds are judged on quote consistency rather than realized-outcome Brier score. These reports describe stock-close forecasts and option-quote fits; they do not claim retrospective option-trading performance.
+`uv run --group research python scripts/evaluate_intraday_open.py IREN` screens the intraday method on historical Opens, rejecting nonfinite or nonpositive maturity closes before scoring; prospectively timestamped 10:00, 13:00, and 15:30 ET snapshots are recorded for separate accuracy measurement. `uv run --group research python scripts/evaluate_intraday_prospective.py` scores matched, matured as-issued snapshots against both the dated-close forecast and simple quote reanchor, with window coverage and latency. `uv run --group research python scripts/evaluate_market_curve.py` reports market-curve quote fit, coverage, rejections, and latency. Market-implied odds are judged on quote consistency rather than realized-outcome Brier score. These reports describe stock-close forecasts and option-quote fits; they do not claim retrospective option-trading performance.
 
 ## Tests
 
@@ -170,7 +172,7 @@ The [source-rights audit](docs/source-rights.md) explains why this release does 
 (cd frontend && npx --no-install playwright test)
 ```
 
-Playwright starts a mocked FastAPI server and Vite, then proves the `/api` proxy and that the browser never calls Nasdaq. Install the pinned Chromium before the first local run; `npm install` does not download it. Use the project-pinned Playwright command; do not run a global `npx playwright`.
+Playwright starts a mocked FastAPI server with a fresh temporary data directory for each lifespan, independent of the workstation data directory. Fixture data is removed after background jobs finish. It also starts Vite, then proves the `/api` proxy and that the browser never calls Nasdaq. Install the pinned Chromium before the first local run; `npm install` does not download it. Use the project-pinned Playwright command; do not run a global `npx playwright`.
 
 ## Verification gates
 

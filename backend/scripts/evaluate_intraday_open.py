@@ -10,6 +10,7 @@ import json
 import time
 from collections import defaultdict
 from decimal import Decimal
+from math import isfinite
 from pathlib import Path
 
 import polars as pl
@@ -62,6 +63,10 @@ def evaluate(ticker: str, data_dir: Path, max_origins: int) -> dict[str, object]
             if outcome is None:
                 rejected["maturity_close_missing"] += 1
                 continue
+            close = outcome["close"]
+            if close is None or not isfinite(close) or close <= 0:
+                rejected["maturity_close_invalid"] += 1
+                continue
             if any(
                 bars.get(session, {}).get("stock_splits", 0) > 0
                 for session in sessions[index : maturity_index + 1]
@@ -88,9 +93,9 @@ def evaluate(ticker: str, data_dir: Path, max_origins: int) -> dict[str, object]
                 strike = Decimal(str(round(baseline.spot * ratio, 3)))
                 for side in ("call", "put"):
                     label = (
-                        (outcome["close"] > float(strike))
+                        (close > float(strike))
                         if side == "call"
-                        else (outcome["close"] < float(strike))
+                        else (close < float(strike))
                     )
                     dated = baseline.probability(side, strike)
                     intraday = shadow.distribution.probability(side, strike)

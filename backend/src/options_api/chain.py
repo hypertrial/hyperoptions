@@ -584,9 +584,11 @@ async def _load_side(
     moneyness: Moneyness | None,
     name: str | None,
     rate: Decimal | None,
+    clock: Callable[[], datetime] | None,
 ) -> LoadedChainPage:
-    today = today_new_york(now)
     chain, info, history = await _load_context(service, ticker, now)
+    now = clock() if clock is not None else now
+    today = today_new_york(now)
     page = _assemble(
         spec,
         chain,
@@ -609,8 +611,9 @@ async def load_covered_calls(
     moneyness: Moneyness | None = None,
     name: str | None = None,
     rate: Decimal | None = None,
+    clock: Callable[[], datetime] | None = None,
 ) -> LoadedChainPage:
-    return await _load_side(service, ticker, now, CALLS, "itm", moneyness, name, rate)
+    return await _load_side(service, ticker, now, CALLS, "itm", moneyness, name, rate, clock)
 
 
 async def load_cash_secured_puts(
@@ -620,5 +623,6 @@ async def load_cash_secured_puts(
     moneyness: Moneyness | None = None,
     name: str | None = None,
     rate: Decimal | None = None,
+    clock: Callable[[], datetime] | None = None,
 ) -> LoadedChainPage:
-    return await _load_side(service, ticker, now, PUTS, "otm", moneyness, name, rate)
+    return await _load_side(service, ticker, now, PUTS, "otm", moneyness, name, rate, clock)

@@ -244,6 +244,7 @@ async def _load_page(
             _page_now(request.app),
             moneyness=moneyness,
             name=listing.name if listing else None,
+            clock=lambda: _page_now(request.app),
         )
         page = loaded.page
         # A chain fetch can outlast the regular session. Price the quotes

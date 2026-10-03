@@ -21,7 +21,8 @@ import { useRevealLimit } from "./useRevealLimit"
 import { defaultMoneyness, useUrlState } from "./useUrlState"
 import { DEFAULT_SORT, deriveChainView, INITIAL_REVEAL, PREDICTIVE_ODDS_SORT_ID, type SortState } from "./viewModel"
 import type { ChainPage, Moneyness, Side } from "./types"
-import { addWatch, WATCH_JOB_KEY } from "./watchlist/api"
+import { addWatch } from "./watchlist/api"
+import { saveWatchJob } from "./watchlist/jobStorage"
 import type { WatchActionState } from "./watchlist/WatchButton"
 
 const OPEN_SESSIONS = new Set(["market", "regular market", "open"])
@@ -191,7 +192,7 @@ export default function ItmChain({ forecastModel = DEFAULT_FORECAST_MODEL }: { f
       const result = forecastModel === DEFAULT_FORECAST_MODEL
         ? await addWatch(watchKey)
         : await addWatch(watchKey, forecastModel)
-      if (result.job) sessionStorage.setItem(WATCH_JOB_KEY, result.job.id)
+      if (result.job) saveWatchJob(result.job.id)
       setWatchStates((current) => ({ ...current, [watchKey]: { phase: result.created ? "added" : "existing" } }))
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "Could not add this contract."

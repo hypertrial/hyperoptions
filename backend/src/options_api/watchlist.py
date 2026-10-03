@@ -623,7 +623,10 @@ async def add_watch(
     if make_watch_key(ticker, root, side, expiry_text, row.strike) != body.watch_key:
         raise HTTPException(status_code=409, detail="Watch key differs from current chain")
     store: WatchStore = request.app.state.watchlist.store
-    record, created = store.add(body.watch_key, ticker, root, side, expiry, strike, _now(request))
+    created_at = _now(request)
+    if expiry_session_completed(expiry, created_at):
+        raise HTTPException(status_code=409, detail="Expiry session has completed")
+    record, created = store.add(body.watch_key, ticker, root, side, expiry, strike, created_at)
     request.app.state.market_odds.schedule([ticker])
     request.app.state.predictive_odds.schedule([ticker])
     job = _queue(request) if created else None

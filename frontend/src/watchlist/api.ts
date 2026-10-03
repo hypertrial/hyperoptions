@@ -4,8 +4,6 @@ import type { Job, WatchCreate } from "../generated/types.gen"
 import type { AddWatchResponse, RefreshResponse, WatchlistResponse } from "./types"
 import { zJob, zWatchCreateResponse, zWatchListResponse, zWatchRefreshResponse } from "../generated/zod.gen"
 
-export const WATCH_JOB_KEY = "hyperoptions.watchlist.job"
-
 const modelQuery = (model: PhysicalModel) => model === DEFAULT_FORECAST_MODEL ? "" : `?forecast_model=${model}`
 export const getWatchlist = (model: PhysicalModel = DEFAULT_FORECAST_MODEL): Promise<WatchlistResponse> => getJson(`/api/watchlist${modelQuery(model)}`, zWatchListResponse)
 export const addWatch = (watchKey: string, model: PhysicalModel = DEFAULT_FORECAST_MODEL): Promise<AddWatchResponse> => postJson(`/api/watchlist${modelQuery(model)}`, { watch_key: watchKey } satisfies WatchCreate, zWatchCreateResponse)

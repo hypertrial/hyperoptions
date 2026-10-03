@@ -4,9 +4,10 @@ import { Button } from "@/components/ui/button"
 import type { Job } from "../generated/types.gen"
 import { DEFAULT_FORECAST_MODEL, type PhysicalModel } from "../forecastModels"
 import { dateTime } from "../format"
-import { deleteWatch, getJob, getWatchlist, refreshWatchlist, WATCH_JOB_KEY } from "./api"
+import { deleteWatch, getJob, getWatchlist, refreshWatchlist } from "./api"
 import type { WatchItem, WatchlistResponse } from "./types"
 import WatchCard from "./WatchCard"
+import { readWatchJob, saveWatchJob } from "./jobStorage"
 
 function message(error: unknown): string {
   return error instanceof Error && error.message ? error.message : "The request failed."
@@ -25,7 +26,7 @@ export default function Watchlist({ chainUrl = "/", forecastModel = DEFAULT_FORE
   const [refreshing, setRefreshing] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [deleteErrors, setDeleteErrors] = useState<Record<string, string>>({})
-  const [jobId, setJobId] = useState<string | null>(() => sessionStorage.getItem(WATCH_JOB_KEY))
+  const [jobId, setJobId] = useState<string | null>(readWatchJob)
   const [job, setJob] = useState<Job | null>(null)
   const mutationVersion = useRef(0)
   const pendingLoad = useRef<{ model: PhysicalModel; promise: Promise<void> } | null>(null)
@@ -40,7 +41,7 @@ export default function Watchlist({ chainUrl = "/", forecastModel = DEFAULT_FORE
     setLastLoadedAt(new Date().toISOString())
     const active = response.active_job
     if (active && (active.state === "queued" || active.state === "running")) {
-      sessionStorage.setItem(WATCH_JOB_KEY, active.id)
+      saveWatchJob(active.id)
       setJob(active)
       setJobId(active.id)
     }
@@ -107,13 +108,13 @@ export default function Watchlist({ chainUrl = "/", forecastModel = DEFAULT_FORE
           timer = window.setTimeout(() => { void poll() }, 1500)
           return
         }
-        sessionStorage.removeItem(WATCH_JOB_KEY)
+        saveWatchJob(null)
         setJobId(null)
         setNotice(current.state === "failed" ? current.error || "Expiry result check failed." : "Expiry results checked.")
         await load()
       } catch (cause) {
         if (!active) return
-        sessionStorage.removeItem(WATCH_JOB_KEY)
+        saveWatchJob(null)
         setJobId(null)
         setNotice(message(cause))
       }
@@ -128,7 +129,7 @@ export default function Watchlist({ chainUrl = "/", forecastModel = DEFAULT_FORE
     try {
       const result = await refreshWatchlist()
       if (result.job) {
-        sessionStorage.setItem(WATCH_JOB_KEY, result.job.id)
+        saveWatchJob(result.job.id)
         setJob(result.job)
         setJobId(result.job.id)
       } else {
