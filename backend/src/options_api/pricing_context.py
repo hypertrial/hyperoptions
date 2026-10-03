@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -17,6 +17,9 @@ from options_api.market_calendar import quote_session, regular_session_open, ses
 from options_api.market_sources import DividendStatus, TreasuryCurve
 from options_api.models import (
     HistoricalBar,
+    IvReason,
+    IvReasonCode,
+    IvSpotBasis,
     OptionChainResponse,
     OptionQuote,
     StockInfoResponse,
@@ -24,6 +27,49 @@ from options_api.models import (
 
 _NY = ZoneInfo("America/New_York")
 _DEFAULT_QUOTE_MAX_AGE = timedelta(minutes=5)
+
+
+@dataclass(frozen=True)
+class PricingIssue:
+    code: IvReasonCode
+    message: str
+    fallback_allowed: bool = False
+
+    def view(self) -> IvReason:
+        return IvReason(code=self.code, message=self.message)
+
+
+def pricing_issue(reason: str) -> PricingIssue:
+    """Map internal fixed reasons; never expose unexpected provider/exception text."""
+    messages: dict[str, IvReasonCode] = {
+        "Option chain belongs to another quote session": "chain_session",
+        "Option-chain coverage is incomplete": "chain_session",
+        "Official completed-session close required": "underlying",
+        "Official completed-session close is unavailable": "underlying",
+        "A coherent underlying bid and ask is unavailable": "underlying",
+        "Underlying quote is not marked real time": "underlying",
+        "Underlying quote time or price is unavailable": "underlying",
+        "Underlying quote is stale": "underlying",
+        "Same-day option quote timing cannot be verified": "expiry_timing",
+        "Dated Treasury rate is unavailable": "treasury",
+        "Dividend exposure is unsupported for this expiration": "dividends",
+        "Dividend status could not be verified": "dividends",
+        "Dividend exposure is unsupported": "dividends",
+        "Contract terms cannot be verified": "contract_identity",
+        "Contract appears more than once in the chain": "contract_identity",
+        "Option bid or ask is missing or non-finite": "option_quote",
+        "Option quote is invalid or crossed": "option_quote",
+        "Locked option quotes do not support live IV": "option_quote",
+        "Option ask exceeds the live pricing cap": "option_quote",
+        "Option quote has insufficient trading activity": "option_quote",
+        "Option bid/ask spread is too wide": "option_quote",
+    }
+    code = messages.get(reason)
+    return (
+        PricingIssue(code, reason)
+        if code is not None
+        else PricingIssue("numerical_failure", "Pricing inputs could not be validated")
+    )
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -59,6 +105,8 @@ def _spot(
         if (
             bid is None
             or ask is None
+            or not bid.is_finite()
+            or not ask.is_finite()
             or bid <= 0
             or ask < bid
             or (ask - bid) / ((bid + ask) / 2) > Decimal("0.02")
@@ -69,7 +117,7 @@ def _spot(
         quote_time = _underlying_time(info.quote_timestamp)
         if not info.is_real_time:
             return None, None, "Underlying quote is not marked real time"
-    if price is None or price <= 0 or quote_time is None:
+    if price is None or not price.is_finite() or price <= 0 or quote_time is None:
         return None, None, "Underlying quote time or price is unavailable"
     age = (now - quote_time).total_seconds()
     if age < -60 or age > quote_max_age.total_seconds():
@@ -81,27 +129,31 @@ def positive_close(
     bars: list[HistoricalBar] | tuple[HistoricalBar, ...], session: date
 ) -> Decimal | None:
     for bar in bars:
-        if bar.date == session and bar.close > 0:
+        if bar.date == session and bar.close.is_finite() and bar.close > 0:
             return bar.close
     return None
 
 
-def _entry_bid_ask(row: OptionQuote, side: str, spot: Decimal) -> tuple[Decimal, Decimal] | None:
+def _entry_bid_ask(
+    row: OptionQuote, side: str, spot: Decimal
+) -> tuple[tuple[Decimal, Decimal] | None, PricingIssue | None]:
     bid = row.call_bid if side == "call" else row.put_bid
     ask = row.call_ask if side == "call" else row.put_ask
     interest = row.call_open_interest if side == "call" else row.put_open_interest
     volume = row.call_volume if side == "call" else row.put_volume
     if bid is None or ask is None or not (bid.is_finite() and ask.is_finite()):
-        return None
-    if bid < 0 or ask <= bid:
-        return None
+        return None, pricing_issue("Option bid or ask is missing or non-finite")
+    if bid < 0 or ask < bid:
+        return None, pricing_issue("Option quote is invalid or crossed")
+    if ask == bid:
+        return None, pricing_issue("Locked option quotes do not support live IV")
     if ask >= (spot if side == "call" else row.strike):
-        return None
+        return None, pricing_issue("Option ask exceeds the live pricing cap")
     if (interest or 0) < 5 and (volume or 0) < 5:
-        return None
+        return None, pricing_issue("Option quote has insufficient trading activity")
     if ask - bid > max(Decimal("0.25"), (bid + ask) / 2 * Decimal("0.25")):
-        return None
-    return bid, ask
+        return None, pricing_issue("Option bid/ask spread is too wide")
+    return (bid, ask), None
 
 
 @dataclass(frozen=True)
@@ -116,6 +168,14 @@ class EntryQuote:
     rate: Decimal | None
     valuation_time: datetime
     rate_as_of_session: date | None
+    spot_basis: IvSpotBasis | None = None
+    underlying_quote_time: datetime | None = None
+
+
+@dataclass(frozen=True)
+class PricingSelection:
+    quote: EntryQuote | None
+    issue: PricingIssue | None = None
 
 
 @dataclass(frozen=True)
@@ -134,6 +194,10 @@ class PricingContext:
     entry_quotes: dict[tuple[str, str, Decimal], tuple[Decimal, Decimal]]
     valid_contracts: set[tuple[str, Decimal]]
     invalid_contracts: set[tuple[str, Decimal]]
+    spot_basis: IvSpotBasis | None = None
+    quote_issues: dict[tuple[str, str, Decimal], PricingIssue] = field(default_factory=dict)
+    identity_issues: dict[tuple[str, Decimal], PricingIssue] = field(default_factory=dict)
+    acquisition_expirations: set[str] = field(default_factory=set)
 
     def entry_quote(self, side: str, expiry: str, strike: Decimal) -> EntryQuote | None:
         if (expiry, strike) not in self.valid_contracts:
@@ -152,7 +216,26 @@ class PricingContext:
             self.rates.get(expiry),
             self.valuation_time,
             self.rate_as_of_session,
+            self.spot_basis,
+            self.underlying_quote_time,
         )
+
+    def selection(self, side: str, expiry: str, strike: Decimal) -> PricingSelection:
+        issue = self.identity_issues.get((expiry, strike))
+        if issue is not None or (expiry, strike) not in self.valid_contracts:
+            return PricingSelection(
+                None, issue or pricing_issue("Contract terms cannot be verified")
+            )
+        quote = self.entry_quote(side, expiry, strike)
+        if expiry in self.acquisition_expirations and quote is not None:
+            return PricingSelection(quote, PricingIssue(
+                "input_acquisition", "Treasury or dividend inputs could not be acquired", True
+            ))
+        if expiry in self.acquisition_expirations:
+            return PricingSelection(None, self.quote_issues.get((side, expiry, strike)))
+        if expiry in self.reasons:
+            return PricingSelection(quote, pricing_issue(self.reasons[expiry]))
+        return PricingSelection(quote, self.quote_issues.get((side, expiry, strike)))
 
 
 def displayed_chain_reason(chain: OptionChainResponse, now: datetime) -> str | None:
@@ -244,11 +327,21 @@ def build_pricing_context(
         if len(matches) == 1 and matches[0].identity_reason is None and matches[0].root == ticker
     }
     entry_quotes: dict[tuple[str, str, Decimal], tuple[Decimal, Decimal]] = {}
+    quote_issues: dict[tuple[str, str, Decimal], PricingIssue] = {}
     for (expiry, strike), row in standard_rows.items():
         for side in ("call", "put"):
-            quote = _entry_bid_ask(row, side, spot)
+            quote, issue = _entry_bid_ask(row, side, spot)
             if quote is not None:
                 entry_quotes[(side, expiry, strike)] = quote
+            elif issue is not None:
+                quote_issues[(side, expiry, strike)] = issue
+    identity_issues = {
+        key: pricing_issue(
+            "Contract appears more than once in the chain"
+            if len(matches) > 1 else "Contract terms cannot be verified"
+        )
+        for key, matches in by_contract.items() if key not in standard_rows
+    }
     return PricingContext(
         spot,
         stock_ask,
@@ -264,4 +357,11 @@ def build_pricing_context(
         entry_quotes,
         set(standard_rows),
         set(by_contract) - set(standard_rows),
+        (
+            "completed_session_close" if underlying_quote_time is None
+            else "yahoo_regular_market_price" if chain.source == "yahoo"
+            else "underlying_midpoint"
+        ),
+        quote_issues,
+        identity_issues,
     )

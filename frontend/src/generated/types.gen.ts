@@ -128,6 +128,7 @@ export type CashSecuredPutContract = {
      * Iv Pct Tenths
      */
     iv_pct_tenths?: number | null;
+    iv_details?: IvDetails | null;
     /**
      * Delta E4
      */
@@ -428,6 +429,7 @@ export type CoveredCallContract = {
      * Iv Pct Tenths
      */
     iv_pct_tenths?: number | null;
+    iv_details?: IvDetails | null;
     /**
      * Delta E4
      */
@@ -666,6 +668,109 @@ export type HypotheticalRiskView = {
      * P05 Pnl Cents
      */
     p05_pnl_cents?: number | null;
+};
+
+/**
+ * IvDetails
+ */
+export type IvDetails = {
+    /**
+     * Status
+     */
+    status: 'available' | 'unavailable';
+    reason?: IvReason | null;
+    /**
+     * Bid Pct Tenths
+     */
+    bid_pct_tenths?: number | null;
+    /**
+     * Ask Pct Tenths
+     */
+    ask_pct_tenths?: number | null;
+    bid_reason?: IvReason | null;
+    ask_reason?: IvReason | null;
+    /**
+     * Model
+     */
+    model?: 'black_scholes_european_no_dividends_v1';
+    /**
+     * Spot Exact
+     */
+    spot_exact?: string | null;
+    /**
+     * Strike Exact
+     */
+    strike_exact?: string | null;
+    /**
+     * Bid Price Exact
+     */
+    bid_price_exact?: string | null;
+    /**
+     * Mid Price Exact
+     */
+    mid_price_exact?: string | null;
+    /**
+     * Ask Price Exact
+     */
+    ask_price_exact?: string | null;
+    /**
+     * Rate Exact
+     */
+    rate_exact?: string | null;
+    /**
+     * Years To Expiry Exact
+     */
+    years_to_expiry_exact?: string | null;
+    /**
+     * Spot Basis
+     */
+    spot_basis?: 'underlying_midpoint' | 'yahoo_regular_market_price' | 'completed_session_close' | null;
+    /**
+     * Pricing Path
+     */
+    pricing_path?: 'displayed_chain' | 'matching_snapshot' | null;
+    /**
+     * Chain Source
+     */
+    chain_source?: 'nasdaq' | 'yahoo' | null;
+    /**
+     * Valuation Time
+     */
+    valuation_time?: string | null;
+    /**
+     * Underlying Quote Time
+     */
+    underlying_quote_time?: string | null;
+    /**
+     * Option Chain Fetched At
+     */
+    option_chain_fetched_at?: string | null;
+    /**
+     * Expiry Close
+     */
+    expiry_close?: string | null;
+    /**
+     * Quote Session Date
+     */
+    quote_session_date?: string | null;
+    /**
+     * Rate As Of Session
+     */
+    rate_as_of_session?: string | null;
+};
+
+/**
+ * IvReason
+ */
+export type IvReason = {
+    /**
+     * Code
+     */
+    code: 'contract_identity' | 'chain_session' | 'underlying' | 'expiry_timing' | 'treasury' | 'dividends' | 'option_quote' | 'midpoint_eligibility' | 'model_bounds' | 'solver_range' | 'input_acquisition' | 'numerical_failure';
+    /**
+     * Message
+     */
+    message: string;
 };
 
 /**

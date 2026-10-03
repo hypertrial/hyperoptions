@@ -42,7 +42,7 @@ def test_chain_serializes_predictive_fallback_and_coherent_payoff(
     async def load(*_args, **_kwargs):
         return LoadedChainPage(page, chain, info, history)
 
-    async def fast_curve(_client: httpx.AsyncClient, _now: datetime) -> None:
+    async def fast_curve(_client: httpx.AsyncClient, _now: datetime, **_kwargs) -> None:
         return None
 
     async def fast_dividend(_ticker: str, now: datetime) -> DividendStatus:
@@ -257,7 +257,9 @@ def _install_quotes(
 ) -> threading.Event:
     release = threading.Event()
 
-    async def treasury(_client: httpx.AsyncClient, _now: datetime) -> TreasuryCurve | None:
+    async def treasury(
+        _client: httpx.AsyncClient, _now: datetime, **_kwargs
+    ) -> TreasuryCurve | None:
         if delay:
             await asyncio.sleep(delay)
         return _curve() if curve is None else curve
@@ -470,7 +472,7 @@ def test_overlapping_chain_pages_share_one_treasury_read(
     release = _install_quotes(monkeypatch, block_fit=True)
     entered = {"count": 0}
 
-    async def treasury(_client: httpx.AsyncClient, _now: datetime) -> TreasuryCurve:
+    async def treasury(_client: httpx.AsyncClient, _now: datetime, **_kwargs) -> TreasuryCurve:
         entered["count"] += 1
         await asyncio.sleep(3)
         return _curve()

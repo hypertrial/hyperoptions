@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import math
 import time
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
@@ -27,12 +28,14 @@ from options_api.market_curve_shadow import CurveShadowResult, calculate_curve_s
 from options_api.market_odds import OddsEstimate, calculate_market_odds
 from options_api.market_sources import (
     DividendStatus,
+    InputAcquisitionError,
     TreasuryCurve,
     fetch_dividend_status,
     fetch_treasury_curve,
 )
 from options_api.models import (
     HistoricalResponse,
+    IvSpotBasis,
     MarketOddsView,
     OptionChainResponse,
     OptionQuote,
@@ -41,10 +44,13 @@ from options_api.models import (
 from options_api.pricing_context import (
     EntryQuote,
     PricingContext,
+    PricingIssue,
+    PricingSelection,
     build_pricing_context,
     displayed_chain_reason,
     positive_close,
     pricing_block_reason,
+    pricing_issue,
 )
 from options_api.service import OptionChainService
 from stocksweeper.storage.db import connect, rows
@@ -101,6 +107,9 @@ class _Snapshot:
     )
     valid_contracts: set[tuple[str, Decimal]] = field(default_factory=set)
     invalid_contracts: set[tuple[str, Decimal]] = field(default_factory=set)
+    spot_basis: IvSpotBasis | None = None
+    quote_issues: dict[tuple[str, str, Decimal], PricingIssue] = field(default_factory=dict)
+    identity_issues: dict[tuple[str, Decimal], PricingIssue] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -185,6 +194,9 @@ class MarketWatchOdds:
         self._dividends: dict[str, DividendStatus] = {}
         self._page_inputs: set[asyncio.Task[object]] = set()
         self._page_input_flights: dict[str, asyncio.Task[object]] = {}
+        self._page_input_components: dict[
+            asyncio.Task[object], tuple[asyncio.Task, asyncio.Task]
+        ] = {}
         self._semaphore = asyncio.Semaphore(2)
         self._closed = False
         if self._data_path is not None:
@@ -663,7 +675,49 @@ class MarketWatchOdds:
             entry.rates.get(expiry),
             entry.valuation_time,
             entry.rate_as_of_session,
+            entry.spot_basis,
+            entry.underlying_quote_time,
         )
+
+    def pricing_selection(
+        self, ticker: str, side: str, expiry: str, strike: Decimal,
+        fetched_at: datetime, source: str,
+    ) -> PricingSelection | None:
+        """Only a currently valid snapshot of the displayed quote generation qualifies."""
+        entry = self._cache.get(ticker)
+        if (
+            entry is None
+            or not self._valid(entry, _as_utc(self.clock()))
+            or entry.error is not None
+            or entry.fetched_at != fetched_at
+            or entry.source != source
+        ):
+            return None
+        if (
+            (expiry, strike) in entry.identity_issues
+            or (expiry, strike) not in entry.valid_contracts
+            or expiry in entry.reasons
+            or (side, expiry, strike) in entry.quote_issues
+        ):
+            return None
+        quote = self.entry_quote(ticker, side, expiry, strike, ticker)
+        if (
+            quote is None
+            or quote.rate is None
+            or quote.rate_as_of_session is None
+            or not quote.rate.is_finite()
+            or not 0 <= quote.rate <= Decimal("0.25")
+        ):
+            return None
+        valuation_day = quote_session(quote.valuation_time)
+        expiry_date = date.fromisoformat(expiry)
+        if (
+            not 0 <= (valuation_day - quote.rate_as_of_session).days <= 7
+            or expiry_date <= valuation_day
+            or expiry_session_completed(expiry_date, quote.valuation_time)
+        ):
+            return None
+        return PricingSelection(quote)
 
     def underlying_quote(self, ticker: str) -> UnderlyingQuote | None:
         """Validated live stock quote, regardless of option bid/ask availability."""
@@ -851,6 +905,7 @@ class MarketWatchOdds:
 
         def _finish(done: asyncio.Task[object], symbol: str = ticker) -> None:
             self._page_inputs.discard(done)
+            self._page_input_components.pop(done, None)
             if self._page_input_flights.get(symbol) is done:
                 self._page_input_flights.pop(symbol, None)
 
@@ -864,27 +919,41 @@ class MarketWatchOdds:
         info: StockInfoResponse,
         history: HistoricalResponse,
         now: datetime,
-    ) -> PricingContext | None:
-        """Price the displayed chain. A slow curve read falls back to the snapshot."""
+    ) -> PricingContext | PricingIssue:
+        """Semantic rejection never borrows a snapshot; only failed input acquisition may."""
         now = _as_utc(now)
         completed_close = (
             positive_close(history.bars, latest_completed_session(now))
             if not regular_session_open(now)
             else None
         )
-        if (
-            pricing_block_reason(chain, info, now, completed_close, quote_max_age=_REFRESH)
-            is not None
-        ):
-            return None
+        try:
+            blocked = pricing_block_reason(
+                chain, info, now, completed_close, quote_max_age=_REFRESH
+            )
+        except (ValueError, ArithmeticError):
+            return PricingIssue("numerical_failure", "Pricing inputs could not be validated")
+        if blocked is not None:
+            return pricing_issue(blocked)
         task = self._shared_page_inputs(ticker, now)
         try:
-            curve, dividends = await asyncio.wait_for(asyncio.shield(task), PAGE_INPUT_TIMEOUT)
+            curve, dividends, curve_failed = await asyncio.wait_for(
+                asyncio.shield(task), PAGE_INPUT_TIMEOUT
+            )
         except TimeoutError:
-            return None
+            try:
+                curve, dividends, curve_failed = self._page_input_values(
+                    self._page_input_components.get(task), now
+                )
+            except Exception:
+                return PricingIssue("numerical_failure", "Pricing inputs could not be validated")
+        except (InputAcquisitionError, httpx.HTTPError, OSError):
+            curve, dividends, curve_failed = None, DividendStatus(
+                "unknown", now, acquisition_failed=True
+            ), True
         except Exception:
             LOG.exception("displayed-chain pricing inputs unavailable for %s", ticker)
-            return None
+            return PricingIssue("numerical_failure", "Pricing inputs could not be validated")
         try:
             built = build_pricing_context(
                 ticker,
@@ -896,18 +965,63 @@ class MarketWatchOdds:
                 dividends,
                 quote_max_age=_REFRESH,
             )
-        except (ValueError, ArithmeticError):
+        except (ValueError, ArithmeticError, TypeError, AttributeError):
             LOG.exception("displayed chain cannot be priced for %s", ticker)
-            return None
-        return None if isinstance(built, str) else built
+            return PricingIssue("numerical_failure", "Pricing inputs could not be validated")
+        if isinstance(built, str):
+            return pricing_issue(built)
+        if curve_failed or dividends.acquisition_failed:
+            acquisition_expirations = set()
+            reasons = dict(built.reasons)
+            for expiry_text, reason in reasons.items():
+                if reason == "Same-day option quote timing cannot be verified":
+                    continue
+                expiry = date.fromisoformat(expiry_text)
+                if reason == "Dated Treasury rate is unavailable" and not curve_failed:
+                    continue
+                eligible, dividend_reason = dividends.eligible_for(expiry)
+                if not eligible and not dividends.acquisition_failed:
+                    reasons[expiry_text] = dividend_reason or "Dividend exposure is unsupported"
+                    continue
+                acquisition_expirations.add(expiry_text)
+            built = replace(built, reasons=reasons, acquisition_expirations=acquisition_expirations)
+        return built
 
     async def _page_curve_and_dividends(
         self, ticker: str, now: datetime
-    ) -> tuple[TreasuryCurve | None, DividendStatus]:
-        curve, dividends = await asyncio.gather(
-            fetch_treasury_curve(self.client, now), self._dividend_status(ticker, now)
+    ) -> tuple[TreasuryCurve | None, DividendStatus, bool]:
+        curve = asyncio.create_task(
+            fetch_treasury_curve(self.client, now, raise_on_acquisition_failure=True)
         )
-        return curve, dividends
+        dividends = asyncio.create_task(self._dividend_status(ticker, now))
+        components = (curve, dividends)
+        task = asyncio.current_task()
+        if task is not None:
+            self._page_input_components[task] = components
+        await asyncio.gather(*components, return_exceptions=True)
+        return self._page_input_values(components, now)
+
+    @staticmethod
+    def _page_input_values(
+        components: tuple[asyncio.Task, asyncio.Task] | None, now: datetime,
+    ) -> tuple[TreasuryCurve | None, DividendStatus, bool]:
+        """Keep completed semantic facts when the sibling input exceeds the page deadline."""
+        curve, dividends, curve_failed = None, DividendStatus(
+            "unknown", now, acquisition_failed=True
+        ), True
+        if components is None:
+            return curve, dividends, curve_failed
+        curve_task, dividend_task = components
+        if curve_task.done():
+            try:
+                curve = curve_task.result()
+                curve_failed = False
+            except (InputAcquisitionError, TimeoutError, httpx.HTTPError, OSError):
+                pass
+        if dividend_task.done():
+            with contextlib.suppress(InputAcquisitionError, TimeoutError, httpx.HTTPError, OSError):
+                dividends = dividend_task.result()
+        return curve, dividends, curve_failed
 
     async def _refresh(self, ticker: str) -> None:
         async with self._semaphore:
@@ -1012,6 +1126,9 @@ class MarketWatchOdds:
                     entry_quotes=context.entry_quotes,
                     valid_contracts=context.valid_contracts,
                     invalid_contracts=context.invalid_contracts,
+                    spot_basis=context.spot_basis,
+                    quote_issues=context.quote_issues,
+                    identity_issues=context.identity_issues,
                 )
                 self._remember(ticker, snapshot)
                 live_refresh_ms = (time.perf_counter() - refresh_started) * 1000

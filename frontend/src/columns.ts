@@ -64,7 +64,7 @@ export function chainColumns(side: Side): ColumnDef[] {
     {
       id: "iv_pct_tenths",
       label: "IV",
-      info: "European no-dividend Black-Scholes implied volatility from the bid/ask midpoint. Blank when that midpoint is outside no-arbitrage bounds. Contracts does not scale this.",
+      info: "European no-dividend Black-Scholes implied volatility from the bid/ask midpoint. Open details for bid/ask IV, calculation inputs, or an unavailable reason. Contracts does not scale this.",
       abbrev: true,
       heatmap: false,
       accessor: (row) => row.iv_pct_tenths,

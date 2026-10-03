@@ -22,7 +22,7 @@ test("loads the IREN chain through the Vite proxy and copies a row", async ({ pa
 
   await page.goto("/")
   await expect(page.getByRole("heading", { name: /2026-09-18/ })).toBeVisible()
-  await expect(page.getByText("$48.00")).toBeVisible()
+  await expect(page.getByRole("rowheader", { name: "$48.000", exact: true })).toBeVisible()
   await page.getByRole("button", { name: /Copy row IREN 2026-09-18 strike \$48.00/ }).click()
   await expect(page.getByText("Copied")).toBeVisible()
   const clipboard = await page.evaluate(() => navigator.clipboard.readText())

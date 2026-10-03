@@ -393,8 +393,12 @@ def test_unverified_forecast_cache_suppresses_both_odds_and_coherent_entry_risk(
 )
 @pytest.mark.asyncio
 async def test_watchlist_api_keeps_all_three_quant_views_separate(
-    watched_at: datetime, contract_since: date
+    watched_at: datetime, contract_since: date, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    def unexpected_endpoint(*_args, **_kwargs):
+        pytest.fail("watchlist requests must not solve endpoint IV")
+
+    monkeypatch.setattr("options_api.iv_diagnostics.endpoint_iv", unexpected_endpoint)
     market = _Market(_quote())
     predictive = _Predictive(_distribution())
     item = WatchItem(

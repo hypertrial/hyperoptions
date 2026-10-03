@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { CircleAlert, RefreshCw } from "lucide-react"
 import CommandBar, { type SessionInfo } from "./CommandBar"
-import { formatContractValues, visibleColumns } from "./columns"
+import { formatContractValues, visibleColumns, type SizedContract } from "./columns"
 import { contractCountIsSafe, contractSizeLabel, parseContractCount } from "./contracts"
 import { plural } from "./format"
 import { DEFAULT_FORECAST_MODEL, PHYSICAL_MODEL_NAMES, type PhysicalModel } from "./forecastModels"
@@ -161,7 +161,7 @@ export default function ItmChain({ forecastModel = DEFAULT_FORECAST_MODEL }: { f
     }, 1500)
   }
 
-  const copyVisibleRow = async (row: { expiration: string; strike_cents: number; strike_exact?: string }, group: { expiration: string; dte: number }) => {
+  const copyVisibleRow = async (row: SizedContract, group: { expiration: string; dte: number }) => {
     setCopyError(null)
     const text = formatRowClipboard(
       {
@@ -173,7 +173,8 @@ export default function ItmChain({ forecastModel = DEFAULT_FORECAST_MODEL }: { f
         contracts,
       },
       columns.map((column) => column.label),
-      formatContractValues(row as never, columns),
+      formatContractValues(row, columns),
+      row,
     )
     try {
       await navigator.clipboard.writeText(text)

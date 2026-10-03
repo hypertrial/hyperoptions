@@ -1,8 +1,38 @@
 import { visibleColumns } from "./columns"
+import type { IvDetails } from "./generated/types.gen"
 import type { CashSecuredPutContract, CashSecuredPutPage, CoveredCallContract, CoveredCallPage } from "./types"
 
 export const COLUMN_HEADERS = visibleColumns("call")
 export const COPY_HEADERS = COLUMN_HEADERS.map((column) => column.label)
+
+export function sampleIvDetails(overrides: Partial<IvDetails> = {}): IvDetails {
+  return {
+    status: "available",
+    reason: null,
+    bid_pct_tenths: 721,
+    ask_pct_tenths: 971,
+    bid_reason: null,
+    ask_reason: null,
+    model: "black_scholes_european_no_dividends_v1",
+    spot_exact: "100.00",
+    strike_exact: "80",
+    bid_price_exact: "20.10",
+    mid_price_exact: "20.20",
+    ask_price_exact: "20.30",
+    rate_exact: "0.04",
+    years_to_expiry_exact: "0.01917808219178082191780821918",
+    spot_basis: "underlying_midpoint",
+    pricing_path: "displayed_chain",
+    chain_source: "nasdaq",
+    valuation_time: "2026-09-11T20:00:00Z",
+    underlying_quote_time: "2026-09-11T20:00:00Z",
+    option_chain_fetched_at: "2026-09-11T20:00:01Z",
+    expiry_close: "2026-09-18T20:00:00Z",
+    quote_session_date: "2026-09-11",
+    rate_as_of_session: "2026-09-11",
+    ...overrides,
+  }
+}
 
 export function sampleContract(overrides: Partial<CoveredCallContract> = {}): CoveredCallContract {
   return {
@@ -35,6 +65,7 @@ export function sampleContract(overrides: Partial<CoveredCallContract> = {}): Co
     vs_90d_low_pct_tenths: 667,
     vs_365d_low_pct_tenths: 1500,
     iv_pct_tenths: 450,
+    iv_details: null,
     delta_e4: 6368,
     gamma_e4: 188,
     theta_e4: -176,
@@ -183,6 +214,7 @@ export function samplePutContract(overrides: Partial<CashSecuredPutContract> = {
     vs_90d_low_pct_tenths: 500,
     vs_365d_low_pct_tenths: 1250,
     iv_pct_tenths: 380,
+    iv_details: null,
     delta_e4: -3632,
     gamma_e4: 188,
     theta_e4: -176,

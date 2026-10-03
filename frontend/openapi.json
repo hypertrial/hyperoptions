@@ -786,6 +786,16 @@
             ],
             "title": "Iv Pct Tenths"
           },
+          "iv_details": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IvDetails"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "delta_e4": {
             "anyOf": [
               {
@@ -1492,6 +1502,16 @@
             ],
             "title": "Iv Pct Tenths"
           },
+          "iv_details": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IvDetails"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "delta_e4": {
             "anyOf": [
               {
@@ -2066,6 +2086,308 @@
         "type": "object",
         "title": "HypotheticalRiskView",
         "description": "One-contract hold-to-expiry payoff from a dated, coherent entry quote."
+      },
+      "IvDetails": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "unavailable"
+            ],
+            "title": "Status"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IvReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bid_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bid Pct Tenths"
+          },
+          "ask_pct_tenths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ask Pct Tenths"
+          },
+          "bid_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IvReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ask_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IvReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "type": "string",
+            "const": "black_scholes_european_no_dividends_v1",
+            "title": "Model",
+            "default": "black_scholes_european_no_dividends_v1"
+          },
+          "spot_exact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spot Exact"
+          },
+          "strike_exact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strike Exact"
+          },
+          "bid_price_exact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bid Price Exact"
+          },
+          "mid_price_exact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mid Price Exact"
+          },
+          "ask_price_exact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ask Price Exact"
+          },
+          "rate_exact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Exact"
+          },
+          "years_to_expiry_exact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Years To Expiry Exact"
+          },
+          "spot_basis": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "underlying_midpoint",
+                  "yahoo_regular_market_price",
+                  "completed_session_close"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spot Basis"
+          },
+          "pricing_path": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "displayed_chain",
+                  "matching_snapshot"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pricing Path"
+          },
+          "chain_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "nasdaq",
+                  "yahoo"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chain Source"
+          },
+          "valuation_time": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valuation Time"
+          },
+          "underlying_quote_time": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Underlying Quote Time"
+          },
+          "option_chain_fetched_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Option Chain Fetched At"
+          },
+          "expiry_close": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiry Close"
+          },
+          "quote_session_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote Session Date"
+          },
+          "rate_as_of_session": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate As Of Session"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "IvDetails"
+      },
+      "IvReason": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "contract_identity",
+              "chain_session",
+              "underlying",
+              "expiry_timing",
+              "treasury",
+              "dividends",
+              "option_quote",
+              "midpoint_eligibility",
+              "model_bounds",
+              "solver_range",
+              "input_acquisition",
+              "numerical_failure"
+            ],
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "IvReason"
       },
       "Job": {
         "properties": {

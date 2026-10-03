@@ -15,6 +15,15 @@ ChainMoneyness = Literal["itm", "otm"]
 Side = Literal["call", "put"]
 GreeksSource = Literal["bid", "mid"]
 MarketSource = Literal["nasdaq", "yahoo"]
+IvReasonCode = Literal[
+    "contract_identity", "chain_session", "underlying", "expiry_timing", "treasury",
+    "dividends", "option_quote", "midpoint_eligibility", "model_bounds", "solver_range",
+    "input_acquisition", "numerical_failure",
+]
+IvSpotBasis = Literal[
+    "underlying_midpoint", "yahoo_regular_market_price", "completed_session_close",
+]
+IvPricingPath = Literal["displayed_chain", "matching_snapshot"]
 PhysicalModel = Literal[
     "lognormal_ewma", "empirical_scaled", "student_t_ewma", "gjr_garch_t",
     "ohlc_har", "skew_t_ewma", "egarch_skew_t", "markov_switching",
@@ -185,6 +194,39 @@ class HypotheticalRiskView(BaseModel):
     p05_pnl_cents: int | None = None
 
 
+class IvReason(BaseModel):
+    code: IvReasonCode
+    message: str
+
+
+class IvDetails(BaseModel):
+    status: Literal["available", "unavailable"]
+    reason: IvReason | None = None
+    bid_pct_tenths: int | None = None
+    ask_pct_tenths: int | None = None
+    bid_reason: IvReason | None = None
+    ask_reason: IvReason | None = None
+    model: Literal["black_scholes_european_no_dividends_v1"] = (
+        "black_scholes_european_no_dividends_v1"
+    )
+    spot_exact: str | None = None
+    strike_exact: str | None = None
+    bid_price_exact: str | None = None
+    mid_price_exact: str | None = None
+    ask_price_exact: str | None = None
+    rate_exact: str | None = None
+    years_to_expiry_exact: str | None = None
+    spot_basis: IvSpotBasis | None = None
+    pricing_path: IvPricingPath | None = None
+    chain_source: MarketSource | None = None
+    valuation_time: datetime | None = None
+    underlying_quote_time: datetime | None = None
+    option_chain_fetched_at: datetime | None = None
+    expiry_close: datetime | None = None
+    quote_session_date: date | None = None
+    rate_as_of_session: date | None = None
+
+
 class CoveredCallContract(BaseModel):
     expiration: str
     dte: int
@@ -219,6 +261,7 @@ class CoveredCallContract(BaseModel):
     vs_90d_low_pct_tenths: int | None
     vs_365d_low_pct_tenths: int | None
     iv_pct_tenths: int | None = None
+    iv_details: IvDetails | None = None
     delta_e4: int | None = None
     gamma_e4: int | None = None
     theta_e4: int | None = None
@@ -301,6 +344,7 @@ class CashSecuredPutContract(BaseModel):
     vs_90d_low_pct_tenths: int | None
     vs_365d_low_pct_tenths: int | None
     iv_pct_tenths: int | None = None
+    iv_details: IvDetails | None = None
     delta_e4: int | None = None
     gamma_e4: int | None = None
     theta_e4: int | None = None

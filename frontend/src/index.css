@@ -1009,6 +1009,16 @@
   .odds-reason summary { width: fit-content; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
   .odds-reason summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
   .odds-reason p { max-width: 16rem; margin: 5px 0 0; }
+  .iv-details { text-align: left; font-size: .72rem; line-height: 1.4; }
+  .iv-details summary { width: fit-content; cursor: pointer; white-space: nowrap; text-decoration: underline; text-underline-offset: 2px; }
+  .iv-details summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; border-radius: 2px; }
+  .iv-details[open] { width: min(22rem, calc(100vw - 3rem)); }
+  .iv-details-content { min-width: 0; padding-top: 8px; white-space: normal; overflow-wrap: break-word; }
+  .iv-details-content p { margin: 8px 0 0; color: var(--muted-foreground); }
+  .iv-facts { margin: 0; }
+  .iv-facts > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+  .iv-facts dt { color: var(--muted-foreground); }
+  .iv-facts dd { min-width: 0; margin: 0; font-variant-numeric: tabular-nums; }
   .mobile-odds-reason { margin: 0 0 12px; color: var(--muted-foreground); font-size: .8rem; line-height: 1.5; }
   .mobile-odds-reason strong { color: var(--foreground); }
   .watch-action { display: grid; justify-items: center; gap: 3px; }
@@ -1174,10 +1184,14 @@
     .mobile-row-summary[aria-expanded="true"] .row-chevron { transform: rotate(90deg); }
     .mobile-row-details { padding: 0 10px 12px; }
     .mobile-model-compare { padding: 0 10px 10px; }
-    .mobile-row-details dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin: 0 0 10px; overflow: hidden; border: 1px solid var(--border); border-radius: 6px; background: var(--border); }
-    .mobile-row-details dl div { display: flex; min-width: 0; justify-content: space-between; gap: 8px; padding: 8px; background: var(--card); font-size: .72rem; }
-    .mobile-row-details dt { color: var(--muted-foreground); }
-    .mobile-row-details dd { margin: 0; text-align: right; }
+    .mobile-row-details > dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin: 0 0 10px; overflow: hidden; border: 1px solid var(--border); border-radius: 6px; background: var(--border); }
+    .mobile-row-details > dl > div { display: flex; min-width: 0; justify-content: space-between; gap: 8px; padding: 8px; background: var(--card); font-size: .72rem; }
+    .mobile-row-details > dl dt { color: var(--muted-foreground); }
+    .mobile-row-details > dl dd { margin: 0; text-align: right; }
+    .mobile-iv-details { width: 100%; min-width: 0; margin-bottom: 12px; }
+    .mobile-iv-label { color: var(--muted-foreground); font-size: .72rem; font-weight: 700; }
+    .mobile-iv-details .iv-details { width: 100%; }
+    .mobile-iv-details .iv-details summary { min-height: 36px; padding: 8px 0; }
     .mobile-copy-button { width: 100%; min-height: 40px; }
     .watch-action-mobile { margin-bottom: 8px; }
     .watch-action-mobile .watch-row-button { width: 100%; min-height: 40px; }

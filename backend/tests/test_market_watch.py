@@ -99,7 +99,7 @@ def _install_inputs(
 ) -> list[int]:
     calls: list[int] = []
 
-    async def treasury(client: httpx.AsyncClient, now: datetime) -> TreasuryCurve | None:
+    async def treasury(client: httpx.AsyncClient, now: datetime, **_kwargs) -> TreasuryCurve | None:
         return curve if curve is not None else _curve()
 
     async def dividend(ticker: str, now: datetime) -> DividendStatus:

@@ -11,6 +11,7 @@ import { integer, moneyStrike } from "./format"
 import { heatmapHue, heatmapStop, type MetricRange } from "./heatmap"
 import { oddsAvailable, oddsLabel, oddsMessage, predictiveAvailable } from "./marketOdds"
 import OddsValues from "./OddsValues"
+import IvDetails from "./IvDetails"
 import ModelComparison from "./ModelComparison"
 import { physicalModelName, type PhysicalModel } from "./forecastModels"
 import type { Side } from "./types"
@@ -157,7 +158,9 @@ function DesktopResults({
                       value={column.accessor(row)}
                       range={ranges[column.id] ?? null}
                     >
-                      {column.format(row)}
+                      {column.id === "iv_pct_tenths"
+                        ? <IvDetails row={row} contractLabel={`${ticker} ${row.expiration} ${"call_bid_cents" in row ? "call" : "put"} strike ${strike}`} />
+                        : column.format(row)}
                     </HeatCell>
                     {index === 0 ? <td className="odds-cell">
                       <OddsValues odds={row.market_odds} predictiveOdds={row.predictive_odds} compact />
@@ -220,7 +223,7 @@ function MobileResults({
   onWatch,
 }: Omit<Parameters<typeof DesktopResults>[0], "density"> & { side: Side }) {
   const priority = mobilePriorityColumns(columns, side)
-  const remaining = columns.filter((column) => !priority.some((item) => item.id === column.id))
+  const remaining = columns.filter((column) => column.id !== "iv_pct_tenths" && !priority.some((item) => item.id === column.id))
   const activeSort = columns.find((column) => column.id === sort.id) ?? columns[0]
   const sortId = sort.id === PREDICTIVE_ODDS_SORT_ID ? sort.id : activeSort.id
   return (
@@ -275,6 +278,9 @@ function MobileResults({
                       </div>
                     ))}
                   </dl>
+                ) : null}
+                {columns.some((column) => column.id === "iv_pct_tenths") ? (
+                  <div className="mobile-iv-details"><span className="mobile-iv-label">IV</span><IvDetails row={row} contractLabel={`${ticker} ${row.expiration} ${side} strike ${strike}`} /></div>
                 ) : null}
                 <WatchButton
                   contractLabel={rowName}

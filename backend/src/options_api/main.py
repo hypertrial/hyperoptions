@@ -22,6 +22,7 @@ from options_api.cache import TickerCache
 from options_api.chain import LoadedChainPage, load_cash_secured_puts, load_covered_calls
 from options_api.greeks import empty_greeks
 from options_api.intraday_capture import capture_intraday_window
+from options_api.iv_diagnostics import iv_details_for_contract
 from options_api.live_quant import SSVI_VERSION, quant_for_contract
 from options_api.market_calendar import first_session_after_completed
 from options_api.market_watch import MarketWatchOdds
@@ -41,6 +42,7 @@ from options_api.nasdaq import NasdaqError, create_http_client
 from options_api.outcomes import CloseProvider
 from options_api.physical_shadow_capture import MODEL_VERSIONS, PhysicalShadowCapture
 from options_api.predictive_watch import PredictiveWatchOdds
+from options_api.pricing_context import PricingContext, PricingSelection, pricing_issue
 from options_api.prospective_panel import ProspectivePanel
 from options_api.service import OptionChainService
 from options_api.universe import TickerUniverse
@@ -292,12 +294,36 @@ async def _load_page(
                     greeks = empty_greeks()
                     contract.greeks_rate_pct_tenths = None
                     contract.greeks_rate_as_of_session = None
+                    contract.iv_details = iv_details_for_contract(
+                        side=side,
+                        expiry=date.fromisoformat(contract.expiration),
+                        strike=Decimal(contract.strike_exact),
+                        quote=None,
+                        greeks=greeks,
+                        issue=pricing_issue(
+                            "Contract appears more than once in the chain"
+                            if contract.watchability_reason == "Ambiguous duplicate contract rows"
+                            else "Contract terms cannot be verified"
+                        ),
+                        pricing_path="displayed_chain",
+                    )
                 else:
-                    priced_from_page = {}
-                    if pricing is not None:
-                        priced_from_page["entry_quote"] = pricing.entry_quote(
+                    path = "displayed_chain"
+                    if isinstance(pricing, PricingContext):
+                        selection = pricing.selection(
                             side, contract.expiration, Decimal(contract.strike_exact)
                         )
+                    else:
+                        selection = PricingSelection(None, pricing)
+                    if selection.issue is not None and selection.issue.fallback_allowed:
+                        fallback = odds.pricing_selection(
+                            normalized, side, contract.expiration,
+                            Decimal(contract.strike_exact),
+                            page.chain_fetched_at, page.chain_source,
+                        )
+                        if fallback is not None:
+                            selection = fallback
+                            path = "matching_snapshot"
                     result = quant_for_contract(
                         odds,
                         predictive,
@@ -310,7 +336,9 @@ async def _load_page(
                         displayed_chain_source=page.chain_source,
                         physical_shadow=request.app.state.physical_shadow,
                         forecast_model=forecast_model,
-                        **priced_from_page,
+                        pricing_selection=selection,
+                        include_iv_details=True,
+                        iv_pricing_path=path,
                     )
                     if result.issuance is not None:
                         issuances.append(result.issuance)
@@ -344,6 +372,7 @@ async def _load_page(
                     contract.greeks_rate_pct_tenths = result.greeks_rate_pct_tenths
                     contract.greeks_rate_as_of_session = result.greeks_rate_as_of_session
                     greeks = result.greeks
+                    contract.iv_details = result.iv_details
                 contract.iv_pct_tenths = greeks.iv_pct_tenths
                 contract.delta_e4 = greeks.delta_e4
                 contract.gamma_e4 = greeks.gamma_e4

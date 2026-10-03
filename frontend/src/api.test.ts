@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { ApiError, fetchChain, fetchCoveredCalls, fetchTickers } from "./api"
-import { samplePage, samplePutPage } from "./testFixtures"
+import { sampleIvDetails, samplePage, samplePutPage } from "./testFixtures"
 import { getWatchlist } from "./watchlist/api"
 
 describe("chain API", () => {
@@ -107,6 +107,43 @@ describe("chain API", () => {
       headers: { "Content-Type": "application/json" },
     })))
     await expect(fetchCoveredCalls("IREN", "itm")).rejects.toThrow("Local API returned an invalid response")
+  })
+
+  it.each(["call", "put"] as const)("accepts %s IV details and older responses without them", async (side) => {
+    const page = side === "call" ? samplePage() : samplePutPage()
+    page.expirations[0].contracts[0].iv_details = sampleIvDetails({
+      bid_pct_tenths: null,
+      bid_reason: { code: "model_bounds", message: "Bid lies outside model bounds." },
+      rate_exact: "0.04000000000000000000000000001",
+    })
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(page)))
+    vi.stubGlobal("fetch", fetchMock)
+    const result = await fetchChain("IREN", side, side === "call" ? "itm" : "otm")
+    expect(result.expirations[0].contracts[0].iv_details?.rate_exact).toBe("0.04000000000000000000000000001")
+    expect(result.expirations[0].contracts[0].iv_details?.bid_reason?.code).toBe("model_bounds")
+    for (const group of page.expirations) for (const row of group.contracts) delete row.iv_details
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(page)))
+    const older = await fetchChain("IREN", side, side === "call" ? "itm" : "otm")
+    expect(older.expirations[0].contracts[0].iv_details).toBeUndefined()
+  })
+
+  it.each(["call", "put"] as const)("rejects malformed %s IV diagnostics", async (side) => {
+    const page = side === "call" ? samplePage() : samplePutPage()
+    const invalid = [
+      { status: "estimated" },
+      { bid_pct_tenths: 72.1 },
+      { spot_exact: 100 },
+      { model: "american" },
+      { reason: { code: "provider_error", message: "Invalid code" } },
+    ]
+    for (const fields of invalid) {
+      const malformed = { ...page, expirations: [{
+        ...page.expirations[0],
+        contracts: [{ ...page.expirations[0].contracts[0], iv_details: { ...sampleIvDetails(), ...fields } }],
+      }] }
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(malformed))))
+      await expect(fetchChain("IREN", side, side === "call" ? "itm" : "otm")).rejects.toThrow("Local API returned an invalid response")
+    }
   })
 
   function fakeDeadlines() {

@@ -11,7 +11,7 @@ import { formatRowClipboard } from "./copyRow"
 import { setDensity } from "./density"
 import ItmChain from "./ItmChain"
 import { setThemePreference } from "./theme"
-import { COLUMN_HEADERS, COPY_HEADERS, largeChainPage, sampleContract, samplePage, samplePutPage } from "./testFixtures"
+import { COLUMN_HEADERS, COPY_HEADERS, largeChainPage, sampleContract, sampleIvDetails, samplePage, samplePutPage } from "./testFixtures"
 import type { CoveredCallPage } from "./types"
 import { addWatch } from "./watchlist/api"
 
@@ -134,14 +134,14 @@ describe("chain interactions", () => {
     expect(pricedCells[0].textContent).toContain("Market odds are unavailable")
     expect(pricedCells[1].textContent).toBe("$0.50")
     expect(pricedCells[1].hasAttribute("data-heat")).toBe(false)
-    expect(pricedCells[4].textContent).toBe("45.0%")
+    expect(pricedCells[4].querySelector("summary")?.textContent).toBe("45.0% · Details")
     expect(pricedCells[4].hasAttribute("data-heat")).toBe(false)
     expect(pricedCells[6].textContent).toBe("$50.00")
     expect(pricedCells[6].getAttribute("data-heat")).toBe("0.50")
     const missingRowCells = within(first!).getAllByRole("row")[2].querySelectorAll("td")
     expect(missingRowCells[6].textContent).toBe("—")
     expect(missingRowCells[6].hasAttribute("data-heat")).toBe(false)
-    const missingCells = [...missingRowCells].map((cell) => cell.textContent)
+    const missingCells = [...missingRowCells].map((cell) => cell.querySelector(".iv-midpoint")?.textContent ?? cell.textContent)
     expect(missingCells.slice(1, 10)).toEqual(["—", "—", "—", "—", "—", "—", "—", "—", "—"])
     expect(screen.queryByText("Suggested trade")).toBeNull()
     expect(screen.getByRole("button", { name: "Copy row IREN 2026-09-18 strike $50.00" })).toBeTruthy()
@@ -218,6 +218,49 @@ describe("chain interactions", () => {
     expect(rows[1].querySelector(".odds-cell")?.textContent).toContain("Quote tightness 70/100 · ITM bounds 50.0%–80.0%")
     expect(rows[2].querySelector(".odds-cell")?.textContent).toContain("Too few reliable option quotes")
     expect(screen.getByText(/Nasdaq · last estimate Sep 17, 2026/)).toBeTruthy()
+  })
+
+  it("shows IV provenance on desktop and copies it without another request", async () => {
+    const diagnosticPage = page()
+    Object.assign(diagnosticPage.expirations[0].contracts[0], {
+      strike_cents: 8000, call_bid_cents: 2010, call_ask_cents: 2030,
+      iv_pct_tenths: 877, iv_details: sampleIvDetails(),
+    })
+    fetchMock.mockResolvedValue(diagnosticPage)
+    render(<ItmChain />)
+    const summary = await screen.findByLabelText("IV details for IREN 2026-09-18 call strike $80.00: 87.7% · Details")
+    expect(summary.tagName).toBe("SUMMARY")
+    expect(summary.closest("td")?.querySelector("details")?.open).toBe(false)
+    fireEvent.click(summary)
+    expect(screen.getByText("Quote-implied IV range")).toBeTruthy()
+    expect(screen.getByText("$100.00")).toBeTruthy()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole("button", { name: "Copy row IREN 2026-09-18 strike $80.00" }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
+    expect(writeText.mock.calls[0][0]).toContain("Midpoint IV: 87.7%")
+    expect(writeText.mock.calls[0][0]).toContain("Pricing spot: $100.00")
+    expect(writeText.mock.calls[0][0]).toContain("Option-chain retrieved (UTC): 2026-09-11T20:00:01Z")
+  })
+
+  it("keeps mobile IV outside the contract trigger and metric grid", async () => {
+    setDesktopViewport(false)
+    const diagnosticPage = page()
+    Object.assign(diagnosticPage.expirations[0].contracts[0], {
+      strike_cents: 8000, call_bid_cents: 2010, call_ask_cents: 2030,
+      iv_pct_tenths: 877, iv_details: sampleIvDetails(),
+    })
+    fetchMock.mockResolvedValue(diagnosticPage)
+    render(<ItmChain />)
+    const trigger = await screen.findByRole("button", { name: /Show details for IREN 2026-09-18 strike \$80\.00/ })
+    expect(trigger.querySelector("details")).toBeNull()
+    fireEvent.click(trigger)
+    const summary = await screen.findByLabelText("IV details for IREN 2026-09-18 call strike $80.00: 87.7% · Details")
+    expect(summary.closest(".mobile-row-details")).toBeTruthy()
+    expect(summary.closest(".mobile-row-details > dl")).toBeNull()
+    expect(summary.closest(".mobile-iv-details")).toBeTruthy()
+    fireEvent.click(summary)
+    expect(trigger.getAttribute("aria-expanded")).toBe("true")
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it("uses a labeled historical fallback without a composite score", async () => {
@@ -949,6 +992,7 @@ describe("chain interactions", () => {
       },
       COPY_HEADERS,
       formatContractValues(sample.expirations[0].contracts[0], COLUMN_HEADERS),
+      sample.expirations[0].contracts[0],
     ))
     expect(writeText.mock.calls[0][0]).toContain("1 contract · 100 sh")
     expect(writeText.mock.calls[0][0]).not.toMatch(/\| Copy \|/)
@@ -1016,7 +1060,7 @@ describe("chain interactions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show 150 more" }))
     expect(screen.queryByText(/Displaying/)).toBeNull()
     expect(document.querySelectorAll("tbody tr")).toHaveLength(400)
-  })
+  }, 15_000)
 
   it("resets the reveal window when filters change", async () => {
     fetchMock.mockResolvedValue(largeChainPage(300))

@@ -43,6 +43,60 @@ export const zHypotheticalRiskView = z.object({
 });
 
 /**
+ * IvReason
+ */
+export const zIvReason = z.object({
+    code: z.enum([
+        'contract_identity',
+        'chain_session',
+        'underlying',
+        'expiry_timing',
+        'treasury',
+        'dividends',
+        'option_quote',
+        'midpoint_eligibility',
+        'model_bounds',
+        'solver_range',
+        'input_acquisition',
+        'numerical_failure'
+    ]),
+    message: z.string()
+});
+
+/**
+ * IvDetails
+ */
+export const zIvDetails = z.object({
+    status: z.enum(['available', 'unavailable']),
+    reason: zIvReason.nullish(),
+    bid_pct_tenths: z.int().nullish(),
+    ask_pct_tenths: z.int().nullish(),
+    bid_reason: zIvReason.nullish(),
+    ask_reason: zIvReason.nullish(),
+    model: z.literal('black_scholes_european_no_dividends_v1').optional().default('black_scholes_european_no_dividends_v1'),
+    spot_exact: z.string().nullish(),
+    strike_exact: z.string().nullish(),
+    bid_price_exact: z.string().nullish(),
+    mid_price_exact: z.string().nullish(),
+    ask_price_exact: z.string().nullish(),
+    rate_exact: z.string().nullish(),
+    years_to_expiry_exact: z.string().nullish(),
+    spot_basis: z.enum([
+        'underlying_midpoint',
+        'yahoo_regular_market_price',
+        'completed_session_close'
+    ]).nullish(),
+    pricing_path: z.enum(['displayed_chain', 'matching_snapshot']).nullish(),
+    chain_source: z.enum(['nasdaq', 'yahoo']).nullish(),
+    valuation_time: z.iso.datetime().nullish(),
+    underlying_quote_time: z.iso.datetime().nullish(),
+    option_chain_fetched_at: z.iso.datetime().nullish(),
+    expiry_close: z.iso.datetime().nullish(),
+    quote_session_date: z.iso.date().nullish(),
+    rate_as_of_session: z.iso.date().nullish()
+});
+
+/**
  * Job
  */
 export const zJob = z.object({
@@ -216,6 +270,7 @@ export const zCashSecuredPutContract = z.object({
     vs_90d_low_pct_tenths: z.int().nullable(),
     vs_365d_low_pct_tenths: z.int().nullable(),
     iv_pct_tenths: z.int().nullish(),
+    iv_details: zIvDetails.nullish(),
     delta_e4: z.int().nullish(),
     gamma_e4: z.int().nullish(),
     theta_e4: z.int().nullish(),
@@ -315,6 +370,7 @@ export const zCoveredCallContract = z.object({
     vs_90d_low_pct_tenths: z.int().nullable(),
     vs_365d_low_pct_tenths: z.int().nullable(),
     iv_pct_tenths: z.int().nullish(),
+    iv_details: zIvDetails.nullish(),
     delta_e4: z.int().nullish(),
     gamma_e4: z.int().nullish(),
     theta_e4: z.int().nullish(),

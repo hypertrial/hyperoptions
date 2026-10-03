@@ -34,7 +34,7 @@ exports[`strategy column metadata > matches the call snapshot 1`] = `
     "abbrev": true,
     "heatmap": false,
     "id": "iv_pct_tenths",
-    "info": "European no-dividend Black-Scholes implied volatility from the bid/ask midpoint. Blank when that midpoint is outside no-arbitrage bounds. Contracts does not scale this.",
+    "info": "European no-dividend Black-Scholes implied volatility from the bid/ask midpoint. Open details for bid/ask IV, calculation inputs, or an unavailable reason. Contracts does not scale this.",
     "label": "IV",
   },
   {
@@ -109,7 +109,7 @@ exports[`strategy column metadata > matches the put snapshot 1`] = `
     "abbrev": true,
     "heatmap": false,
     "id": "iv_pct_tenths",
-    "info": "European no-dividend Black-Scholes implied volatility from the bid/ask midpoint. Blank when that midpoint is outside no-arbitrage bounds. Contracts does not scale this.",
+    "info": "European no-dividend Black-Scholes implied volatility from the bid/ask midpoint. Open details for bid/ask IV, calculation inputs, or an unavailable reason. Contracts does not scale this.",
     "label": "IV",
   },
   {

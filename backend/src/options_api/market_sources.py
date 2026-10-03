@@ -73,11 +73,16 @@ class TreasuryCurve:
         return None
 
 
+class InputAcquisitionError(Exception):
+    """External input could not be acquired, rather than failing semantic validation."""
+
+
 @dataclass(frozen=True)
 class DividendStatus:
     kind: Literal["nonpayer", "payer", "unknown"]
     as_of: datetime
     next_ex_date: date | None = None
+    acquisition_failed: bool = False
 
     def eligible_for(self, expiry: date) -> tuple[bool, str | None]:
         if self.kind == "nonpayer":
@@ -129,7 +134,8 @@ def parse_treasury_curve(xml: bytes, as_of: datetime) -> TreasuryCurve | None:
 
 
 async def fetch_treasury_curve(
-    client: httpx.AsyncClient, as_of: datetime | None = None
+    client: httpx.AsyncClient, as_of: datetime | None = None,
+    *, raise_on_acquisition_failure: bool = False,
 ) -> TreasuryCurve | None:
     """Use the current Treasury month; hold a valid result for at most two hours."""
     global _treasury_cache
@@ -143,6 +149,7 @@ async def fetch_treasury_curve(
             ):
                 return curve
         month = now.astimezone(_NY).date().replace(day=1)
+        acquisition_failures = 0
         for requested_month in (month, month - timedelta(days=1)):
             try:
                 response = await client.get(
@@ -155,7 +162,10 @@ async def fetch_treasury_curve(
                 )
                 response.raise_for_status()
                 curve = parse_treasury_curve(response.content, now)
-            except (httpx.HTTPError, ValueError):
+            except httpx.HTTPError:
+                acquisition_failures += 1
+                curve = None
+            except ValueError:
                 curve = None
             if curve is not None and 0 <= (now.astimezone(_NY).date() - curve.as_of).days <= 7:
                 _treasury_cache = (now, curve)
@@ -164,6 +174,8 @@ async def fetch_treasury_curve(
             curve = _treasury_cache[1]
             if 0 <= (now.astimezone(_NY).date() - curve.as_of).days <= 7:
                 return curve
+        if raise_on_acquisition_failure and acquisition_failures == 2:
+            raise InputAcquisitionError("Treasury input could not be acquired")
         return None
 
 
@@ -206,7 +218,7 @@ async def fetch_dividend_status(ticker: str, as_of: datetime | None = None) -> D
 
     def work() -> DividendStatus:
         if not _DIVIDEND_WORKERS.acquire(blocking=False):
-            return DividendStatus("unknown", now)
+            return DividendStatus("unknown", now, acquisition_failed=True)
         try:
             return _dividend_status_sync(safe, now)
         finally:
@@ -216,7 +228,7 @@ async def fetch_dividend_status(ticker: str, as_of: datetime | None = None) -> D
         return await asyncio.wait_for(asyncio.to_thread(work), timeout=20)
     except Exception:
         _LOG.info("Yahoo dividend status unavailable for %s", safe)
-        return DividendStatus("unknown", now)
+        return DividendStatus("unknown", now, acquisition_failed=True)
 
 
 def _yahoo_underlying(underlying: Any) -> tuple[Decimal | None, str | None]:

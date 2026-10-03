@@ -15,10 +15,14 @@ from options_api.greeks import (
     years_until_expiry_close,
 )
 from options_api.hypothetical_risk import compute_hypothetical_risk
+from options_api.iv_diagnostics import iv_details_for_contract
 from options_api.market_calendar import session_close
 from options_api.market_watch import EntryQuote, MarketWatchOdds
 from options_api.models import (
     HypotheticalRiskView,
+    IvDetails,
+    IvPricingPath,
+    IvReason,
     MarketOddsView,
     MarketSource,
     PhysicalModel,
@@ -28,6 +32,7 @@ from options_api.models import (
 from options_api.money import to_pct_tenths
 from options_api.outcomes import TERMS_NOTE
 from options_api.predictive_watch import PredictiveWatchOdds
+from options_api.pricing_context import PricingSelection
 from options_api.physical_shadow_capture import MODEL_VERSIONS, PhysicalShadowCapture
 from stocksweeper.forecast.calibration import horizon_band
 from stocksweeper.forecast.ledger import ForecastIssuance
@@ -49,6 +54,7 @@ class LiveQuant:
     greeks_rate_as_of_session: date | None = None
     last_available_market: MarketOddsView | None = None
     issuance: tuple[ForecastIssuance, PredictiveDistribution | None] | None = None
+    iv_details: IvDetails | None = None
 
 
 def _issuance(
@@ -134,6 +140,9 @@ def quant_for_contract(
     physical_shadow: PhysicalShadowCapture | None = None,
     forecast_model: PhysicalModel = "lognormal_ewma",
     entry_quote: EntryQuote | object | None = _ENTRY_QUOTE_UNSET,
+    pricing_selection: PricingSelection | None = None,
+    include_iv_details: bool = False,
+    iv_pricing_path: IvPricingPath = "displayed_chain",
 ) -> LiveQuant:
     expiry_text = expiry.isoformat()
     market = market_odds.lookup(ticker, side, expiry_text, strike, root)
@@ -264,7 +273,9 @@ def quant_for_contract(
         if watched and market.status != "available"
         else None
     )
-    if entry_quote is _ENTRY_QUOTE_UNSET:
+    if pricing_selection is not None:
+        quote = pricing_selection.quote
+    elif entry_quote is _ENTRY_QUOTE_UNSET:
         quote = market_odds.entry_quote(ticker, side, expiry_text, strike, root)
         if (
             quote is not None
@@ -289,23 +300,44 @@ def quant_for_contract(
             market_models=market_models,
             last_available_market=last_good,
             issuance=issuance,
+            iv_details=(
+                iv_details_for_contract(
+                    side=side, expiry=expiry, strike=strike, quote=None,
+                    greeks=empty_greeks(),
+                    issue=pricing_selection.issue if pricing_selection is not None else None,
+                    pricing_path=iv_pricing_path,
+                ) if include_iv_details else None
+            ),
         )
 
     years = years_until_expiry_close(expiry, quote.valuation_time)
-    greeks = (
-        compute_greeks(
-            side,
-            quote.spot,
-            strike,
-            (expiry - quote.session_date).days,
-            quote.rate,
-            quote.bid,
-            quote.ask,
-            years_to_expiry=years,
+    iv_issue = pricing_selection.issue if pricing_selection is not None else None
+    midpoint_issue = None
+    try:
+        greeks = (
+            compute_greeks(
+                side,
+                quote.spot,
+                strike,
+                (expiry - quote.session_date).days,
+                quote.rate,
+                quote.bid,
+                quote.ask,
+                years_to_expiry=years,
+            )
+            if (
+                years > 0 and quote.rate is not None and quote.rate_as_of_session is not None
+                and (pricing_selection is None or pricing_selection.issue is None)
+            )
+            else empty_greeks()
         )
-        if years > 0 and quote.rate is not None and quote.rate_as_of_session is not None
-        else empty_greeks()
-    )
+    except (ArithmeticError, ValueError):
+        if not include_iv_details:
+            raise
+        greeks = empty_greeks()
+        midpoint_issue = IvReason(
+            code="numerical_failure", message="Pricing calculation did not converge"
+        )
     entry_spot = quote.stock_ask if side == "call" else quote.spot
     coherent_window = (
         selected_distribution.as_of <= quote.session_date <= selected_distribution.expiry_session
@@ -344,4 +376,12 @@ def quant_for_contract(
         greeks_rate_as_of_session=(quote.rate_as_of_session if greeks.source is not None else None),
         last_available_market=last_good,
         issuance=issuance,
+        iv_details=(
+            iv_details_for_contract(
+                side=side, expiry=expiry, strike=strike, quote=quote, greeks=greeks,
+                issue=iv_issue,
+                pricing_path=iv_pricing_path,
+                midpoint_issue=midpoint_issue,
+            ) if include_iv_details else None
+        ),
     )

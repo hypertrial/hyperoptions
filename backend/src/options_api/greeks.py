@@ -12,7 +12,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from options_api.models import GreeksSource
+from options_api.models import GreeksSource, IvReason
 from options_api.market_calendar import session_close, session_on_or_before
 from options_api.money import (
     DAYS_PER_YEAR,
@@ -105,6 +105,57 @@ def no_arb_bounds(
         return lower, spot
     lower = max(ZERO, strike * discount - spot)
     return lower, strike
+
+
+def endpoint_iv(
+    side: Literal["call", "put"],
+    spot: Decimal,
+    strike: Decimal,
+    years: Decimal,
+    rate: Decimal,
+    price: Decimal,
+) -> tuple[int | None, IvReason | None]:
+    """Invert an endpoint strictly inside European bounds, without the mid buffer."""
+    if (
+        not all(value.is_finite() for value in (spot, strike, years, rate, price))
+        or min(spot, strike, years, price) <= ZERO
+    ):
+        return None, IvReason(
+            code="model_bounds", message="Quoted price must be positive and inside model bounds"
+        )
+    is_call = side == "call"
+    try:
+        discounted_strike = strike * (-rate * years).exp()
+        lower = max(ZERO, spot - discounted_strike if is_call else discounted_strike - spot)
+        upper = spot if is_call else discounted_strike
+        if not lower < price < upper:
+            return None, IvReason(
+                code="model_bounds", message="Quoted price is outside strict European model bounds"
+            )
+        args = (is_call, float(spot), float(strike), float(years), float(rate))
+        target = float(price)
+        if not all(math.isfinite(value) for value in (*args[1:], target)):
+            raise ValueError("non-finite float input")
+        low_price = black_scholes_price(*args, SIGMA_LO)
+        high_price = black_scholes_price(*args, SIGMA_HI)
+        if not low_price <= target <= high_price:
+            return None, IvReason(
+                code="solver_range",
+                message="Quoted price is outside the 0.01%-500% volatility search range",
+            )
+        sigma = implied_vol(*args, target)
+        if (
+            sigma is None
+            or not math.isfinite(sigma)
+            or not SIGMA_LO <= sigma <= SIGMA_HI
+            or abs(black_scholes_price(*args, sigma) - target) > PRICE_TOL
+        ):
+            raise ValueError("invalid solver result")
+    except (ArithmeticError, ValueError, OverflowError):
+        return None, IvReason(
+            code="numerical_failure", message="Pricing calculation did not converge"
+        )
+    return optional_pct_tenths(Decimal(str(sigma)) * HUNDRED), None
 
 
 def _inside_bounds(price: Decimal, lower: Decimal, upper: Decimal) -> bool:

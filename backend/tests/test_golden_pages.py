@@ -47,6 +47,7 @@ def _pages(assemble) -> dict[str, object]:
                 assert contract.pop("hypothetical_risk")["status"] == "unavailable"
                 assert contract.pop("greeks_rate_pct_tenths") is None
                 assert contract.pop("greeks_rate_as_of_session") is None
+                assert contract.pop("iv_details") is None
                 for field in (
                     "at_the_money", "strike_exact", "watch_key", "watchability_reason"
                 ):

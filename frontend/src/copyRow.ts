@@ -1,4 +1,5 @@
 import { integer, moneyCents } from "./format"
+import { formatIvClipboard, type IvRow } from "./ivFacts"
 
 export type RowCopyContext = {
   ticker: string
@@ -21,6 +22,7 @@ export function formatRowClipboard(
   context: RowCopyContext,
   headers: readonly string[],
   values: readonly string[],
+  ivRow?: IvRow,
 ): string {
   const parts = [
     context.ticker,
@@ -35,5 +37,6 @@ export function formatRowClipboard(
   const headerRow = `| ${headers.join(" | ")} |`
   const divider = `| ${headers.map(() => "---").join(" | ")} |`
   const valueRow = `| ${values.join(" | ")} |`
-  return `${parts.join(" · ")}\n\n${headerRow}\n${divider}\n${valueRow}`
+  const table = `${parts.join(" · ")}\n\n${headerRow}\n${divider}\n${valueRow}`
+  return ivRow ? `${table}\n\n${formatIvClipboard(ivRow)}` : table
 }
