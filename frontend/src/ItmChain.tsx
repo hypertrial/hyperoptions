@@ -240,7 +240,7 @@ export default function ItmChain({ forecastModel = DEFAULT_FORECAST_MODEL }: { f
           {page ? <p className="odds-context">Selected forecast: {PHYSICAL_MODEL_NAMES[forecastModel]}{forecastModel === DEFAULT_FORECAST_MODEL ? " baseline" : " · user-selected experimental"}. It drives expiry odds, odds sort, and hypothetical risk. Market odds use option prices (risk-neutral). {oddsStamp ? `Market quote: ${oddsStamp}.` : ""}</p> : null}
         </header>
 
-        <main id="main-content" className="chain-panel" aria-busy={loading}>
+        <main id="main-content" tabIndex={-1} className="chain-panel" aria-busy={loading}>
           {page ? (
             <FilterControls
               side={side}

@@ -280,7 +280,7 @@ function MobileResults({
                   </dl>
                 ) : null}
                 {columns.some((column) => column.id === "iv_pct_tenths") ? (
-                  <div className="mobile-iv-details"><span className="mobile-iv-label">IV</span><IvDetails row={row} contractLabel={`${ticker} ${row.expiration} ${side} strike ${strike}`} /></div>
+                  <div className="mobile-iv-details"><span className="mobile-iv-label">IV</span><IvDetails inline row={row} contractLabel={`${ticker} ${row.expiration} ${side} strike ${strike}`} /></div>
                 ) : null}
                 <WatchButton
                   contractLabel={rowName}

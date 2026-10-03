@@ -10,6 +10,7 @@ import { formatContractValues } from "./columns"
 import { formatRowClipboard } from "./copyRow"
 import { setDensity } from "./density"
 import ItmChain from "./ItmChain"
+import ThemeToggle from "./ThemeToggle"
 import { setThemePreference } from "./theme"
 import { COLUMN_HEADERS, COPY_HEADERS, largeChainPage, sampleContract, sampleIvDetails, samplePage, samplePutPage } from "./testFixtures"
 import type { CoveredCallPage } from "./types"
@@ -1160,7 +1161,7 @@ describe("chain interactions", () => {
   })
 
   it("toggles theme into localStorage and sets the dark class", async () => {
-    render(<ItmChain />)
+    render(<><ThemeToggle /><ItmChain /></>)
     await waitFor(() => expect(screen.getByRole("heading", { name: /2026-09-18/ })).toBeTruthy())
     fireEvent.click(screen.getByRole("button", { name: "Theme: system" }))
     expect(document.documentElement.classList.contains("dark")).toBe(true)
@@ -1177,7 +1178,7 @@ describe("chain interactions", () => {
       get() { throw new DOMException("Storage blocked", "SecurityError") },
     })
     try {
-      render(<ItmChain />)
+      render(<><ThemeToggle /><ItmChain /></>)
       await waitFor(() => expect(screen.getByRole("heading", { name: /2026-09-18/ })).toBeTruthy())
       fireEvent.click(screen.getByRole("button", { name: "Theme: system" }))
       expect(screen.getByRole("button", { name: "Theme: dark" })).toBeTruthy()
@@ -1201,7 +1202,7 @@ describe("chain interactions", () => {
       },
     })
     try {
-      render(<ItmChain />)
+      render(<><ThemeToggle /><ItmChain /></>)
       await waitFor(() => expect(screen.getByRole("heading", { name: /2026-09-18/ })).toBeTruthy())
       fireEvent.click(screen.getByRole("button", { name: "Theme: system" }))
       expect(screen.getByRole("button", { name: "Theme: dark" })).toBeTruthy()
