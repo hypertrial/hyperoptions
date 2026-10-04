@@ -377,30 +377,28 @@ def fetch_contract(
     source = "rest"
     if daily_lookup is None:
         raw_daily, daily_adjusted = daily_bars(client, contract["ticker"], start, end)
+        for raw in raw_daily:
+            raw["_adjusted"] = daily_adjusted
     else:
-        raw_daily = [
-            dict(raw)
-            for raw in daily_lookup.get(contract["ticker"], [])
-            if start <= bar_day(raw) <= end
-        ]
+        raw_daily = []
+        for raw in daily_lookup.get(contract["ticker"], []):
+            if start <= bar_day(raw) <= end:
+                row = dict(raw)
+                row["_adjusted"] = False
+                raw_daily.append(row)
         flat_count = len(raw_daily)
-        daily_adjusted = False
         source = "flatfile" if flat_count else "rest"
         if flat_through is not None and end > flat_through:
             gap_start = flat_through + timedelta(days=1)
             if gap_start <= end:
                 extra, adjusted = daily_bars(client, contract["ticker"], gap_start, end)
-                if extra:
-                    raw_daily.extend(extra)
-                    if flat_count:
-                        source = "flatfile"
-                    else:
-                        source = "rest"
-                        daily_adjusted = adjusted
+                for raw in extra:
+                    raw["_adjusted"] = adjusted
+                raw_daily.extend(extra)
+                if extra and not flat_count:
+                    source = "rest"
     raw_daily = _normalize_daily(raw_daily)
-    if daily_lookup is not None and source == "flatfile":
-        daily_adjusted = False
-    daily_rows = [bar_row(contract, raw, daily_adjusted) for raw in raw_daily]
+    daily_rows = [bar_row(contract, raw, bool(raw.get("_adjusted", False))) for raw in raw_daily]
     fetched_at = datetime.now(EASTERN).isoformat(timespec="seconds")
     daily_fetch = {
         "option_ticker": contract["ticker"],

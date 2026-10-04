@@ -314,6 +314,9 @@ class FlatFileTests(unittest.TestCase):
         )
         self.assertEqual(daily_fetch["source"], "flatfile")
         self.assertEqual(sorted(row["bar_date"] for row in daily_rows), ["2024-10-04", "2024-10-07"])
+        by_date = {row["bar_date"]: row["adjusted"] for row in daily_rows}
+        self.assertFalse(by_date["2024-10-04"])
+        self.assertTrue(by_date["2024-10-07"])
         self.assertTrue(any("/range/1/day/" in url for url in calls))
 
     def test_flatfile_keys_keep_days_inside_the_window(self):
