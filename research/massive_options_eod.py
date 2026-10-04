@@ -2,40 +2,53 @@
 """Load two years of hourly option bars from Massive into DuckDB.
 
 Every active and expired contract on the selected underlyings is kept.
-One daily request finds the days a contract traded and is stored with the
-hourly bars. Hourly requests then cover only those days, in windows that stay
-under the minute-bar limit, and each window is checked against that day's
-volume. A stopped run lists contracts again, then skips tickers already in
-option_hour_fetches.
+Daily bars come from Massive flat files when S3 keys are configured, and
+otherwise from one REST request per contract. Hourly requests then cover
+only the days that traded, over reused connections. A contract that fails
+is left unrecorded so the next run retries it. A stopped run lists
+contracts again, then skips tickers already in option_hour_fetches.
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
+import gzip
+import hashlib
+import io
 import json
 import os
+import random
 import sys
+import threading
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import requests
 from dotenv import load_dotenv
+from requests.adapters import HTTPAdapter
 
 ROOT = Path(__file__).resolve().parents[1]
 RESEARCH = Path(__file__).resolve().parent
 DB_PATH = RESEARCH / "massive_options.duckdb"
 BASE = "https://api.massive.com"
+FLAT_ENDPOINT = "https://files.massive.com"
+FLAT_BUCKET = "flatfiles"
+FLAT_PREFIX = "us_options_opra/day_aggs_v1"
+FLAT_CACHE = RESEARCH / ".dlt" / "flatfiles"
 UNDERLYINGS = ("WULF", "NBIS", "IREN", "CIFR")
 EASTERN = ZoneInfo("America/New_York")
 WORKERS = 32
-FLUSH_EVERY = 25
+FLUSH_EVERY = 250
+FLUSH_SECONDS = 60
 MINUTE_BUDGET = 45_000
 SESSION_MINUTES = 960
+CONNECT_TIMEOUT = 10
+READ_TIMEOUT = 60
 
 
 def window_start(today: date) -> date:
@@ -45,13 +58,40 @@ def window_start(today: date) -> date:
         return today.replace(year=today.year - 2, day=28)
 
 
-def redact(text: str) -> str:
-    return text.replace(os.environ.get("MASSIVE_API_KEY", ""), "REDACTED")
+def redact(text: str, *secrets: str) -> str:
+    redacted = text
+    for secret in (os.environ.get("MASSIVE_API_KEY", ""), *secrets):
+        if secret:
+            redacted = redacted.replace(secret, "REDACTED")
+    return redacted
 
 
 class MassiveClient:
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, session_factory=None):
         self.api_key = api_key
+        self._local = threading.local()
+        self._session_factory = session_factory or self._default_session
+
+    @staticmethod
+    def _default_session() -> requests.Session:
+        session = requests.Session()
+        adapter = HTTPAdapter(pool_connections=1, pool_maxsize=1, max_retries=0)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+        return session
+
+    def _session(self):
+        session = getattr(self._local, "session", None)
+        if session is None:
+            session = self._session_factory()
+            self._local.session = session
+        return session
+
+    def _drop_session(self) -> None:
+        session = getattr(self._local, "session", None)
+        if session is not None:
+            session.close()
+        self._local.session = None
 
     def _with_key(self, url: str, params: dict | None) -> str:
         parts = urllib.parse.urlsplit(url)
@@ -66,22 +106,29 @@ class MassiveClient:
     def get(self, url: str, params: dict | None = None) -> dict:
         last_error = "request failed"
         for attempt in range(6):
-            request = urllib.request.Request(
-                self._with_key(url, params),
-                headers={"Accept": "application/json"},
-            )
             try:
-                with urllib.request.urlopen(request, timeout=90) as response:
-                    payload = json.load(response)
-            except urllib.error.HTTPError as exc:
-                body = exc.read().decode("utf-8", "replace")
-                last_error = f"HTTP {exc.code}: {body[:240]}"
-                if exc.code == 429 or exc.code >= 500:
-                    self._wait(15 if exc.code == 429 else min(30, 2**attempt), last_error, attempt)
-                    continue
-                raise RuntimeError(redact(last_error)) from exc
-            except (TimeoutError, urllib.error.URLError) as exc:
+                response = self._session().get(
+                    self._with_key(url, params),
+                    headers={"Accept": "application/json"},
+                    timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),
+                )
+            except (requests.ConnectionError, requests.Timeout) as exc:
+                self._drop_session()
                 last_error = f"network: {exc}"
+                self._wait(min(30, 2**attempt), last_error, attempt)
+                continue
+            if response.status_code == 429 or response.status_code >= 500:
+                last_error = f"HTTP {response.status_code}: {response.text[:240]}"
+                delay = 15 if response.status_code == 429 else min(30, 2**attempt)
+                self._wait(delay, last_error, attempt)
+                continue
+            if response.status_code >= 400:
+                last_error = f"HTTP {response.status_code}: {response.text[:240]}"
+                raise RuntimeError(redact(last_error, self.api_key))
+            try:
+                payload = response.json()
+            except ValueError as exc:
+                last_error = f"invalid json: {exc}"
                 self._wait(min(30, 2**attempt), last_error, attempt)
                 continue
             status = str(payload.get("status") or "OK")
@@ -91,15 +138,20 @@ class MassiveClient:
                 if "maximum requests" in message.lower():
                     self._wait(15, message, attempt)
                     continue
-                raise RuntimeError(redact(message))
+                raise RuntimeError(redact(message, self.api_key))
             return payload
-        raise RuntimeError(redact(last_error))
+        raise RuntimeError(redact(last_error, self.api_key))
 
     def _wait(self, seconds: float, reason: str, attempt: int) -> None:
         if attempt >= 5:
             return
-        print(f"retrying after {redact(reason)}; sleeping {seconds:.0f}s", file=sys.stderr, flush=True)
-        time.sleep(seconds)
+        delay = seconds + random.random()
+        print(
+            f"retrying after {redact(reason, self.api_key)}; sleeping {delay:.0f}s",
+            file=sys.stderr,
+            flush=True,
+        )
+        time.sleep(delay)
 
     def pages(self, path: str, params: dict):
         url = BASE + path
@@ -234,10 +286,22 @@ def volume_total(rows: list[dict]) -> float:
     return sum(float(row.get("v") or 0) for row in rows)
 
 
-def volumes_match(hourly: list[dict], daily: list[dict]) -> bool:
-    if not hourly and volume_total(daily) > 0:
-        return False
-    return abs(volume_total(hourly) - volume_total(daily)) < 0.5
+def window_empty(hourly: list[dict], days: list[dict]) -> bool:
+    return not hourly and volume_total(days) > 0
+
+
+def day_mismatches(hourly: list[dict], days: list[dict]) -> int:
+    hourly_by_day: dict[date, float] = {}
+    for raw in hourly:
+        day = bar_day(raw)
+        hourly_by_day[day] = hourly_by_day.get(day, 0.0) + float(raw.get("v") or 0)
+    mismatches = 0
+    for raw in days:
+        daily_volume = float(raw.get("v") or 0)
+        hourly_volume = hourly_by_day.get(bar_day(raw), 0.0)
+        if abs(hourly_volume - daily_volume) >= 0.5:
+            mismatches += 1
+    return mismatches
 
 
 def hour_row(contract: dict, raw: dict, adjusted: bool) -> dict:
@@ -286,25 +350,56 @@ def bar_row(contract: dict, raw: dict, adjusted: bool) -> dict:
 def fetch_window(client: MassiveClient, contract: dict, days: list[dict], stats: dict) -> list[dict]:
     stats["hour_requests"] += 1
     raw_bars, adjusted = hourly_bars(client, contract["ticker"], bar_day(days[0]), bar_day(days[-1]))
-    matched = volumes_match(raw_bars, days)
-    if not matched and len(days) > 1:
+    if window_empty(raw_bars, days) and len(days) > 1:
         middle = len(days) // 2
         return fetch_window(client, contract, days[:middle], stats) + fetch_window(
             client, contract, days[middle:], stats
         )
-    if not matched:
-        stats["volume_mismatch_days"] += 1
+    stats["volume_mismatch_days"] += day_mismatches(raw_bars, days)
     return [hour_row(contract, raw, adjusted) for raw in raw_bars]
 
 
+def _normalize_daily(raw_rows: list[dict]) -> list[dict]:
+    deduped = {int(raw["t"]): raw for raw in raw_rows}
+    return [deduped[stamp] for stamp in sorted(deduped)]
+
+
 def fetch_contract(
-    client: MassiveClient, contract: dict, start: date, today: date
+    client: MassiveClient,
+    contract: dict,
+    start: date,
+    today: date,
+    daily_lookup: dict[str, list[dict]] | None = None,
+    flat_through: date | None = None,
 ) -> tuple[list[dict], dict, list[dict], dict]:
     expiration = date.fromisoformat(str(contract["expiration_date"])[:10])
     end = min(today, expiration)
-    raw_daily, daily_adjusted = daily_bars(client, contract["ticker"], start, end)
-    raw_daily = list({int(raw["t"]): raw for raw in raw_daily}.values())
-    raw_daily.sort(key=lambda raw: int(raw["t"]))
+    source = "rest"
+    if daily_lookup is None:
+        raw_daily, daily_adjusted = daily_bars(client, contract["ticker"], start, end)
+    else:
+        raw_daily = [
+            dict(raw)
+            for raw in daily_lookup.get(contract["ticker"], [])
+            if start <= bar_day(raw) <= end
+        ]
+        flat_count = len(raw_daily)
+        daily_adjusted = False
+        source = "flatfile" if flat_count else "rest"
+        if flat_through is not None and end > flat_through:
+            gap_start = flat_through + timedelta(days=1)
+            if gap_start <= end:
+                extra, adjusted = daily_bars(client, contract["ticker"], gap_start, end)
+                if extra:
+                    raw_daily.extend(extra)
+                    if flat_count:
+                        source = "flatfile"
+                    else:
+                        source = "rest"
+                        daily_adjusted = adjusted
+    raw_daily = _normalize_daily(raw_daily)
+    if daily_lookup is not None and source == "flatfile":
+        daily_adjusted = False
     daily_rows = [bar_row(contract, raw, daily_adjusted) for raw in raw_daily]
     fetched_at = datetime.now(EASTERN).isoformat(timespec="seconds")
     daily_fetch = {
@@ -313,6 +408,7 @@ def fetch_contract(
         "from_date": start.isoformat(),
         "to_date": end.isoformat(),
         "fetched_at": fetched_at,
+        "source": source,
     }
     stats = {"hour_requests": 0, "volume_mismatch_days": 0}
     bars: list[dict] = []
@@ -330,6 +426,153 @@ def fetch_contract(
         "volume_mismatch_days": stats["volume_mismatch_days"],
     }
     return bars, fetch, daily_rows, daily_fetch
+
+
+def eastern_midnight_millis(millis: int) -> int:
+    moment = datetime.fromtimestamp(millis / 1000, tz=EASTERN)
+    midnight = datetime.combine(moment.date(), datetime.min.time(), tzinfo=EASTERN)
+    return int(midnight.timestamp() * 1000)
+
+
+def _number(value: str | None, whole: bool) -> float | int | None:
+    if value is None or value == "":
+        return None
+    parsed = float(value)
+    if whole:
+        return int(parsed)
+    return parsed
+
+
+def flat_bar(record: dict) -> dict:
+    millis = eastern_midnight_millis(int(record["window_start"]) // 1_000_000)
+    return {
+        "t": millis,
+        "o": _number(record.get("open"), False),
+        "h": _number(record.get("high"), False),
+        "l": _number(record.get("low"), False),
+        "c": _number(record.get("close"), False),
+        "v": _number(record.get("volume"), False),
+        "n": _number(record.get("transactions"), True),
+        "vw": None,
+    }
+
+
+def parse_day_aggregates(payload: bytes, wanted: set[str]) -> dict[str, dict]:
+    rows: dict[str, dict] = {}
+    with gzip.GzipFile(fileobj=io.BytesIO(payload)) as handle:
+        reader = csv.DictReader(io.TextIOWrapper(handle, encoding="utf-8"))
+        for record in reader:
+            ticker = record.get("ticker") or ""
+            if ticker not in wanted:
+                continue
+            rows[ticker] = flat_bar(record)
+    return rows
+
+
+def flatfiles_enabled(force_rest: bool) -> bool:
+    if force_rest:
+        return False
+    access = os.environ.get("MASSIVE_S3_ACCESS_KEY_ID", "").strip()
+    secret = os.environ.get("MASSIVE_S3_SECRET_ACCESS_KEY", "").strip()
+    return bool(access and secret)
+
+
+def flatfile_client():
+    import boto3
+    from botocore.config import Config
+
+    return boto3.client(
+        "s3",
+        endpoint_url=FLAT_ENDPOINT,
+        region_name="us-east-1",
+        aws_access_key_id=os.environ["MASSIVE_S3_ACCESS_KEY_ID"].strip(),
+        aws_secret_access_key=os.environ["MASSIVE_S3_SECRET_ACCESS_KEY"].strip(),
+        config=Config(signature_version="s3v4", retries={"max_attempts": 3}),
+    )
+
+
+def flatfile_keys(client, start: date, end: date) -> list[tuple[date, str]]:
+    found: list[tuple[date, str]] = []
+    cursor = date(start.year, start.month, 1)
+    last = date(end.year, end.month, 1)
+    while cursor <= last:
+        prefix = f"{FLAT_PREFIX}/{cursor.year:04d}/{cursor.month:02d}/"
+        for page in client.get_paginator("list_objects_v2").paginate(Bucket=FLAT_BUCKET, Prefix=prefix):
+            for obj in page.get("Contents") or []:
+                key = obj["Key"]
+                name = key.rsplit("/", 1)[-1]
+                if not name.endswith(".csv.gz") or len(name) < 10:
+                    continue
+                try:
+                    day = date.fromisoformat(name[:10])
+                except ValueError:
+                    continue
+                if start <= day <= end:
+                    found.append((day, key))
+        cursor = date(cursor.year + (cursor.month == 12), cursor.month % 12 + 1, 1)
+    found.sort()
+    return found
+
+
+def _filter_digest(wanted: set[str]) -> str:
+    digest = hashlib.sha256("\n".join(sorted(wanted)).encode()).hexdigest()
+    return digest[:16]
+
+
+def _cache_path(day: date, wanted: set[str]) -> Path:
+    return FLAT_CACHE / f"{day.isoformat()}.{_filter_digest(wanted)}.json.gz"
+
+
+def _read_cached_day(day: date, wanted: set[str]) -> dict[str, dict] | None:
+    path = _cache_path(day, wanted)
+    if not path.exists():
+        return None
+    with gzip.open(path, "rt", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    return {item["ticker"]: item["bar"] for item in payload}
+
+
+def _write_cached_day(day: date, wanted: set[str], rows: dict[str, dict]) -> None:
+    FLAT_CACHE.mkdir(parents=True, exist_ok=True)
+    payload = [{"ticker": ticker, "bar": bar} for ticker, bar in rows.items()]
+    with gzip.open(_cache_path(day, wanted), "wt", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+
+
+def _download_day(client, day: date, key: str, wanted: set[str]) -> dict[str, dict]:
+    cached = _read_cached_day(day, wanted)
+    if cached is not None:
+        return cached
+    body = client.get_object(Bucket=FLAT_BUCKET, Key=key)["Body"].read()
+    rows = parse_day_aggregates(body, wanted)
+    _write_cached_day(day, wanted, rows)
+    return rows
+
+
+def load_daily_lookup(
+    client,
+    contracts: list[dict],
+    start: date,
+    today: date,
+) -> tuple[dict[str, list[dict]], date | None]:
+    wanted = {contract["ticker"] for contract in contracts}
+    keys = flatfile_keys(client, start, today)
+    if not keys:
+        return {}, None
+    lookup: dict[str, list[dict]] = {}
+
+    def load_one(item: tuple[date, str]) -> tuple[date, dict[str, dict]]:
+        day, key = item
+        return day, _download_day(client, day, key, wanted)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for day, rows in pool.map(load_one, keys):
+            print(f"flatfile {day.isoformat()} {len(rows)} contracts", file=sys.stderr, flush=True)
+            for ticker, bar in rows.items():
+                lookup.setdefault(ticker, []).append(bar)
+    for bars in lookup.values():
+        bars.sort(key=lambda raw: int(raw["t"]))
+    return lookup, keys[-1][0]
 
 
 def relation(connection, table: str) -> str | None:
@@ -454,52 +697,91 @@ def download_hours(
     start: date,
     today: date,
     workers: int,
-) -> None:
+    daily_lookup: dict[str, list[dict]] | None = None,
+    flat_through: date | None = None,
+) -> int:
     if not pending:
-        return
+        print("failed: 0", flush=True)
+        return 0
     batch_bars: list[dict] = []
     batch_fetches: list[dict] = []
     batch_daily: list[dict] = []
     batch_daily_fetches: list[dict] = []
     completed = 0
+    failed = 0
+    consecutive = 0
+    failure_limit = 3 * workers
+    last_flush = time.monotonic()
 
     def flush() -> None:
-        nonlocal batch_bars, batch_fetches, batch_daily, batch_daily_fetches
+        nonlocal batch_bars, batch_fetches, batch_daily, batch_daily_fetches, last_flush
         if not batch_fetches:
             return
+        count = len(batch_fetches)
+        started = time.monotonic()
         load_rows(
             pipe,
             [
                 ("option_hour_bars", ["option_ticker", "t"], batch_bars),
-                ("option_hour_fetches", "option_ticker", batch_fetches),
                 ("option_bars", ["option_ticker", "t"], batch_daily),
+            ],
+        )
+        load_rows(
+            pipe,
+            [
+                ("option_hour_fetches", "option_ticker", batch_fetches),
                 ("option_bar_fetches", "option_ticker", batch_daily_fetches),
             ],
         )
+        print(f"flushed {count} contracts in {time.monotonic() - started:.1f}s", file=sys.stderr, flush=True)
         batch_bars = []
         batch_fetches = []
         batch_daily = []
         batch_daily_fetches = []
+        last_flush = time.monotonic()
 
     contracts = iter(pending)
+    stopped = False
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        inflight = set()
+        inflight: dict = {}
 
         def submit_next() -> bool:
             try:
                 contract = next(contracts)
             except StopIteration:
                 return False
-            inflight.add(pool.submit(fetch_contract, client, contract, start, today))
+            future = pool.submit(
+                fetch_contract, client, contract, start, today, daily_lookup, flat_through
+            )
+            inflight[future] = contract
             return True
 
-        for _ in range(workers):
+        for _ in range(workers * 2):
             if not submit_next():
                 break
-        while inflight:
-            finished, inflight = wait(inflight, return_when=FIRST_COMPLETED)
+        while inflight and not stopped:
+            finished, _pending = wait(set(inflight), return_when=FIRST_COMPLETED)
             for future in finished:
-                bars, fetch, daily_rows, daily_fetch = future.result()
+                contract = inflight.pop(future)
+                try:
+                    bars, fetch, daily_rows, daily_fetch = future.result()
+                except Exception as exc:
+                    failed += 1
+                    consecutive += 1
+                    print(
+                        f"failed {contract['ticker']}: {redact(str(exc), client.api_key)}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    if consecutive >= failure_limit:
+                        stopped = True
+                        for leftover in list(inflight):
+                            leftover.cancel()
+                        inflight.clear()
+                        break
+                    submit_next()
+                    continue
+                consecutive = 0
                 batch_bars.extend(bars)
                 batch_fetches.append(fetch)
                 batch_daily.extend(daily_rows)
@@ -513,9 +795,12 @@ def download_hours(
                     flush=True,
                 )
                 submit_next()
-            if len(batch_fetches) >= FLUSH_EVERY:
+            now = time.monotonic()
+            if batch_fetches and (len(batch_fetches) >= FLUSH_EVERY or now - last_flush >= FLUSH_SECONDS):
                 flush()
     flush()
+    print(f"failed: {failed}", flush=True)
+    return failed
 
 
 def main() -> int:
@@ -537,6 +822,11 @@ def main() -> int:
         type=int,
         default=WORKERS,
         help="How many contracts to download at once.",
+    )
+    parser.add_argument(
+        "--no-flatfiles",
+        action="store_true",
+        help="Load daily bars from the REST API even when S3 keys are set.",
     )
     args = parser.parse_args()
     if args.max_contracts is not None and args.max_contracts < 1:
@@ -569,13 +859,32 @@ def main() -> int:
     pipe = pipeline()
     load_rows(pipe, [("option_contracts", "ticker", contracts)])
 
+    daily_lookup = None
+    flat_through = None
+    if flatfiles_enabled(args.no_flatfiles):
+        try:
+            daily_lookup, flat_through = load_daily_lookup(flatfile_client(), contracts, start, today)
+            covered = len(daily_lookup)
+            through = flat_through.isoformat() if flat_through else "none"
+            print(f"flat files through {through} covering {covered} contracts", flush=True)
+        except Exception as exc:
+            print(
+                f"flat files unavailable ({redact(str(exc), api_key)}); using REST daily bars",
+                file=sys.stderr,
+                flush=True,
+            )
+            daily_lookup = None
+            flat_through = None
+
     pending = [contract for contract in contracts if contract["ticker"] not in done]
     if args.max_contracts is not None:
         pending = pending[: args.max_contracts]
     print(f"hour fetches pending: {len(pending)} (already fetched {len(done)})", flush=True)
-    download_hours(client, pipe, pending, start, today, args.workers)
+    failed = download_hours(
+        client, pipe, pending, start, today, args.workers, daily_lookup, flat_through
+    )
     print_summary()
-    return 0
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
