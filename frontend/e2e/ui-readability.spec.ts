@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test"
-import { sampleContract, samplePage, samplePutContract, samplePutPage } from "../src/testFixtures"
+import { sampleContract, sampleIvDetails, samplePage, samplePutContract, samplePutPage } from "../src/testFixtures"
 
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/**", (route) => route.fulfill({ json:
@@ -180,5 +180,29 @@ test("coarse-pointer model dialog keeps nested evidence and closing controls usa
     await dialog.getByRole("button", { name: "Close model comparison", exact: true }).tap()
     await expect(dialog).toBeHidden()
     await expect(trigger).toBeFocused()
+  } finally { await context.close() }
+})
+
+test("mobile inline IV disclosure has a usable touch target", async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true })
+  const page = await context.newPage()
+  await page.route("**/api/**", (route) => route.fulfill({ json: samplePage({
+    expirations: [{ expiration: "2026-09-18", dte: 7, contracts: [sampleContract({
+      iv_pct_tenths: 877, iv_details: sampleIvDetails(),
+    })] }],
+  }) }))
+  try {
+    await page.goto(baseURL!)
+    await page.getByRole("button", { name: /^Show details for/ }).first().tap()
+    const disclosure = page.locator(".mobile-iv-details summary").first()
+    await expect(disclosure).toBeVisible()
+    const box = await disclosure.boundingBox()
+    expect(box!.height).toBeGreaterThanOrEqual(44)
+    expect(box!.width).toBeGreaterThanOrEqual(44)
+    await disclosure.tap()
+    await expect(page.locator(".mobile-iv-details .iv-details").first()).toHaveAttribute("open", "")
+    await expect(page.locator(".mobile-iv-details .iv-facts").first()).toBeVisible()
+    await disclosure.tap()
+    await expect(page.locator(".mobile-iv-details .iv-facts").first()).toBeHidden()
   } finally { await context.close() }
 })

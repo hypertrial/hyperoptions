@@ -1234,6 +1234,7 @@
     .control-field input,
     .market-controls .control-field [data-slot="input"],
     .ticker-list [role="option"],
+    .mobile-iv-details .iv-details summary,
     summary { min-height: 44px; min-width: 44px; }
   }
 
