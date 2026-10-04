@@ -65,6 +65,7 @@ _VALIDATION_SCHEMA = {
     "adjusted": pl.Boolean, "valid": pl.Boolean, "reason": pl.String,
     "source_load_id": pl.String, "source_row_id": pl.String,
     "source_file": pl.String, "source_fetch_kind": pl.String,
+    "source_fetch_load_ids": pl.String,
 }
 
 
@@ -290,14 +291,37 @@ def _rest_validation(connection, schemas: dict, output: Path) -> int:
     )
     query = f"""
     WITH fetch_source AS (
-      SELECT option_ticker,_dlt_load_id,
-        CASE WHEN COUNT(DISTINCT {source})=1 THEN MAX({source}) ELSE NULL END AS source
-      FROM massive.option_bar_fetches GROUP BY option_ticker,_dlt_load_id
+      SELECT option_ticker,COUNT(*) AS fetch_rows,
+        CASE WHEN COUNT(*)=1 THEN MAX({source}) ELSE NULL END AS source,
+        MAX(results_count) AS results_count,
+        TRY_CAST(MAX(from_date) AS DATE) AS from_date,
+        TRY_CAST(MAX(to_date) AS DATE) AS to_date,
+        string_agg(DISTINCT _dlt_load_id, ',' ORDER BY _dlt_load_id) AS fetch_load_ids
+      FROM massive.option_bar_fetches GROUP BY option_ticker
+    ), daily_coherence AS (
+      SELECT option_ticker,COUNT(*) AS daily_rows,
+        COUNT(DISTINCT _dlt_load_id) AS bar_loads,COUNT(_dlt_load_id) AS load_rows,
+        COUNT(TRY_CAST(bar_date AS DATE)) AS dated_rows,
+        MIN(TRY_CAST(bar_date AS DATE)) AS first_date,
+        MAX(TRY_CAST(bar_date AS DATE)) AS last_date,
+        COUNT(adjusted) AS adjustment_rows,
+        bool_and(adjusted) AS all_adjusted,bool_and(NOT adjusted) AS all_unadjusted
+      FROM massive.option_bars GROUP BY option_ticker
+    ), qualified_source AS (
+      SELECT f.*,
+        CASE WHEN f.fetch_rows=1 AND b.daily_rows=f.results_count
+          AND b.bar_loads=1 AND b.load_rows=b.daily_rows AND b.dated_rows=b.daily_rows
+          AND b.adjustment_rows=b.daily_rows AND b.first_date>=f.from_date
+          AND b.last_date<=f.to_date
+          AND ((f.source='rest' AND b.all_adjusted)
+               OR (f.source='flatfile' AND b.all_unadjusted))
+          THEN f.source ELSE NULL END AS qualified_kind
+      FROM fetch_source f LEFT JOIN daily_coherence b USING(option_ticker)
     )
     SELECT COALESCE(c.ticker,d.underlying_ticker) AS ticker,d.option_ticker AS contract,
       TRY_CAST(d.bar_date AS DATE) AS session,
-      CASE WHEN f.source='rest' THEN 'rest_daily'
-        WHEN f.source='flatfile' THEN 'database_flat_daily'
+      CASE WHEN f.qualified_kind='rest' THEN 'rest_daily'
+        WHEN f.qualified_kind='flatfile' THEN 'database_flat_daily'
         ELSE 'database_daily_unknown' END AS source,d.t AS source_t,
       d.open,d.high,d.low,d.close,CAST(d.volume AS DOUBLE) AS volume,d.transactions,
       d.vwap,d.adjusted,
@@ -329,9 +353,10 @@ def _rest_validation(connection, schemas: dict, output: Path) -> int:
           THEN 'invalid_activity'
         WHEN d.adjusted IS NULL THEN 'unknown_adjustment' ELSE NULL END AS reason,
       d._dlt_load_id AS source_load_id,d._dlt_id AS source_row_id,
-      NULL::VARCHAR AS source_file,f.source AS source_fetch_kind
+      NULL::VARCHAR AS source_file,f.source AS source_fetch_kind,
+      f.fetch_load_ids AS source_fetch_load_ids
     FROM massive.option_bars d LEFT JOIN normalized_contracts c ON c.contract=d.option_ticker
-    LEFT JOIN fetch_source f ON f.option_ticker=d.option_ticker AND f._dlt_load_id=d._dlt_load_id
+    LEFT JOIN qualified_source f ON f.option_ticker=d.option_ticker
     ORDER BY contract,session,source_t,source_row_id
     """
     return _stream(connection, query, output)
@@ -399,7 +424,7 @@ def _flat_validation(flat_cache: Path, contracts: pl.DataFrame, output: Path) ->
                     "adjusted": False, "valid": valid,
                     "reason": None if valid else "invalid_flat_daily",
                     "source_load_id": None, "source_row_id": None, "source_file": path.name,
-                    "source_fetch_kind": "filtered_flat_cache",
+                    "source_fetch_kind": "filtered_flat_cache", "source_fetch_load_ids": None,
                 })
             frame = pl.DataFrame(normalized, schema=_VALIDATION_SCHEMA).sort(
                 ["contract", "source_t"]

@@ -359,3 +359,33 @@ def test_safe_paths_and_failures_leave_no_completed_destination(tmp_path):
         raise RuntimeError("injected export failure")
     assert not (tmp_path / "failed").exists()
     assert not list(tmp_path.glob(".failed.*"))
+
+
+def test_separate_bar_and_fetch_loads_preserve_explicit_daily_source(research_sources, tmp_path):
+    db, prices, flat = research_sources
+    with duckdb.connect(str(db)) as connection:
+        connection.execute("UPDATE massive.option_bar_fetches SET _dlt_load_id='fetch_load'")
+    freeze_snapshot(db, prices, flat, tmp_path / "snapshot")
+    daily = pl.read_parquet(tmp_path / "snapshot/daily_validation.parquet")
+    row = daily.filter(pl.col("source") == "rest_daily").row(0, named=True)
+    assert row["source_load_id"] == "load"
+    assert row["source_fetch_load_ids"] == "fetch_load"
+
+
+@pytest.mark.parametrize("change", ["ambiguous", "count", "window", "mixed_adjustment"])
+def test_incoherent_daily_provenance_stays_unknown(research_sources, tmp_path, change):
+    db, prices, flat = research_sources
+    with duckdb.connect(str(db)) as connection:
+        if change == "ambiguous":
+            connection.execute(
+                "INSERT INTO massive.option_bar_fetches SELECT * FROM massive.option_bar_fetches"
+            )
+        elif change == "count":
+            connection.execute("UPDATE massive.option_bar_fetches SET results_count=2")
+        elif change == "window":
+            connection.execute("UPDATE massive.option_bar_fetches SET from_date='2024-10-31'")
+        else:
+            connection.execute("UPDATE massive.option_bars SET adjusted=FALSE")
+    freeze_snapshot(db, prices, flat, tmp_path / "snapshot")
+    daily = pl.read_parquet(tmp_path / "snapshot/daily_validation.parquet")
+    assert "database_daily_unknown" in daily["source"].to_list()
