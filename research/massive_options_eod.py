@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Load two years of monthly end-of-day option bars from Massive into DuckDB.
+"""Load two years of hourly option bars from Massive into DuckDB.
 
-Options Basic allows five requests a minute. This script spaces every call
-and retries a rate-limit response. A stopped run lists contracts again, then
-continues bar downloads at the first ticker not already in option_bar_fetches.
+Every active and expired contract on the selected underlyings is kept.
+Hourly aggregates are requested in 30-day chunks so the minute scan budget
+cannot drop a window silently. A stopped run lists contracts again, then
+continues at the first ticker not already in option_hour_fetches.
 """
 
 from __future__ import annotations
@@ -16,11 +17,11 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import holidays
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,8 +29,10 @@ RESEARCH = Path(__file__).resolve().parent
 DB_PATH = RESEARCH / "massive_options.duckdb"
 BASE = "https://api.massive.com"
 UNDERLYINGS = ("WULF", "NBIS", "IREN", "CIFR")
-INTERVAL = 12.1
 EASTERN = ZoneInfo("America/New_York")
+WORKERS = 8
+FLUSH_EVERY = 25
+CHUNK_DAYS = 30
 
 
 def window_start(today: date) -> date:
@@ -39,39 +42,6 @@ def window_start(today: date) -> date:
         return today.replace(year=today.year - 2, day=28)
 
 
-def third_friday(year: int, month: int) -> date:
-    first = date(year, month, 1)
-    first_friday = 1 + (4 - first.weekday()) % 7
-    return date(year, month, first_friday + 14)
-
-
-def monthly_expiration(day: date, nyse: holidays.HolidayBase) -> date:
-    expiration = third_friday(day.year, day.month)
-    while expiration.weekday() >= 5 or expiration in nyse:
-        expiration -= timedelta(days=1)
-    return expiration
-
-
-def is_standard_monthly(day: date, nyse: holidays.HolidayBase) -> bool:
-    return day == monthly_expiration(day, nyse)
-
-
-def assert_known_monthlies(nyse: holidays.HolidayBase) -> None:
-    expected = {
-        date(2024, 10, 18): True,
-        date(2024, 10, 11): False,
-        date(2025, 4, 17): True,
-        date(2025, 4, 18): False,
-        date(2026, 6, 18): True,
-        date(2026, 6, 19): False,
-    }
-    mismatches = [
-        day for day, wanted in expected.items() if is_standard_monthly(day, nyse) != wanted
-    ]
-    if mismatches:
-        raise SystemExit(f"monthly expiration calendar mismatch: {mismatches}")
-
-
 def redact(text: str) -> str:
     return text.replace(os.environ.get("MASSIVE_API_KEY", ""), "REDACTED")
 
@@ -79,13 +49,6 @@ def redact(text: str) -> str:
 class MassiveClient:
     def __init__(self, api_key: str):
         self.api_key = api_key
-        self._next_at = 0.0
-
-    def _pace(self) -> None:
-        delay = self._next_at - time.monotonic()
-        if delay > 0:
-            time.sleep(delay)
-        self._next_at = time.monotonic() + INTERVAL
 
     def _with_key(self, url: str, params: dict | None) -> str:
         parts = urllib.parse.urlsplit(url)
@@ -100,7 +63,6 @@ class MassiveClient:
     def get(self, url: str, params: dict | None = None) -> dict:
         last_error = "request failed"
         for attempt in range(6):
-            self._pace()
             request = urllib.request.Request(
                 self._with_key(url, params),
                 headers={"Accept": "application/json"},
@@ -112,7 +74,7 @@ class MassiveClient:
                 body = exc.read().decode("utf-8", "replace")
                 last_error = f"HTTP {exc.code}: {body[:240]}"
                 if exc.code == 429 or exc.code >= 500:
-                    self._wait(60 if exc.code == 429 else min(30, 2**attempt), last_error, attempt)
+                    self._wait(15 if exc.code == 429 else min(30, 2**attempt), last_error, attempt)
                     continue
                 raise RuntimeError(redact(last_error)) from exc
             except (TimeoutError, urllib.error.URLError) as exc:
@@ -124,7 +86,7 @@ class MassiveClient:
                 message = str(payload.get("error") or payload.get("message") or status)
                 last_error = message
                 if "maximum requests" in message.lower():
-                    self._wait(60, message, attempt)
+                    self._wait(15, message, attempt)
                     continue
                 raise RuntimeError(redact(message))
             return payload
@@ -135,7 +97,6 @@ class MassiveClient:
             return
         print(f"retrying after {redact(reason)}; sleeping {seconds:.0f}s", file=sys.stderr, flush=True)
         time.sleep(seconds)
-        self._next_at = time.monotonic() + INTERVAL
 
     def pages(self, path: str, params: dict):
         url = BASE + path
@@ -165,10 +126,15 @@ def contract_row(raw: dict, expired: bool) -> dict:
     }
 
 
-def collect_contracts(client: MassiveClient, start: date, nyse: holidays.HolidayBase, limit: int | None) -> list[dict]:
+def collect_contracts(
+    client: MassiveClient,
+    start: date,
+    limit: int | None,
+    underlyings: tuple[str, ...],
+) -> list[dict]:
     found: list[dict] = []
     seen: set[str] = set()
-    for underlying in UNDERLYINGS:
+    for underlying in underlyings:
         for expired in (True, False):
             params = {
                 "underlying_ticker": underlying,
@@ -182,9 +148,6 @@ def collect_contracts(client: MassiveClient, start: date, nyse: holidays.Holiday
                 results = payload.get("results") or []
                 kept = 0
                 for raw in results:
-                    expiration = date.fromisoformat(raw["expiration_date"])
-                    if not is_standard_monthly(expiration, nyse):
-                        continue
                     ticker = raw["ticker"]
                     if ticker in seen:
                         continue
@@ -193,23 +156,33 @@ def collect_contracts(client: MassiveClient, start: date, nyse: holidays.Holiday
                     kept += 1
                     if limit is not None and len(found) >= limit:
                         print(
-                            f"kept {len(found)} monthly contracts (--max-contracts)",
+                            f"kept {len(found)} contracts (--max-contracts)",
                             file=sys.stderr,
                             flush=True,
                         )
                         return found
                 print(
                     f"{underlying} expired={expired} page {page_no}: "
-                    f"{len(results)} listed, {kept} new monthly, total {len(found)}",
+                    f"{len(results)} listed, {kept} new, total {len(found)}",
                     file=sys.stderr,
                     flush=True,
                 )
     return found
 
 
-def daily_bars(client: MassiveClient, ticker: str, start: date, end: date) -> tuple[list[dict], bool]:
+def hour_chunks(start: date, end: date):
+    cursor_end = end
+    while cursor_end >= start:
+        cursor_start = max(start, cursor_end - timedelta(days=CHUNK_DAYS - 1))
+        yield cursor_start, cursor_end
+        if cursor_start <= start:
+            break
+        cursor_end = cursor_start - timedelta(days=1)
+
+
+def hourly_bars(client: MassiveClient, ticker: str, start: date, end: date) -> tuple[list[dict], bool]:
     encoded = urllib.parse.quote(ticker, safe="")
-    path = f"/v2/aggs/ticker/{encoded}/range/1/day/{start.isoformat()}/{end.isoformat()}"
+    path = f"/v2/aggs/ticker/{encoded}/range/1/hour/{start.isoformat()}/{end.isoformat()}"
     params: dict | None = {"adjusted": "true", "sort": "asc", "limit": 50000}
     rows: list[dict] = []
     adjusted = True
@@ -226,9 +199,9 @@ def daily_bars(client: MassiveClient, ticker: str, start: date, end: date) -> tu
     return rows, adjusted
 
 
-def bar_row(contract: dict, raw: dict, adjusted: bool) -> dict:
+def hour_row(contract: dict, raw: dict, adjusted: bool) -> dict:
     timestamp = int(raw["t"])
-    bar_date = datetime.fromtimestamp(timestamp / 1000, tz=EASTERN).date().isoformat()
+    bar_start = datetime.fromtimestamp(timestamp / 1000, tz=EASTERN).isoformat(timespec="seconds")
     return {
         "option_ticker": contract["ticker"],
         "underlying_ticker": contract["underlying_ticker"],
@@ -236,7 +209,7 @@ def bar_row(contract: dict, raw: dict, adjusted: bool) -> dict:
         "strike_price": contract["strike_price"],
         "contract_type": contract["contract_type"],
         "t": timestamp,
-        "bar_date": bar_date,
+        "bar_start": bar_start,
         "open": raw.get("o"),
         "high": raw.get("h"),
         "low": raw.get("l"),
@@ -246,6 +219,25 @@ def bar_row(contract: dict, raw: dict, adjusted: bool) -> dict:
         "transactions": raw.get("n"),
         "adjusted": adjusted,
     }
+
+
+def fetch_contract(client: MassiveClient, contract: dict, start: date, today: date) -> tuple[list[dict], dict]:
+    expiration = date.fromisoformat(contract["expiration_date"])
+    end = min(today, expiration)
+    bars: list[dict] = []
+    adjusted = True
+    for chunk_start, chunk_end in hour_chunks(start, end):
+        raw_bars, adjusted = hourly_bars(client, contract["ticker"], chunk_start, chunk_end)
+        bars.extend(hour_row(contract, raw, adjusted) for raw in raw_bars)
+    bars = list({row["t"]: row for row in bars}.values())
+    fetch = {
+        "option_ticker": contract["ticker"],
+        "results_count": len(bars),
+        "from_date": start.isoformat(),
+        "to_date": end.isoformat(),
+        "fetched_at": datetime.now(EASTERN).isoformat(timespec="seconds"),
+    }
+    return bars, fetch
 
 
 def relation(connection, table: str) -> str | None:
@@ -273,7 +265,7 @@ def fetched_tickers() -> set[str]:
 
     connection = duckdb.connect(str(DB_PATH), read_only=True)
     try:
-        quoted = relation(connection, "option_bar_fetches")
+        quoted = relation(connection, "option_hour_fetches")
         if quoted is None:
             return set()
         return {row[0] for row in connection.execute(f"SELECT option_ticker FROM {quoted}").fetchall()}
@@ -289,20 +281,20 @@ def print_summary() -> None:
 
     connection = duckdb.connect(str(DB_PATH), read_only=True)
     try:
-        for table in ("option_contracts", "option_bars", "option_bar_fetches"):
+        for table in ("option_contracts", "option_hour_bars", "option_hour_fetches"):
             quoted = relation(connection, table)
             if quoted is None:
                 print(f"{table}: missing")
                 continue
             count = connection.execute(f"SELECT COUNT(*) FROM {quoted}").fetchone()[0]
             print(f"{table}: {count}")
-        bars = relation(connection, "option_bars")
+        bars = relation(connection, "option_hour_bars")
         if bars:
             sample = connection.execute(
-                f"SELECT option_ticker, bar_date, close FROM {bars} ORDER BY bar_date LIMIT 3"
+                f"SELECT option_ticker, bar_start, close FROM {bars} ORDER BY bar_start LIMIT 5"
             ).fetchall()
-            for ticker, bar_date, close in sample:
-                print(f"sample {ticker} {bar_date} close={close}")
+            for ticker, bar_start, close in sample:
+                print(f"sample {ticker} {bar_start} close={close}")
     finally:
         connection.close()
 
@@ -343,13 +335,73 @@ def load_rows(pipe, specs: list[tuple[str, object, list[dict]]]) -> None:
         pipe.run(resources)
 
 
+def download_hours(client: MassiveClient, pipe, pending: list[dict], start: date, today: date) -> None:
+    if not pending:
+        return
+    batch_bars: list[dict] = []
+    batch_fetches: list[dict] = []
+    completed = 0
+
+    def flush() -> None:
+        nonlocal batch_bars, batch_fetches
+        if not batch_fetches:
+            return
+        load_rows(
+            pipe,
+            [
+                ("option_hour_bars", ["option_ticker", "t"], batch_bars),
+                ("option_hour_fetches", "option_ticker", batch_fetches),
+            ],
+        )
+        batch_bars = []
+        batch_fetches = []
+
+    contracts = iter(pending)
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        inflight = set()
+
+        def submit_next() -> bool:
+            try:
+                contract = next(contracts)
+            except StopIteration:
+                return False
+            inflight.add(pool.submit(fetch_contract, client, contract, start, today))
+            return True
+
+        for _ in range(WORKERS):
+            if not submit_next():
+                break
+        while inflight:
+            finished, inflight = wait(inflight, return_when=FIRST_COMPLETED)
+            for future in finished:
+                bars, fetch = future.result()
+                batch_bars.extend(bars)
+                batch_fetches.append(fetch)
+                completed += 1
+                print(
+                    f"hours {completed}/{len(pending)} {fetch['option_ticker']} {fetch['results_count']} rows",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                submit_next()
+            if len(batch_fetches) >= FLUSH_EVERY:
+                flush()
+    flush()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--max-contracts",
         type=int,
         default=None,
-        help="Stop after this many monthly contracts. Used to smoke-test the load.",
+        help="Stop after this many contracts. Used to smoke-test the load.",
+    )
+    parser.add_argument(
+        "--underlying",
+        action="append",
+        choices=UNDERLYINGS,
+        help="Limit the load to this underlying. Repeat to select more than one.",
     )
     args = parser.parse_args()
     if args.max_contracts is not None and args.max_contracts < 1:
@@ -365,51 +417,25 @@ def main() -> int:
     os.chdir(RESEARCH)
     today = date.today()
     start = window_start(today)
-    nyse = holidays.NYSE(years=range(start.year, today.year + 4))
-    assert_known_monthlies(nyse)
+    underlyings = tuple(dict.fromkeys(args.underlying)) if args.underlying else UNDERLYINGS
     print(
-        f"window {start.isoformat()} .. {today.isoformat()} -> {DB_PATH.name}",
+        f"window {start.isoformat()} .. {today.isoformat()} underlyings {', '.join(underlyings)} -> {DB_PATH.name}",
         file=sys.stderr,
         flush=True,
     )
 
     client = MassiveClient(api_key)
     done = fetched_tickers()
-    contracts = collect_contracts(client, start, nyse, args.max_contracts)
-    print(f"monthly contracts: {len(contracts)}", flush=True)
+    contracts = collect_contracts(client, start, args.max_contracts, underlyings)
+    print(f"contracts: {len(contracts)}", flush=True)
     pipe = pipeline()
     load_rows(pipe, [("option_contracts", "ticker", contracts)])
 
     pending = [contract for contract in contracts if contract["ticker"] not in done]
     if args.max_contracts is not None:
         pending = pending[: args.max_contracts]
-    print(f"bar fetches pending: {len(pending)} (already fetched {len(done)})", flush=True)
-
-    for index, contract in enumerate(pending, start=1):
-        expiration = date.fromisoformat(contract["expiration_date"])
-        end = min(today, expiration)
-        raw_bars, adjusted = daily_bars(client, contract["ticker"], start, end)
-        bars = [bar_row(contract, raw, adjusted) for raw in raw_bars]
-        fetch = {
-            "option_ticker": contract["ticker"],
-            "results_count": len(bars),
-            "from_date": start.isoformat(),
-            "to_date": end.isoformat(),
-            "fetched_at": datetime.now(EASTERN).isoformat(timespec="seconds"),
-        }
-        load_rows(
-            pipe,
-            [
-                ("option_bars", ["option_ticker", "t"], bars),
-                ("option_bar_fetches", "option_ticker", [fetch]),
-            ],
-        )
-        print(
-            f"bars {index}/{len(pending)} {contract['ticker']} {len(bars)} rows",
-            file=sys.stderr,
-            flush=True,
-        )
-
+    print(f"hour fetches pending: {len(pending)} (already fetched {len(done)})", flush=True)
+    download_hours(client, pipe, pending, start, today)
     print_summary()
     return 0
 

@@ -1,3 +1,2 @@
 dlt[duckdb]>=1.11
-holidays>=0.60
 python-dotenv>=1.0
