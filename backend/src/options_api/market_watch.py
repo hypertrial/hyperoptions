@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import logging
 import math
@@ -12,6 +11,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
+from typing import Literal
 from pathlib import Path
 
 import httpx
@@ -58,6 +58,15 @@ from stocksweeper.storage.db import connect, rows
 LOG = logging.getLogger(__name__)
 _REFRESH = timedelta(minutes=5)
 PAGE_INPUT_TIMEOUT = 2.0
+_InputState = Literal["done", "pending", "failed"]
+
+
+@dataclass(frozen=True)
+class _PageInputs:
+    curve: TreasuryCurve | None
+    curve_state: _InputState
+    dividends: DividendStatus
+    dividend_state: _InputState
 _DIVIDEND_REFRESH = timedelta(hours=24)
 _MAX_CACHED_TICKERS = 320  # All 256 watches plus recently viewed chain tickers.
 _MAX_SCHEDULED = 8
@@ -912,6 +921,10 @@ class MarketWatchOdds:
         flight.add_done_callback(_finish)
         return flight
 
+    def prefetch_page_inputs(self, ticker: str, now: datetime) -> None:
+        """Start the shared Treasury and dividend flight without waiting for it."""
+        self._shared_page_inputs(ticker, _as_utc(now))
+
     async def pricing_context_for(
         self,
         ticker: str,
@@ -937,20 +950,16 @@ class MarketWatchOdds:
             return pricing_issue(blocked)
         task = self._shared_page_inputs(ticker, now)
         try:
-            curve, dividends, curve_failed = await asyncio.wait_for(
-                asyncio.shield(task), PAGE_INPUT_TIMEOUT
-            )
+            inputs = await asyncio.wait_for(asyncio.shield(task), PAGE_INPUT_TIMEOUT)
         except TimeoutError:
             try:
-                curve, dividends, curve_failed = self._page_input_values(
-                    self._page_input_components.get(task), now
-                )
+                inputs = self._page_input_values(self._page_input_components.get(task), now)
             except Exception:
                 return PricingIssue("numerical_failure", "Pricing inputs could not be validated")
         except (InputAcquisitionError, httpx.HTTPError, OSError):
-            curve, dividends, curve_failed = None, DividendStatus(
-                "unknown", now, acquisition_failed=True
-            ), True
+            inputs = _PageInputs(
+                None, "failed", DividendStatus("unknown", now, acquisition_failed=True), "failed"
+            )
         except Exception:
             LOG.exception("displayed-chain pricing inputs unavailable for %s", ticker)
             return PricingIssue("numerical_failure", "Pricing inputs could not be validated")
@@ -961,8 +970,8 @@ class MarketWatchOdds:
                 info,
                 now,
                 completed_close,
-                curve,
-                dividends,
+                inputs.curve,
+                inputs.dividends,
                 quote_max_age=_REFRESH,
             )
         except (ValueError, ArithmeticError, TypeError, AttributeError):
@@ -970,26 +979,50 @@ class MarketWatchOdds:
             return PricingIssue("numerical_failure", "Pricing inputs could not be validated")
         if isinstance(built, str):
             return pricing_issue(built)
-        if curve_failed or dividends.acquisition_failed:
-            acquisition_expirations = set()
-            reasons = dict(built.reasons)
-            for expiry_text, reason in reasons.items():
-                if reason == "Same-day option quote timing cannot be verified":
-                    continue
-                expiry = date.fromisoformat(expiry_text)
-                if reason == "Dated Treasury rate is unavailable" and not curve_failed:
-                    continue
-                eligible, dividend_reason = dividends.eligible_for(expiry)
-                if not eligible and not dividends.acquisition_failed:
+        return self._apply_input_states(built, inputs)
+
+    @staticmethod
+    def _apply_input_states(built: PricingContext, inputs: _PageInputs) -> PricingContext:
+        """Keep a finished semantic rejection; a still-running fetch stays pending."""
+        display_rates: dict[str, Decimal] = {}
+        if inputs.curve is not None and inputs.curve_state == "done":
+            for expiry_text in set(built.rates) | set(built.reasons):
+                rate = inputs.curve.rate_for(date.fromisoformat(expiry_text), built.valuation_time)
+                if rate is not None and math.isfinite(rate) and 0 <= rate <= 0.25:
+                    display_rates[expiry_text] = Decimal(str(rate))
+        if inputs.curve_state == "done" and inputs.dividend_state == "done":
+            return replace(built, display_rates=display_rates)
+        pending: set[str] = set()
+        acquisition: set[str] = set()
+        reasons = dict(built.reasons)
+        for expiry_text, reason in reasons.items():
+            if reason == "Same-day option quote timing cannot be verified":
+                continue
+            if reason == "Dated Treasury rate is unavailable" and inputs.curve_state == "done":
+                continue
+            if inputs.dividend_state == "done" and not inputs.dividends.acquisition_failed:
+                eligible, dividend_reason = inputs.dividends.eligible_for(
+                    date.fromisoformat(expiry_text)
+                )
+                if not eligible:
                     reasons[expiry_text] = dividend_reason or "Dividend exposure is unsupported"
                     continue
-                acquisition_expirations.add(expiry_text)
-            built = replace(built, reasons=reasons, acquisition_expirations=acquisition_expirations)
-        return built
+            if inputs.curve_state == "failed" or inputs.dividend_state == "failed":
+                acquisition.add(expiry_text)
+                continue
+            if inputs.curve_state == "pending" or inputs.dividend_state == "pending":
+                pending.add(expiry_text)
+        return replace(
+            built,
+            reasons=reasons,
+            acquisition_expirations=acquisition,
+            pending_expirations=pending,
+            display_rates=display_rates,
+        )
 
     async def _page_curve_and_dividends(
         self, ticker: str, now: datetime
-    ) -> tuple[TreasuryCurve | None, DividendStatus, bool]:
+    ) -> _PageInputs:
         curve = asyncio.create_task(
             fetch_treasury_curve(self.client, now, raise_on_acquisition_failure=True)
         )
@@ -1004,24 +1037,34 @@ class MarketWatchOdds:
     @staticmethod
     def _page_input_values(
         components: tuple[asyncio.Task, asyncio.Task] | None, now: datetime,
-    ) -> tuple[TreasuryCurve | None, DividendStatus, bool]:
-        """Keep completed semantic facts when the sibling input exceeds the page deadline."""
-        curve, dividends, curve_failed = None, DividendStatus(
-            "unknown", now, acquisition_failed=True
-        ), True
+    ) -> _PageInputs:
+        """Keep a finished sibling when the other input is still running."""
+        curve: TreasuryCurve | None = None
+        curve_state: _InputState = "failed"
+        dividends = DividendStatus("unknown", now, acquisition_failed=True)
+        dividend_state: _InputState = "failed"
         if components is None:
-            return curve, dividends, curve_failed
+            return _PageInputs(curve, curve_state, dividends, dividend_state)
         curve_task, dividend_task = components
-        if curve_task.done():
+        if not curve_task.done():
+            curve_state = "pending"
+        else:
             try:
                 curve = curve_task.result()
-                curve_failed = False
+                curve_state = "done"
             except (InputAcquisitionError, TimeoutError, httpx.HTTPError, OSError):
-                pass
-        if dividend_task.done():
-            with contextlib.suppress(InputAcquisitionError, TimeoutError, httpx.HTTPError, OSError):
+                curve_state = "failed"
+        if not dividend_task.done():
+            dividends = DividendStatus("unknown", now)
+            dividend_state = "pending"
+        else:
+            try:
                 dividends = dividend_task.result()
-        return curve, dividends, curve_failed
+            except (InputAcquisitionError, TimeoutError, httpx.HTTPError, OSError):
+                dividend_state = "failed"
+            else:
+                dividend_state = "failed" if dividends.acquisition_failed else "done"
+        return _PageInputs(curve, curve_state, dividends, dividend_state)
 
     async def _refresh(self, ticker: str) -> None:
         async with self._semaphore:

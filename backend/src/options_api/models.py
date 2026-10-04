@@ -18,7 +18,7 @@ MarketSource = Literal["nasdaq", "yahoo"]
 IvReasonCode = Literal[
     "contract_identity", "chain_session", "underlying", "expiry_timing", "treasury",
     "dividends", "option_quote", "midpoint_eligibility", "model_bounds", "solver_range",
-    "input_acquisition", "numerical_failure",
+    "input_acquisition", "input_pending", "numerical_failure",
 ]
 IvSpotBasis = Literal[
     "underlying_midpoint", "yahoo_regular_market_price", "completed_session_close",
@@ -200,7 +200,7 @@ class IvReason(BaseModel):
 
 
 class IvDetails(BaseModel):
-    status: Literal["available", "unavailable"]
+    status: Literal["pending", "available", "unavailable"]
     reason: IvReason | None = None
     bid_pct_tenths: int | None = None
     ask_pct_tenths: int | None = None

@@ -27,18 +27,25 @@ function exactPrice(value: string | null | undefined): string {
   return value == null ? "Not recorded" : `$${value}`
 }
 
-function ivEstimate(value: number | null | undefined, message: string | null | undefined): string {
-  return value == null ? `Unavailable${message ? ` — ${message}` : ""}` : unsignedPercentTenths(value)
+function ivEstimate(
+  value: number | null | undefined,
+  message: string | null | undefined,
+  pending = false,
+): string {
+  if (value != null) return unsignedPercentTenths(value)
+  const state = pending ? "Pending" : "Unavailable"
+  return message ? `${state} — ${message}` : state
 }
 
 /** Keep Decimal input strings intact: converting to Number would lose reproducibility. */
 export function ivCalculationFacts(row: IvRow): IvFact[] {
   const details = row.iv_details
   if (!details) return []
+  const pending = details.status === "pending"
   const facts: IvFact[] = [
-    { label: "Bid IV", value: ivEstimate(details.bid_pct_tenths, details.bid_reason?.message) },
-    { label: "Midpoint IV", value: ivEstimate(row.iv_pct_tenths, details.reason?.message) },
-    { label: "Ask IV", value: ivEstimate(details.ask_pct_tenths, details.ask_reason?.message) },
+    { label: "Bid IV", value: ivEstimate(details.bid_pct_tenths, details.bid_reason?.message, pending) },
+    { label: "Midpoint IV", value: ivEstimate(row.iv_pct_tenths, details.reason?.message, pending) },
+    { label: "Ask IV", value: ivEstimate(details.ask_pct_tenths, details.ask_reason?.message, pending) },
   ]
   if (details.bid_pct_tenths != null && details.ask_pct_tenths != null) {
     facts.push({ label: "Quote-implied IV range", value: `${unsignedPercentTenths(details.bid_pct_tenths)}–${unsignedPercentTenths(details.ask_pct_tenths)}` })

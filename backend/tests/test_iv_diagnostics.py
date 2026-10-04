@@ -443,7 +443,7 @@ async def test_dividend_worker_saturation_retains_acquisition_evidence():
     ("failed", "unknown", False, False, "dividends"),
     ("slow", "payer", False, False, "dividends"),
     ("invalid", "slow", False, False, "treasury"),
-    ("valid", "slow", False, False, "input_acquisition"),
+    ("valid", "slow", False, False, "input_pending"),
     ("slow", "slow", True, False, "expiry_timing"),
     ("failed", "nonpayer", False, True, "option_quote"),
     ("programming_error", "slow", False, False, "numerical_failure"),
@@ -486,9 +486,92 @@ async def test_mixed_input_semantics_survive_failures_and_timeout(
         else:
             issue = result
         assert issue.code == code
-        assert issue.fallback_allowed == (code == "input_acquisition")
+        assert issue.fallback_allowed == (code in {"input_acquisition", "input_pending"})
         assert "private" not in issue.message
+        if code == "input_pending":
+            assert isinstance(result, PricingContext)
+            assert selection.quote is not None and selection.quote.rate is None
+            assert selection.display_rate is not None
+            quantified = quant_for_contract(
+                _Market(None), _Predictive(_distribution()), ticker="IREN", root="IREN",
+                side="call", expiry=date.fromisoformat(expiry), strike=Decimal(50),
+                pricing_selection=selection, include_iv_details=True,
+            )
+            assert quantified.greeks.iv_pct_tenths is None
+            assert quantified.iv_details.status == "pending"
+            assert quantified.iv_details.rate_exact == format(selection.display_rate, "f")
         await odds.close()
+
+
+@pytest.mark.asyncio
+async def test_pending_dividend_resolves_to_iv_on_the_next_read(monkeypatch):
+    import asyncio
+    chain, info, history, _today, now = synthetic_context()
+    row = chain.rows[5].model_copy(update={"root": "IREN"})
+    chain = chain.model_copy(update={"rows": [row]})
+    release = asyncio.Event()
+
+    async def treasury(*_args, **_kwargs):
+        return _curve()
+
+    async def dividend(*_args):
+        await release.wait()
+        return DividendStatus("nonpayer", now)
+
+    monkeypatch.setattr("options_api.market_watch.PAGE_INPUT_TIMEOUT", 0.02)
+    monkeypatch.setattr("options_api.market_watch.fetch_treasury_curve", treasury)
+    monkeypatch.setattr("options_api.market_watch.fetch_dividend_status", dividend)
+    async with httpx.AsyncClient() as client:
+        odds = MarketWatchOdds(object(), client, lambda: now)
+        first = await odds.pricing_context_for("IREN", chain, info, history, now)
+        assert isinstance(first, PricingContext)
+        assert first.selection("call", "2026-09-25", Decimal(50)).issue.code == "input_pending"
+        flight = odds._page_input_flights.get("IREN")
+        assert flight is not None
+        release.set()
+        await flight
+        second = await odds.pricing_context_for("IREN", chain, info, history, now)
+        assert isinstance(second, PricingContext)
+        selection = second.selection("call", "2026-09-25", Decimal(50))
+        assert selection.issue is None and selection.quote is not None
+        assert selection.quote.rate is not None
+        quantified = quant_for_contract(
+            _Market(None), _Predictive(_distribution()), ticker="IREN", root="IREN",
+            side="call", expiry=date(2026, 9, 25), strike=Decimal(50),
+            pricing_selection=selection, include_iv_details=True,
+        )
+        assert quantified.greeks.iv_pct_tenths is not None
+        assert quantified.iv_details.status == "available"
+        await odds.close()
+
+
+@pytest.mark.asyncio
+async def test_treasury_failure_cooldown_skips_the_network():
+    import options_api.market_sources as sources
+    calls = {"n": 0}
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(503)
+
+    now = datetime(2026, 10, 2, 16, tzinfo=UTC)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
+        assert await sources.fetch_treasury_curve(client, now) is None
+    assert calls["n"] == 2
+    with pytest.raises(sources.InputAcquisitionError):
+        async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
+            await sources.fetch_treasury_curve(
+                client, now + timedelta(minutes=4), raise_on_acquisition_failure=True
+            )
+    assert calls["n"] == 2
+    cached = _curve(date(2026, 10, 2))
+    sources._treasury_cache = (now - timedelta(hours=3), cached)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
+        assert await sources.fetch_treasury_curve(client, now + timedelta(minutes=1)) == cached
+    assert calls["n"] == 2
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
+        assert await sources.fetch_treasury_curve(client, now + timedelta(minutes=6)) == cached
+    assert calls["n"] == 4
 
 
 @pytest.mark.parametrize("invalid", ["dividends", "rate", "rate_date", "missing_quote"])

@@ -15,5 +15,16 @@ def isolated_research_data_dir(
     monkeypatch.setenv("STOCKSWEEPER_DATA_DIR", str(tmp_path / "research"))
 
 
+@pytest.fixture(autouse=True)
+def reset_treasury_acquisition_state() -> None:
+    import options_api.market_sources as sources
+
+    sources._treasury_cache = None
+    sources._treasury_failed_at = None
+    yield
+    sources._treasury_cache = None
+    sources._treasury_failed_at = None
+
+
 def load_fixture(name: str) -> dict:
     return json.loads((FIXTURES / name).read_text())

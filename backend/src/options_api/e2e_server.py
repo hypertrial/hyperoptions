@@ -95,6 +95,8 @@ def _handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=_info_payload())
     if "/historical" in url:
         return httpx.Response(200, json=_history_payload())
+    if "treasury.gov" in url:
+        return httpx.Response(503)
     raise AssertionError(url)
 
 

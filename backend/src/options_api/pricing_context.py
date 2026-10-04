@@ -176,6 +176,7 @@ class EntryQuote:
 class PricingSelection:
     quote: EntryQuote | None
     issue: PricingIssue | None = None
+    display_rate: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -198,6 +199,8 @@ class PricingContext:
     quote_issues: dict[tuple[str, str, Decimal], PricingIssue] = field(default_factory=dict)
     identity_issues: dict[tuple[str, Decimal], PricingIssue] = field(default_factory=dict)
     acquisition_expirations: set[str] = field(default_factory=set)
+    pending_expirations: set[str] = field(default_factory=set)
+    display_rates: dict[str, Decimal] = field(default_factory=dict)
 
     def entry_quote(self, side: str, expiry: str, strike: Decimal) -> EntryQuote | None:
         if (expiry, strike) not in self.valid_contracts:
@@ -221,21 +224,35 @@ class PricingContext:
         )
 
     def selection(self, side: str, expiry: str, strike: Decimal) -> PricingSelection:
+        display_rate = self.display_rates.get(expiry)
         issue = self.identity_issues.get((expiry, strike))
         if issue is not None or (expiry, strike) not in self.valid_contracts:
             return PricingSelection(
-                None, issue or pricing_issue("Contract terms cannot be verified")
+                None, issue or pricing_issue("Contract terms cannot be verified"), display_rate
             )
         quote = self.entry_quote(side, expiry, strike)
+        pending = PricingIssue(
+            "input_pending", "Treasury or dividend inputs are still loading", True
+        )
+        if expiry in self.pending_expirations and quote is not None:
+            return PricingSelection(quote, pending, display_rate)
+        if expiry in self.pending_expirations:
+            return PricingSelection(
+                None, self.quote_issues.get((side, expiry, strike)) or pending, display_rate
+            )
         if expiry in self.acquisition_expirations and quote is not None:
             return PricingSelection(quote, PricingIssue(
                 "input_acquisition", "Treasury or dividend inputs could not be acquired", True
-            ))
+            ), display_rate)
         if expiry in self.acquisition_expirations:
-            return PricingSelection(None, self.quote_issues.get((side, expiry, strike)))
+            return PricingSelection(
+                None, self.quote_issues.get((side, expiry, strike)), display_rate
+            )
         if expiry in self.reasons:
-            return PricingSelection(quote, pricing_issue(self.reasons[expiry]))
-        return PricingSelection(quote, self.quote_issues.get((side, expiry, strike)))
+            return PricingSelection(quote, pricing_issue(self.reasons[expiry]), display_rate)
+        return PricingSelection(
+            quote, self.quote_issues.get((side, expiry, strike)), display_rate
+        )
 
 
 def displayed_chain_reason(chain: OptionChainResponse, now: datetime) -> str | None:

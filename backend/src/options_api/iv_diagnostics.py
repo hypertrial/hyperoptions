@@ -57,10 +57,16 @@ def iv_details_for_contract(
     *, side: Side, expiry: date, strike: Decimal, quote: EntryQuote | None,
     greeks: ContractGreeks, issue: PricingIssue | None, pricing_path: IvPricingPath,
     midpoint_issue: IvReason | None = None,
+    display_rate: Decimal | None = None,
 ) -> IvDetails:
     reason = issue.view() if issue is not None else None
+    pending = issue is not None and issue.code == "input_pending"
     details = IvDetails(
-        status="available" if greeks.iv_pct_tenths is not None else "unavailable",
+        status=(
+            "pending" if pending
+            else "available" if greeks.iv_pct_tenths is not None
+            else "unavailable"
+        ),
         reason=reason,
         strike_exact=format(strike, "f"),
         expiry_close=_utc(session_close(session_on_or_before(expiry))),
@@ -70,16 +76,18 @@ def iv_details_for_contract(
             code="option_quote", message="Coherent option entry quotes are unavailable"
         )
         return details.model_copy(update={
-            "status": "unavailable", "reason": reason, "bid_reason": reason, "ask_reason": reason,
+            "status": "pending" if pending else "unavailable",
+            "reason": reason, "bid_reason": reason, "ask_reason": reason,
         })
     years = years_until_expiry_close(expiry, quote.valuation_time)
     mid = (quote.bid + quote.ask) / 2
+    shown_rate = quote.rate if quote.rate is not None else display_rate
     details = details.model_copy(update={
         "spot_exact": format(quote.spot, "f"),
         "bid_price_exact": format(quote.bid, "f"),
         "mid_price_exact": format(mid, "f"),
         "ask_price_exact": format(quote.ask, "f"),
-        "rate_exact": format(quote.rate, "f") if quote.rate is not None else None,
+        "rate_exact": format(shown_rate, "f") if shown_rate is not None else None,
         "years_to_expiry_exact": format(years, "f") if years > 0 else None,
         "spot_basis": quote.spot_basis,
         "pricing_path": pricing_path,
@@ -96,7 +104,8 @@ def iv_details_for_contract(
         reason = IvReason(code="treasury", message="Dated Treasury rate is unavailable")
     if reason is not None:
         return details.model_copy(update={
-            "status": "unavailable", "reason": reason, "bid_reason": reason, "ask_reason": reason,
+            "status": "pending" if pending else "unavailable",
+            "reason": reason, "bid_reason": reason, "ask_reason": reason,
         })
     assert quote.rate is not None
     reason = midpoint_issue

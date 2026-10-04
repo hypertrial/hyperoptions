@@ -25,6 +25,7 @@ from options_api.intraday_capture import capture_intraday_window
 from options_api.iv_diagnostics import iv_details_for_contract
 from options_api.live_quant import SSVI_VERSION, quant_for_contract
 from options_api.market_calendar import first_session_after_completed
+from options_api.market_sources import fetch_treasury_curve
 from options_api.market_watch import MarketWatchOdds
 from options_api.models import (
     CashSecuredPutPage,
@@ -234,6 +235,7 @@ async def _load_page(
 ) -> CoveredCallPage | CashSecuredPutPage:
     _check_origin(request)
     normalized = await _known_ticker(request, ticker)
+    request.app.state.market_odds.prefetch_page_inputs(normalized, _page_now(request.app))
     universe: TickerUniverse = request.app.state.universe
     listing = universe.listing(normalized)
     service: OptionChainService = request.app.state.service
@@ -500,8 +502,17 @@ def create_app(
             )
             app.state.prefetch_universe = prefetch_universe
             prefetch: asyncio.Task[bool] | None = None
+            treasury_prefetch: asyncio.Task[None] | None = None
             if prefetch_universe:
                 prefetch = asyncio.create_task(app.state.universe.ensure())
+
+                async def prefetch_treasury() -> None:
+                    try:
+                        await fetch_treasury_curve(client)
+                    except Exception:
+                        LOG.exception("Treasury curve prefetch failed")
+
+                treasury_prefetch = asyncio.create_task(prefetch_treasury())
 
             async def refresh_outcomes() -> None:
                 first = True
@@ -654,6 +665,8 @@ def create_app(
                         await watch_poll
                 if prefetch is not None and not prefetch.done():
                     prefetch.cancel()
+                if treasury_prefetch is not None and not treasury_prefetch.done():
+                    treasury_prefetch.cancel()
                 await app.state.market_odds.close()
                 await app.state.physical_shadow.close()
                 await app.state.predictive_odds.close()
@@ -665,6 +678,9 @@ def create_app(
                 if prefetch is not None:
                     with contextlib.suppress(asyncio.CancelledError):
                         await prefetch
+                if treasury_prefetch is not None:
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await treasury_prefetch
                 await client.aclose()
 
     app = FastAPI(title="Nasdaq option chain", lifespan=lifespan)

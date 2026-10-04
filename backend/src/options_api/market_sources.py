@@ -48,7 +48,9 @@ _YAHOO_DEADLINE_SECONDS = 75.0
 _YAHOO_WORKERS = threading.BoundedSemaphore(2)
 _DIVIDEND_WORKERS = threading.BoundedSemaphore(4)
 _treasury_cache: tuple[datetime, TreasuryCurve] | None = None
+_treasury_failed_at: datetime | None = None
 _treasury_lock = asyncio.Lock()
+_TREASURY_FAILURE_COOLDOWN = timedelta(minutes=5)
 
 
 @dataclass(frozen=True)
@@ -133,12 +135,28 @@ def parse_treasury_curve(xml: bytes, as_of: datetime) -> TreasuryCurve | None:
     return latest
 
 
+def _cached_treasury_curve(now: datetime) -> TreasuryCurve | None:
+    if _treasury_cache is None:
+        return None
+    curve = _treasury_cache[1]
+    if 0 <= (now.astimezone(_NY).date() - curve.as_of).days <= 7:
+        return curve
+    return None
+
+
+def _treasury_on_cooldown(now: datetime) -> bool:
+    return (
+        _treasury_failed_at is not None
+        and now - _treasury_failed_at < _TREASURY_FAILURE_COOLDOWN
+    )
+
+
 async def fetch_treasury_curve(
     client: httpx.AsyncClient, as_of: datetime | None = None,
     *, raise_on_acquisition_failure: bool = False,
 ) -> TreasuryCurve | None:
     """Use the current Treasury month; hold a valid result for at most two hours."""
-    global _treasury_cache
+    global _treasury_cache, _treasury_failed_at
     now = as_of or datetime.now(UTC)
     async with _treasury_lock:
         if _treasury_cache is not None:
@@ -148,6 +166,13 @@ async def fetch_treasury_curve(
                 and curve.rate_for(now.astimezone(_NY).date() + timedelta(days=1), now) is not None
             ):
                 return curve
+        if _treasury_on_cooldown(now):
+            cached = _cached_treasury_curve(now)
+            if cached is not None:
+                return cached
+            if raise_on_acquisition_failure:
+                raise InputAcquisitionError("Treasury input could not be acquired")
+            return None
         month = now.astimezone(_NY).date().replace(day=1)
         acquisition_failures = 0
         for requested_month in (month, month - timedelta(days=1)):
@@ -169,11 +194,13 @@ async def fetch_treasury_curve(
                 curve = None
             if curve is not None and 0 <= (now.astimezone(_NY).date() - curve.as_of).days <= 7:
                 _treasury_cache = (now, curve)
+                _treasury_failed_at = None
                 return curve
-        if _treasury_cache is not None:
-            curve = _treasury_cache[1]
-            if 0 <= (now.astimezone(_NY).date() - curve.as_of).days <= 7:
-                return curve
+        if acquisition_failures == 2:
+            _treasury_failed_at = now
+        cached = _cached_treasury_curve(now)
+        if cached is not None:
+            return cached
         if raise_on_acquisition_failure and acquisition_failures == 2:
             raise InputAcquisitionError("Treasury input could not be acquired")
         return None

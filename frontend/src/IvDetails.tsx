@@ -16,8 +16,9 @@ export default function IvDetails({ row, contractLabel, inline = false }: { row:
     summary.current?.focus()
   }
   const available = row.iv_pct_tenths != null
+  const pending = row.iv_details?.status === "pending"
   const value = unsignedPercentTenths(row.iv_pct_tenths)
-  const action = available ? "Details" : "Why unavailable?"
+  const action = pending ? "Loading inputs…" : available ? "Details" : "Why unavailable?"
   return (
     <details ref={disclosure} className={`iv-details${usePopover ? "" : " iv-details-inline"}`} onToggle={(event) => {
       if (!usePopover || event.target !== event.currentTarget || !panel.current?.isConnected) return

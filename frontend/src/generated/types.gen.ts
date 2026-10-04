@@ -677,7 +677,7 @@ export type IvDetails = {
     /**
      * Status
      */
-    status: 'available' | 'unavailable';
+    status: 'pending' | 'available' | 'unavailable';
     reason?: IvReason | null;
     /**
      * Bid Pct Tenths
@@ -766,7 +766,7 @@ export type IvReason = {
     /**
      * Code
      */
-    code: 'contract_identity' | 'chain_session' | 'underlying' | 'expiry_timing' | 'treasury' | 'dividends' | 'option_quote' | 'midpoint_eligibility' | 'model_bounds' | 'solver_range' | 'input_acquisition' | 'numerical_failure';
+    code: 'contract_identity' | 'chain_session' | 'underlying' | 'expiry_timing' | 'treasury' | 'dividends' | 'option_quote' | 'midpoint_eligibility' | 'model_bounds' | 'solver_range' | 'input_acquisition' | 'input_pending' | 'numerical_failure';
     /**
      * Message
      */

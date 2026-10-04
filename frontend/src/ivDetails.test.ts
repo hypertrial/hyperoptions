@@ -30,6 +30,24 @@ describe("IV calculation facts", () => {
     expect(formatIvClipboard(row)).toContain(IV_SENSITIVITY_NOTE)
   })
 
+  it("describes a still-loading Treasury or dividend fetch as pending", () => {
+    const row = sampleContract({ iv_pct_tenths: null, iv_details: sampleIvDetails({
+      status: "pending",
+      reason: { code: "input_pending", message: "Treasury or dividend inputs are still loading" },
+      bid_pct_tenths: null,
+      ask_pct_tenths: null,
+      bid_reason: { code: "input_pending", message: "Treasury or dividend inputs are still loading" },
+      ask_reason: { code: "input_pending", message: "Treasury or dividend inputs are still loading" },
+      rate_exact: "0.03999737301337825",
+    }) })
+    const facts = Object.fromEntries(ivCalculationFacts(row).map(({ label, value }) => [label, value]))
+    expect(facts["Bid IV"]).toBe("Pending — Treasury or dividend inputs are still loading")
+    expect(facts["Midpoint IV"]).toBe("Pending — Treasury or dividend inputs are still loading")
+    expect(facts["Ask IV"]).toBe("Pending — Treasury or dividend inputs are still loading")
+    expect(facts["Annual rate (decimal)"]).toBe("0.03999737301337825")
+    expect(facts["Quote-implied IV range"]).toBeUndefined()
+  })
+
   it("explains partial endpoints and does not invent a range or midpoint", () => {
     const row = sampleContract({ iv_pct_tenths: null, iv_details: sampleIvDetails({
       status: "unavailable",

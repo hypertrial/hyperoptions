@@ -2092,6 +2092,7 @@
           "status": {
             "type": "string",
             "enum": [
+              "pending",
               "available",
               "unavailable"
             ],
@@ -2373,6 +2374,7 @@
               "model_bounds",
               "solver_range",
               "input_acquisition",
+              "input_pending",
               "numerical_failure"
             ],
             "title": "Code"

@@ -58,6 +58,7 @@ export const zIvReason = z.object({
         'model_bounds',
         'solver_range',
         'input_acquisition',
+        'input_pending',
         'numerical_failure'
     ]),
     message: z.string()
@@ -67,7 +68,11 @@ export const zIvReason = z.object({
  * IvDetails
  */
 export const zIvDetails = z.object({
-    status: z.enum(['available', 'unavailable']),
+    status: z.enum([
+        'pending',
+        'available',
+        'unavailable'
+    ]),
     reason: zIvReason.nullish(),
     bid_pct_tenths: z.int().nullish(),
     ask_pct_tenths: z.int().nullish(),

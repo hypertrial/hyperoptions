@@ -306,6 +306,9 @@ def quant_for_contract(
                     greeks=empty_greeks(),
                     issue=pricing_selection.issue if pricing_selection is not None else None,
                     pricing_path=iv_pricing_path,
+                    display_rate=(
+                        pricing_selection.display_rate if pricing_selection is not None else None
+                    ),
                 ) if include_iv_details else None
             ),
         )
@@ -382,6 +385,9 @@ def quant_for_contract(
                 issue=iv_issue,
                 pricing_path=iv_pricing_path,
                 midpoint_issue=midpoint_issue,
+                display_rate=(
+                    pricing_selection.display_rate if pricing_selection is not None else None
+                ),
             ) if include_iv_details else None
         ),
     )

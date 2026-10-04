@@ -22,6 +22,20 @@ it("uses a native disclosure with contract-specific naming and exact input facts
   expect(screen.getByText(/approximation for American equity options/)).toBeTruthy()
 })
 
+it("says inputs are still loading instead of unavailable", () => {
+  const row = sampleContract({ iv_pct_tenths: null, iv_details: sampleIvDetails({
+    status: "pending",
+    reason: { code: "input_pending", message: "Treasury or dividend inputs are still loading" },
+    bid_pct_tenths: null,
+    ask_pct_tenths: null,
+    bid_reason: { code: "input_pending", message: "Treasury or dividend inputs are still loading" },
+    ask_reason: { code: "input_pending", message: "Treasury or dividend inputs are still loading" },
+  }) })
+  const { container } = render(<IvDetails row={row} contractLabel="IREN 2026-10-09 call strike $41.50" />)
+  expect(container.querySelector("summary")?.textContent).toBe("— · Loading inputs…")
+  expect(screen.getAllByText("Pending — Treasury or dividend inputs are still loading").length).toBe(3)
+})
+
 it("shows endpoint results when midpoint is unavailable and omits an incomplete range", () => {
   const row = sampleContract({ iv_pct_tenths: null, iv_details: sampleIvDetails({
     status: "unavailable",

@@ -76,6 +76,7 @@ export function useChainPage(ticker: Ticker, side: Side, moneyness: Moneyness, f
   const pending = page?.expirations.some((group) => group.contracts.some(
     (row) => row.market_odds?.status === "pending"
       || row.predictive_odds?.status === "pending"
+      || row.iv_details?.status === "pending"
       || row.physical_models?.some((model) => model.status === "pending")
       || row.market_models?.some((model) => model.status === "pending"),
   )) ?? false

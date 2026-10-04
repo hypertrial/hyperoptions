@@ -119,6 +119,29 @@ it("checks a pending predictive forecast after hours and stops when it resolves"
   expect(fetchMock).toHaveBeenCalledTimes(2)
 })
 
+it("refetches pending IV after hours and stops once it resolves", async () => {
+  vi.setSystemTime(new Date("2026-09-17T21:00:00Z"))
+  const pending = samplePage()
+  Object.assign(pending.expirations[0].contracts[0], {
+    iv_pct_tenths: null,
+    iv_details: {
+      status: "pending",
+      reason: { code: "input_pending", message: "Treasury or dividend inputs are still loading" },
+      model: "black_scholes_european_no_dividends_v1",
+    },
+  })
+  fetchMock.mockResolvedValueOnce(pending).mockResolvedValue(samplePage())
+  renderHook(() => useChainPage("IREN", "call", "itm"))
+  await act(async () => { await Promise.resolve() })
+
+  await act(async () => { await vi.advanceTimersByTimeAsync(14_999) })
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+  expect(fetchMock).toHaveBeenCalledTimes(2)
+  await act(async () => { await vi.advanceTimersByTimeAsync(5 * 60_000) })
+  expect(fetchMock).toHaveBeenCalledTimes(2)
+})
+
 it.each(["physical_models", "market_models"])("refreshes a pending %s comparison after hours", async (field) => {
   vi.setSystemTime(new Date("2026-09-17T21:00:00Z"))
   const pending = samplePage()
