@@ -181,8 +181,8 @@ describe("chain interactions", () => {
     expect(screen.getByLabelText("Min APR (net) (%)")).toBeTruthy()
     expect(screen.getByLabelText("Min % to assignment (%)")).toBeTruthy()
     expect(screen.getByLabelText("Min IV (%)")).toBeTruthy()
+    expect(screen.getByLabelText("Min DTE")).toBeTruthy()
     expect(screen.getByLabelText("Max DTE")).toBeTruthy()
-    expect(screen.queryByLabelText("Min DTE")).toBeNull()
     expect(screen.queryByRole("button", { name: "Columns" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Clear all" })).toBeNull()
     expect(screen.getByRole("radio", { name: "Covered calls" })).toBeTruthy()
@@ -929,6 +929,25 @@ describe("chain interactions", () => {
     fireEvent.change(screen.getByLabelText("Min Premium (net) ($)"), { target: { value: "50" } })
     expect(screen.getByText("$49.40")).toBeTruthy()
     expect(screen.getByRole("button", { name: "Copy row IREN 2026-09-18 strike $50.00" })).toBeTruthy()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("hides expiries below Min DTE", async () => {
+    render(<ItmChain />)
+    await waitFor(() => expect(screen.getByRole("heading", { name: /2026-09-18/ })).toBeTruthy())
+    fireEvent.click(screen.getByRole("button", { name: "Expand all" }))
+
+    fireEvent.change(screen.getByLabelText("Min DTE"), { target: { value: "abc" } })
+    expect(screen.getByLabelText("Min DTE").getAttribute("aria-invalid")).toBe("true")
+    expect(screen.getByRole("heading", { name: /2026-09-18/ })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: /2026-10-09/ })).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText("Min DTE"), { target: { value: "14" } })
+    expect(screen.queryByRole("heading", { name: /2026-09-18/ })).toBeNull()
+    expect(screen.getByRole("heading", { name: /2026-10-09/ })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Remove filter DTE ≥ 14" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Remove filter DTE ≥ 14" }))
+    expect(screen.getByRole("heading", { name: /2026-09-18/ })).toBeTruthy()
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 

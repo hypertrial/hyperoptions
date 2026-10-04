@@ -796,7 +796,7 @@
   .filter-panel { padding: 4px 0 12px; }
   .filter-cluster {
     display: grid;
-    grid-template-columns: repeat(5, minmax(8rem, 1fr));
+    grid-template-columns: repeat(6, minmax(8rem, 1fr));
     align-items: start;
     gap: 8px;
   }

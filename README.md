@@ -92,7 +92,7 @@ One-contract cash-secured put:
 
 The Contracts field is a whole number of 100-share lots. Premium (net) is multiplied by that count, as are the older stock-cost, premium, outlay, called P&L, collateral, and net-collateral fields. Bid, ask, spread, IV, open interest, APR (net), breakeven, and % to assignment stay one-contract. Leave Contracts empty to keep the one-contract view. `0`, negatives, decimals, values too large for exact integer calculations, or other invalid text show validation and fall back to one contract.
 
-Filters start closed. **Min Premium (net)**, **Min APR (net)**, **Min % to assignment**, **Min IV (%)**, and **Max DTE** combine with AND. Values compare directly with the API's scaled integers. Enter percent points (`40` means 40%). Invalid tokens show inline validation and are otherwise ignored; null metrics fail only their active filter. Valid filters count as applied; invalid entries show a separate **Fix** count. Each entry has its own clearable chip, and Clear all restores the full chain and does not clear Contracts.
+Filters start closed. **Min Premium (net)**, **Min APR (net)**, **Min % to assignment**, **Min IV (%)**, **Min DTE**, and **Max DTE** combine with AND. Values compare directly with the API's scaled integers. Enter percent points (`40` means 40%). Invalid tokens show inline validation and are otherwise ignored; null metrics fail only their active filter. Valid filters count as applied; invalid entries show a separate **Fix** count. Each entry has its own clearable chip, and Clear all restores the full chain and does not clear Contracts.
 
 Calls or puts with side open interest below 5, or with missing OI, are omitted.
 

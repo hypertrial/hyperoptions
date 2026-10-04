@@ -14,7 +14,7 @@ import { heatmapHue, heatmapStop, metricRange } from "./heatmap"
 import { formatContractValues, mobilePriorityColumns, visibleColumns } from "./columns"
 import type { CoveredCallContract } from "./types"
 import { COLUMN_HEADERS, COPY_HEADERS, largeChainPage, missingContract, sampleContract, samplePage } from "./testFixtures"
-import { deriveChainView, INITIAL_REVEAL } from "./viewModel"
+import { deriveChainView, INITIAL_REVEAL, nearestMatchingExpiration } from "./viewModel"
 
 describe("ITM chain page", () => {
   it("renders a searchable picker, strategy toggles, and a skip link", () => {
@@ -168,7 +168,7 @@ describe("contract sizing", () => {
   })
 })
 
-const openFilters = { premium: null, apr: null, breakeven: null, minIv: null, maxDte: null }
+const openFilters = { premium: null, apr: null, breakeven: null, minIv: null, minDte: null, maxDte: null }
 
 describe("row filters", () => {
   it("parses optional signed thresholds and ANDs minimums", () => {
@@ -300,6 +300,30 @@ describe("row filters", () => {
     expect(passesFilters(monthly, { ...openFilters, maxDte: parseThreshold("0") }, "call")).toBe(false)
     expect(passesFilters(monthly, { ...openFilters, maxDte: parseThreshold("28"), apr: parseThreshold("50") }, "call")).toBe(true)
     expect(passesFilters(weekly, { ...openFilters, maxDte: parseThreshold("14"), apr: parseThreshold("50") }, "call")).toBe(false)
+  })
+
+  it("applies an inclusive minimum DTE and ANDs it with Max DTE and the other floors", () => {
+    const weekly = { net_premium_cents: 5000, net_apr_pct_tenths: 421, breakeven_change_pct_tenths: 10, dte: 7 }
+    const monthly = { net_premium_cents: 80_000, net_apr_pct_tenths: 898, breakeven_change_pct_tenths: 160, dte: 28 }
+    expect(passesFilters(weekly, openFilters, "call")).toBe(true)
+    expect(passesFilters(weekly, { ...openFilters, minDte: parseThreshold("7") }, "call")).toBe(true)
+    expect(passesFilters(weekly, { ...openFilters, minDte: parseThreshold("7.0") }, "call")).toBe(true)
+    expect(passesFilters(weekly, { ...openFilters, minDte: parseThreshold("6") }, "call")).toBe(true)
+    expect(passesFilters(weekly, { ...openFilters, minDte: parseThreshold("8") }, "call")).toBe(false)
+    expect(passesFilters(monthly, { ...openFilters, minDte: parseThreshold("14") }, "call")).toBe(true)
+    expect(passesFilters(weekly, { ...openFilters, minDte: parseThreshold("14") }, "call")).toBe(false)
+    expect(passesFilters({ ...weekly, dte: null }, { ...openFilters, minDte: parseThreshold("0") }, "call")).toBe(false)
+    expect(passesFilters(weekly, { ...openFilters, minDte: parseThreshold("7"), maxDte: parseThreshold("28") }, "call")).toBe(true)
+    expect(passesFilters(monthly, { ...openFilters, minDte: parseThreshold("14"), maxDte: parseThreshold("28") }, "call")).toBe(true)
+    expect(passesFilters(monthly, { ...openFilters, minDte: parseThreshold("28"), maxDte: parseThreshold("14") }, "call")).toBe(false)
+    expect(passesFilters(monthly, { ...openFilters, minDte: parseThreshold("14"), apr: parseThreshold("50") }, "call")).toBe(true)
+    expect(passesFilters(weekly, { ...openFilters, minDte: parseThreshold("7"), apr: parseThreshold("50") }, "call")).toBe(false)
+  })
+
+  it("selects the nearest expiry that still passes Min DTE", () => {
+    expect(nearestMatchingExpiration(samplePage(), 1, openFilters, "call")).toBe("2026-09-18")
+    expect(nearestMatchingExpiration(samplePage(), 1, { ...openFilters, minDte: parseThreshold("14") }, "call")).toBe("2026-10-09")
+    expect(nearestMatchingExpiration(samplePage(), 1, { ...openFilters, minDte: parseThreshold("100") }, "call")).toBeNull()
   })
 
   it("uses the same net metrics for puts at exact integer precision", () => {

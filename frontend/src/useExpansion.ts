@@ -16,7 +16,7 @@ export function useExpansion(
   const [state, setState] = useState<{ identity: string; values: Set<string> | null; seed: Seed }>(() => ({
     identity: identityKey,
     values: null,
-    seed: { premium: "", apr: "", breakeven: "", minIv: "", maxDte: "", contracts: 1 },
+    seed: { premium: "", apr: "", breakeven: "", minIv: "", minDte: "", maxDte: "", contracts: 1 },
   }))
   const seed = useMemo(
     () => (state.identity === identityKey ? state.seed : { ...texts, contracts }),
@@ -27,6 +27,7 @@ export function useExpansion(
     apr: parseThreshold(seed.apr),
     breakeven: parseThreshold(seed.breakeven),
     minIv: parseThreshold(seed.minIv),
+    minDte: parseThreshold(seed.minDte),
     maxDte: parseThreshold(seed.maxDte),
   }, side), [page, side, seed])
   const stored = state.identity === identityKey ? state.values : null
