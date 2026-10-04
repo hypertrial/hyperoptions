@@ -2,9 +2,11 @@
 """Load two years of hourly option bars from Massive into DuckDB.
 
 Every active and expired contract on the selected underlyings is kept.
-Hourly aggregates are requested in 30-day chunks so the minute scan budget
-cannot drop a window silently. A stopped run lists contracts again, then
-continues at the first ticker not already in option_hour_fetches.
+One daily request finds the days a contract traded and is stored with the
+hourly bars. Hourly requests then cover only those days, in windows that stay
+under the minute-bar limit, and each window is checked against that day's
+volume. A stopped run lists contracts again, then skips tickers already in
+option_hour_fetches.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -30,9 +32,10 @@ DB_PATH = RESEARCH / "massive_options.duckdb"
 BASE = "https://api.massive.com"
 UNDERLYINGS = ("WULF", "NBIS", "IREN", "CIFR")
 EASTERN = ZoneInfo("America/New_York")
-WORKERS = 8
+WORKERS = 32
 FLUSH_EVERY = 25
-CHUNK_DAYS = 30
+MINUTE_BUDGET = 45_000
+SESSION_MINUTES = 960
 
 
 def window_start(today: date) -> date:
@@ -170,19 +173,11 @@ def collect_contracts(
     return found
 
 
-def hour_chunks(start: date, end: date):
-    cursor_end = end
-    while cursor_end >= start:
-        cursor_start = max(start, cursor_end - timedelta(days=CHUNK_DAYS - 1))
-        yield cursor_start, cursor_end
-        if cursor_start <= start:
-            break
-        cursor_end = cursor_start - timedelta(days=1)
-
-
-def hourly_bars(client: MassiveClient, ticker: str, start: date, end: date) -> tuple[list[dict], bool]:
+def aggregate_bars(
+    client: MassiveClient, ticker: str, timespan: str, start: date, end: date
+) -> tuple[list[dict], bool]:
     encoded = urllib.parse.quote(ticker, safe="")
-    path = f"/v2/aggs/ticker/{encoded}/range/1/hour/{start.isoformat()}/{end.isoformat()}"
+    path = f"/v2/aggs/ticker/{encoded}/range/1/{timespan}/{start.isoformat()}/{end.isoformat()}"
     params: dict | None = {"adjusted": "true", "sort": "asc", "limit": 50000}
     rows: list[dict] = []
     adjusted = True
@@ -197,6 +192,52 @@ def hourly_bars(client: MassiveClient, ticker: str, start: date, end: date) -> t
         rows.extend(payload.get("results") or [])
         url = payload.get("next_url") or None
     return rows, adjusted
+
+
+def hourly_bars(client: MassiveClient, ticker: str, start: date, end: date) -> tuple[list[dict], bool]:
+    return aggregate_bars(client, ticker, "hour", start, end)
+
+
+def daily_bars(client: MassiveClient, ticker: str, start: date, end: date) -> tuple[list[dict], bool]:
+    return aggregate_bars(client, ticker, "day", start, end)
+
+
+def bar_day(raw: dict) -> date:
+    return datetime.fromtimestamp(int(raw["t"]) / 1000, tz=EASTERN).date()
+
+
+def minute_cost(raw: dict) -> int:
+    trades = raw.get("n")
+    if trades is None:
+        return SESSION_MINUTES
+    return min(max(int(trades), 0), SESSION_MINUTES)
+
+
+def plan_windows(days: list[dict]) -> list[list[dict]]:
+    windows: list[list[dict]] = []
+    current: list[dict] = []
+    budget = 0
+    for raw in days:
+        cost = minute_cost(raw)
+        if current and budget + cost > MINUTE_BUDGET:
+            windows.append(current)
+            current = []
+            budget = 0
+        current.append(raw)
+        budget += cost
+    if current:
+        windows.append(current)
+    return windows
+
+
+def volume_total(rows: list[dict]) -> float:
+    return sum(float(row.get("v") or 0) for row in rows)
+
+
+def volumes_match(hourly: list[dict], daily: list[dict]) -> bool:
+    if not hourly and volume_total(daily) > 0:
+        return False
+    return abs(volume_total(hourly) - volume_total(daily)) < 0.5
 
 
 def hour_row(contract: dict, raw: dict, adjusted: bool) -> dict:
@@ -221,23 +262,74 @@ def hour_row(contract: dict, raw: dict, adjusted: bool) -> dict:
     }
 
 
-def fetch_contract(client: MassiveClient, contract: dict, start: date, today: date) -> tuple[list[dict], dict]:
-    expiration = date.fromisoformat(contract["expiration_date"])
+def bar_row(contract: dict, raw: dict, adjusted: bool) -> dict:
+    timestamp = int(raw["t"])
+    return {
+        "option_ticker": contract["ticker"],
+        "underlying_ticker": contract["underlying_ticker"],
+        "expiration_date": contract["expiration_date"],
+        "strike_price": contract["strike_price"],
+        "contract_type": contract["contract_type"],
+        "t": timestamp,
+        "bar_date": bar_day(raw).isoformat(),
+        "open": raw.get("o"),
+        "high": raw.get("h"),
+        "low": raw.get("l"),
+        "close": raw.get("c"),
+        "volume": raw.get("v"),
+        "vwap": raw.get("vw"),
+        "transactions": raw.get("n"),
+        "adjusted": adjusted,
+    }
+
+
+def fetch_window(client: MassiveClient, contract: dict, days: list[dict], stats: dict) -> list[dict]:
+    stats["hour_requests"] += 1
+    raw_bars, adjusted = hourly_bars(client, contract["ticker"], bar_day(days[0]), bar_day(days[-1]))
+    matched = volumes_match(raw_bars, days)
+    if not matched and len(days) > 1:
+        middle = len(days) // 2
+        return fetch_window(client, contract, days[:middle], stats) + fetch_window(
+            client, contract, days[middle:], stats
+        )
+    if not matched:
+        stats["volume_mismatch_days"] += 1
+    return [hour_row(contract, raw, adjusted) for raw in raw_bars]
+
+
+def fetch_contract(
+    client: MassiveClient, contract: dict, start: date, today: date
+) -> tuple[list[dict], dict, list[dict], dict]:
+    expiration = date.fromisoformat(str(contract["expiration_date"])[:10])
     end = min(today, expiration)
+    raw_daily, daily_adjusted = daily_bars(client, contract["ticker"], start, end)
+    raw_daily = list({int(raw["t"]): raw for raw in raw_daily}.values())
+    raw_daily.sort(key=lambda raw: int(raw["t"]))
+    daily_rows = [bar_row(contract, raw, daily_adjusted) for raw in raw_daily]
+    fetched_at = datetime.now(EASTERN).isoformat(timespec="seconds")
+    daily_fetch = {
+        "option_ticker": contract["ticker"],
+        "results_count": len(daily_rows),
+        "from_date": start.isoformat(),
+        "to_date": end.isoformat(),
+        "fetched_at": fetched_at,
+    }
+    stats = {"hour_requests": 0, "volume_mismatch_days": 0}
     bars: list[dict] = []
-    adjusted = True
-    for chunk_start, chunk_end in hour_chunks(start, end):
-        raw_bars, adjusted = hourly_bars(client, contract["ticker"], chunk_start, chunk_end)
-        bars.extend(hour_row(contract, raw, adjusted) for raw in raw_bars)
+    for window in plan_windows(raw_daily):
+        bars.extend(fetch_window(client, contract, window, stats))
     bars = list({row["t"]: row for row in bars}.values())
     fetch = {
         "option_ticker": contract["ticker"],
         "results_count": len(bars),
         "from_date": start.isoformat(),
         "to_date": end.isoformat(),
-        "fetched_at": datetime.now(EASTERN).isoformat(timespec="seconds"),
+        "fetched_at": fetched_at,
+        "daily_days": len(daily_rows),
+        "hour_requests": stats["hour_requests"],
+        "volume_mismatch_days": stats["volume_mismatch_days"],
     }
-    return bars, fetch
+    return bars, fetch, daily_rows, daily_fetch
 
 
 def relation(connection, table: str) -> str | None:
@@ -281,7 +373,13 @@ def print_summary() -> None:
 
     connection = duckdb.connect(str(DB_PATH), read_only=True)
     try:
-        for table in ("option_contracts", "option_hour_bars", "option_hour_fetches"):
+        for table in (
+            "option_contracts",
+            "option_hour_bars",
+            "option_hour_fetches",
+            "option_bars",
+            "option_bar_fetches",
+        ):
             quoted = relation(connection, table)
             if quoted is None:
                 print(f"{table}: missing")
@@ -295,6 +393,20 @@ def print_summary() -> None:
             ).fetchall()
             for ticker, bar_start, close in sample:
                 print(f"sample {ticker} {bar_start} close={close}")
+        fetches = relation(connection, "option_hour_fetches")
+        if fetches:
+            recent = connection.execute(
+                f"""
+                SELECT option_ticker, results_count, daily_days, hour_requests, volume_mismatch_days
+                FROM {fetches}
+                ORDER BY fetched_at DESC
+                LIMIT 5
+                """
+            ).fetchall()
+            for ticker, count, days, requests, mismatches in recent:
+                print(
+                    f"fetch {ticker} rows={count} days={days} requests={requests} mismatches={mismatches}"
+                )
     finally:
         connection.close()
 
@@ -335,15 +447,24 @@ def load_rows(pipe, specs: list[tuple[str, object, list[dict]]]) -> None:
         pipe.run(resources)
 
 
-def download_hours(client: MassiveClient, pipe, pending: list[dict], start: date, today: date) -> None:
+def download_hours(
+    client: MassiveClient,
+    pipe,
+    pending: list[dict],
+    start: date,
+    today: date,
+    workers: int,
+) -> None:
     if not pending:
         return
     batch_bars: list[dict] = []
     batch_fetches: list[dict] = []
+    batch_daily: list[dict] = []
+    batch_daily_fetches: list[dict] = []
     completed = 0
 
     def flush() -> None:
-        nonlocal batch_bars, batch_fetches
+        nonlocal batch_bars, batch_fetches, batch_daily, batch_daily_fetches
         if not batch_fetches:
             return
         load_rows(
@@ -351,13 +472,17 @@ def download_hours(client: MassiveClient, pipe, pending: list[dict], start: date
             [
                 ("option_hour_bars", ["option_ticker", "t"], batch_bars),
                 ("option_hour_fetches", "option_ticker", batch_fetches),
+                ("option_bars", ["option_ticker", "t"], batch_daily),
+                ("option_bar_fetches", "option_ticker", batch_daily_fetches),
             ],
         )
         batch_bars = []
         batch_fetches = []
+        batch_daily = []
+        batch_daily_fetches = []
 
     contracts = iter(pending)
-    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+    with ThreadPoolExecutor(max_workers=workers) as pool:
         inflight = set()
 
         def submit_next() -> bool:
@@ -368,18 +493,22 @@ def download_hours(client: MassiveClient, pipe, pending: list[dict], start: date
             inflight.add(pool.submit(fetch_contract, client, contract, start, today))
             return True
 
-        for _ in range(WORKERS):
+        for _ in range(workers):
             if not submit_next():
                 break
         while inflight:
             finished, inflight = wait(inflight, return_when=FIRST_COMPLETED)
             for future in finished:
-                bars, fetch = future.result()
+                bars, fetch, daily_rows, daily_fetch = future.result()
                 batch_bars.extend(bars)
                 batch_fetches.append(fetch)
+                batch_daily.extend(daily_rows)
+                batch_daily_fetches.append(daily_fetch)
                 completed += 1
                 print(
-                    f"hours {completed}/{len(pending)} {fetch['option_ticker']} {fetch['results_count']} rows",
+                    f"hours {completed}/{len(pending)} {fetch['option_ticker']} "
+                    f"{fetch['results_count']} rows days={fetch['daily_days']} "
+                    f"requests={fetch['hour_requests']} mismatches={fetch['volume_mismatch_days']}",
                     file=sys.stderr,
                     flush=True,
                 )
@@ -403,9 +532,18 @@ def main() -> int:
         choices=UNDERLYINGS,
         help="Limit the load to this underlying. Repeat to select more than one.",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=WORKERS,
+        help="How many contracts to download at once.",
+    )
     args = parser.parse_args()
     if args.max_contracts is not None and args.max_contracts < 1:
         print("--max-contracts must be positive", file=sys.stderr)
+        return 2
+    if args.workers < 1:
+        print("--workers must be positive", file=sys.stderr)
         return 2
 
     load_dotenv(ROOT / ".env")
@@ -435,7 +573,7 @@ def main() -> int:
     if args.max_contracts is not None:
         pending = pending[: args.max_contracts]
     print(f"hour fetches pending: {len(pending)} (already fetched {len(done)})", flush=True)
-    download_hours(client, pipe, pending, start, today)
+    download_hours(client, pipe, pending, start, today, args.workers)
     print_summary()
     return 0
 
