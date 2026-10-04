@@ -389,6 +389,18 @@ def _action_reason(
     return None
 
 
+def _timing_summary(path: Path) -> pl.DataFrame:
+    keys = ["panel", "quality", "screen", "policy", "side", "mark_hour_et", "status"]
+    # Streaming partial means can combine batches in arrival order even with one
+    # numerical thread. Preserve Parquet input order without rounding detail values.
+    observations = pl.read_parquet(path, columns=[*keys, "return"])
+    return (
+        observations.group_by(keys, maintain_order=True)
+        .agg(pl.len().alias("experiments"), pl.col("return").mean().alias("mean_return"))
+        .sort(keys)
+    )
+
+
 def run_strategies(
     days: pl.DataFrame,
     stocks: pl.DataFrame,
@@ -807,13 +819,7 @@ def run_strategies(
     )
     ranking = ranking.collect(engine="streaming")
     ranking.write_parquet(output / "ranking_summary.parquet", compression="zstd")
-    timing = pl.scan_parquet(output / "premium_timing.parquet")
-    timing_summary = (
-        timing.group_by("panel", "quality", "screen", "policy", "side", "mark_hour_et", "status")
-        .agg(pl.len().alias("experiments"), pl.col("return").mean().alias("mean_return"))
-        .sort("panel", "quality", "screen", "policy", "side", "mark_hour_et", "status")
-    )
-    timing_summary = timing_summary.collect(engine="streaming")
+    timing_summary = _timing_summary(output / "premium_timing.parquet")
     timing_summary.write_parquet(output / "timing_summary.parquet", compression="zstd")
     exclusion_summary = (
         pl.scan_parquet(output / "strategy_exclusions.parquet")

@@ -39,6 +39,8 @@ def paired_interval(units: pl.DataFrame, *, adjusted: bool = False,
     """Resample entire paired calendar dates, preserving all their ticker units."""
     if draws < 1:
         raise ValueError("positive bootstrap draws required")
+    units = units.sort([name for name in ("origin", "ticker", "horizon")
+                        if name in units.columns])
     clusters = units.group_by("origin").agg(
         pl.col("delta").sum().alias("sum"), pl.len().alias("count")
     ).sort("origin")
@@ -67,7 +69,7 @@ def forecast_inference(path: Path) -> list[dict]:
     metrics = [m for m in METRICS if m in columns]
     source = source.filter(pl.col("primary_eligible")).select(*keys, "model", *metrics)
     # Duplicated policy selections or repeated records cannot add independent support.
-    source = source.unique(subset=[*keys, "model"], keep="first")
+    source = source.unique(subset=[*keys, "model"], keep="first", maintain_order=True)
     baseline = source.filter(pl.col("model") == BASELINE).drop("model").rename(
         {m: f"baseline_{m}" for m in metrics}
     )
@@ -81,9 +83,12 @@ def forecast_inference(path: Path) -> list[dict]:
             valid.sum().alias(f"cells_{metric}"),
         ])
     # One bounded aggregation before iterating comparisons avoids repeated archive joins.
-    aggregated = pairs.group_by("panel", "model", "ticker", "origin", "horizon").agg(
+    unit_keys = ["panel", "model", "ticker", "origin", "horizon"]
+    # Fix contract and unit order before floating reductions. Streaming partial
+    # aggregates and hash-group iteration order are not analytical inputs.
+    aggregated = pairs.sort([*keys, "model"]).group_by(unit_keys, maintain_order=True).agg(
         pl.col("expiry_session").first(), *expressions
-    ).collect(engine="streaming")
+    ).sort(unit_keys).collect(engine="in-memory")
     calendar = SessionCalendar()
     models = source.select("model").unique().collect()["model"].to_list()
     results = []
@@ -139,7 +144,7 @@ def calibration_bins(path: Path) -> list[dict]:
         pl.col(probability).mean().alias("forecast_mean"),
         pl.col(observed).cast(pl.Float64).mean().alias("observed_rate"),
     ).sort("panel", "model", "side", "primary_eligible", "bin").collect(
-        engine="streaming").to_dicts()
+        engine="in-memory").to_dicts()
 
 
 def strategy_inference(path: Path) -> list[dict]:
@@ -164,7 +169,7 @@ def strategy_inference(path: Path) -> list[dict]:
                 units = rows.group_by(*grouping, "ticker", "origin").agg(
                     pl.col("excess_return").mean().alias("delta"),
                     pl.len().alias("experiments"),
-                ).collect(engine="streaming")
+                ).sort([*grouping, "ticker", "origin"]).collect(engine="in-memory")
                 for key, group in units.partition_by(grouping, as_dict=True).items():
                     result = paired_interval(group)
                     result.update(dict(zip(grouping, key, strict=True)))
@@ -209,7 +214,7 @@ def forecast_descriptives(path: Path) -> list[dict]:
                                 pl.col(name).cast(pl.Float64).mean().alias(f"{name}_rate")])
     return source.group_by("panel", "model", "side", "band", "quality").agg(
         *expressions).sort("panel", "model", "side", "band", "quality").collect(
-        engine="streaming").to_dicts()
+        engine="in-memory").to_dicts()
 
 
 def loss_calibration_bins(path: Path) -> list[dict]:
@@ -223,4 +228,4 @@ def loss_calibration_bins(path: Path) -> list[dict]:
         pl.col("loss_probability").mean().alias("forecast_mean"),
         pl.col("realized_loss").cast(pl.Float64).mean().alias("observed_rate"),
     ).sort("panel", "model", "side", "primary_eligible", "bin").collect(
-        engine="streaming").to_dicts()
+        engine="in-memory").to_dicts()
