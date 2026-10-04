@@ -1,5 +1,4 @@
 import gzip
-import io
 import os
 import unittest
 from datetime import date, datetime
@@ -25,6 +24,16 @@ def daily(day: date, volume: float, trades: int = 10) -> dict:
 
 def hourly(day: date, hour: int, volume: float) -> dict:
     return {"t": millis(day, hour), "v": volume, "o": 1, "h": 1, "l": 1, "c": 1}
+
+
+def listed_contract(ticker: str = "O:TEST") -> dict:
+    return {
+        "ticker": ticker,
+        "underlying_ticker": "TEST",
+        "expiration_date": "2024-10-18",
+        "strike_price": 1,
+        "contract_type": "call",
+    }
 
 
 class FakeResponse:
@@ -71,15 +80,6 @@ class PlanTests(unittest.TestCase):
 
 
 class WindowTests(unittest.TestCase):
-    def contract(self):
-        return {
-            "ticker": "O:TEST",
-            "underlying_ticker": "TEST",
-            "expiration_date": "2024-10-18",
-            "strike_price": 1,
-            "contract_type": "call",
-        }
-
     def test_volume_difference_is_one_request(self):
         day = date(2024, 10, 4)
         later = date(2024, 10, 7)
@@ -95,7 +95,7 @@ class WindowTests(unittest.TestCase):
                 }
 
         stats = {"hour_requests": 0, "volume_mismatch_days": 0}
-        rows = loader.fetch_window(Client(), self.contract(), [daily(day, 5), daily(later, 4)], stats)
+        rows = loader.fetch_window(Client(), listed_contract(), [daily(day, 5), daily(later, 4)], stats)
         self.assertEqual(len(calls), 1)
         self.assertEqual(stats["hour_requests"], 1)
         self.assertEqual(stats["volume_mismatch_days"], 1)
@@ -112,7 +112,7 @@ class WindowTests(unittest.TestCase):
                 return {"status": "OK", "adjusted": True, "results": []}
 
         stats = {"hour_requests": 0, "volume_mismatch_days": 0}
-        rows = loader.fetch_window(Client(), self.contract(), [daily(day, 5), daily(later, 4)], stats)
+        rows = loader.fetch_window(Client(), listed_contract(), [daily(day, 5), daily(later, 4)], stats)
         self.assertEqual(rows, [])
         self.assertEqual(stats["hour_requests"], 3)
         self.assertEqual(stats["volume_mismatch_days"], 2)
@@ -171,15 +171,6 @@ class RetryTests(unittest.TestCase):
 
 
 class DownloadTests(unittest.TestCase):
-    def contract(self, ticker):
-        return {
-            "ticker": ticker,
-            "underlying_ticker": "TEST",
-            "expiration_date": "2024-10-18",
-            "strike_price": 1,
-            "contract_type": "call",
-        }
-
     def fetch(self, ticker, fail=False):
         if fail:
             raise RuntimeError("boom")
@@ -230,7 +221,7 @@ class DownloadTests(unittest.TestCase):
         def fake_fetch(_client, contract, *_args):
             return self.fetch(contract["ticker"], fail=contract["ticker"] == "BAD")
 
-        pending = [self.contract("BAD"), self.contract("GOOD")]
+        pending = [listed_contract("BAD"), listed_contract("GOOD")]
         with patch("research.massive_options_eod.load_rows", fake_load), patch(
             "research.massive_options_eod.fetch_contract", fake_fetch
         ):
@@ -253,7 +244,7 @@ class DownloadTests(unittest.TestCase):
             seen.append(contract["ticker"])
             raise RuntimeError("down")
 
-        pending = [self.contract(f"T{index}") for index in range(6)]
+        pending = [listed_contract(f"T{index}") for index in range(6)]
         with patch("research.massive_options_eod.load_rows"), patch(
             "research.massive_options_eod.fetch_contract", fake_fetch
         ):
@@ -296,13 +287,7 @@ class FlatFileTests(unittest.TestCase):
                     return {"status": "OK", "adjusted": True, "results": [daily(gap_day, 2, 4)]}
                 return {"status": "OK", "adjusted": True, "results": [hourly(day, 10, 5), hourly(gap_day, 11, 2)]}
 
-        contract = {
-            "ticker": "O:KEEP",
-            "underlying_ticker": "TEST",
-            "expiration_date": "2024-10-18",
-            "strike_price": 1,
-            "contract_type": "call",
-        }
+        contract = listed_contract("O:KEEP")
         lookup = {"O:KEEP": [daily(day, 5, 8)]}
         _bars, _fetch, daily_rows, daily_fetch = loader.fetch_contract(
             Client(),
