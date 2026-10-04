@@ -1158,7 +1158,7 @@
     }
     .mobile-priority-grid {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
       min-width: 0;
       gap: 6px;
     }
@@ -1173,19 +1173,15 @@
       border-radius: 5px;
     }
     .mobile-priority-grid small {
-      overflow: hidden;
       color: var(--muted-foreground);
-      font-size: .62rem;
+      font-size: .68rem;
       font-weight: 700;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      overflow-wrap: break-word;
     }
     .mobile-priority-grid strong {
-      overflow: hidden;
       font-size: .78rem;
       font-variant-numeric: tabular-nums;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      overflow-wrap: break-word;
     }
     .row-chevron { width: 16px; transition: transform 160ms ease; }
     .mobile-row-summary[aria-expanded="true"] .row-chevron { transform: rotate(90deg); }
@@ -1221,7 +1217,24 @@
     .toolbar-actions > button,
     .toolbar-actions > [data-slot="button"],
     .toolbar-button { flex-basis: calc(50% - 4px); }
-    .mobile-priority-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
+  @media (max-width: 48rem) {
+    .model-selector select,
+    .mobile-sort-row select { font-size: 1rem; }
+  }
+
+  @media (any-pointer: coarse) {
+    .workspace-nav a,
+    button,
+    .app :is(button, [role="radio"], select),
+    .app [data-slot="button"],
+    [role="radio"],
+    select,
+    .control-field input,
+    .market-controls .control-field [data-slot="input"],
+    .ticker-list [role="option"],
+    summary { min-height: 44px; min-width: 44px; }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -1231,5 +1244,13 @@
       scroll-behavior: auto !important;
       transition-duration: .01ms !important;
     }
+  }
+}
+
+/* Keep small-screen fields readable above the shared Input's desktop utility. */
+@layer utilities {
+  @media (max-width: 48rem) {
+    .control-field input,
+    .control-field [data-slot="input"] { font-size: 1rem; }
   }
 }

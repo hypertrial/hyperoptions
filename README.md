@@ -110,7 +110,7 @@ Every matching expiration has a collapsible header with date, DTE, and row count
 
 Large filtered result sets render progressively across expanded groups only: all expiration headers remain discoverable, while the first 250 expanded rows mount. Accessible **Show 250 more** (or the remaining count, when fewer than 250 rows are left) and **Show all** controls reveal the rest. Heat ranges still use the complete filtered expiration. The reveal limit resets when the chain identity or filters change.
 
-Below 40rem, the table becomes compact disclosure rows. Each summary shows Strike, Bid, APR (net), and % to assignment. Opening a row shows the remaining metrics and Copy. Sorting remains available above the mobile rows.
+Below 40rem, the table becomes compact disclosure rows. Each summary shows Strike, Bid, APR (net), and % to assignment. The metric grid reflows to keep complete figures and labels visible. Opening a row shows the remaining metrics and Copy. Sorting remains available above the mobile rows. Touch controls use at least 44px targets, and narrow-screen form text stays at 16px. Skip to main content includes the chain title and forecast context.
 
 A ticker with no options shows `Options are not available for {ticker}`. A priced ticker with no rows after the moneyness filter shows `No {ITM|OTM} {calls|puts} for {ticker}`.
 

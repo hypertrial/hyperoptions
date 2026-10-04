@@ -221,7 +221,7 @@ export default function ItmChain({ forecastModel = DEFAULT_FORECAST_MODEL }: { f
         onRefresh={beginRefresh}
       />
 
-      <div className="results-canvas">
+      <main id="main-content" tabIndex={-1} className="results-canvas" aria-busy={loading}>
         <header className="chain-header">
           <p className="eyebrow">Option chain</p>
           <h1>{strategyLabel}</h1>
@@ -241,7 +241,7 @@ export default function ItmChain({ forecastModel = DEFAULT_FORECAST_MODEL }: { f
           {page ? <p className="odds-context">Selected forecast: {PHYSICAL_MODEL_NAMES[forecastModel]}{forecastModel === DEFAULT_FORECAST_MODEL ? " baseline" : " · user-selected experimental"}. It drives expiry odds, odds sort, and hypothetical risk. Market odds use option prices (risk-neutral). {oddsStamp ? `Market quote: ${oddsStamp}.` : ""}</p> : null}
         </header>
 
-        <main id="main-content" tabIndex={-1} className="chain-panel" aria-busy={loading}>
+        <div className="chain-panel">
           {page ? (
             <FilterControls
               side={side}
@@ -351,8 +351,8 @@ export default function ItmChain({ forecastModel = DEFAULT_FORECAST_MODEL }: { f
             watchStates={watchStates}
             onWatch={(watchKey) => void watchContract(watchKey)}
           />
-        </main>
-      </div>
+        </div>
+      </main>
     </div>
   )
 }
