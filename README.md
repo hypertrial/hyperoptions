@@ -2,7 +2,7 @@
 
 HyperOptions is a local workstation for exploring covered calls and cash-secured puts on **Nasdaq-listed** stocks and watching selected option contracts. It is not a brokerage, does not store account or holdings data, and is not financial advice. The option chain and watchlist lead with a dated historical predictive forecast and show market-implied odds separately when public quotes support them.
 
-The desktop UI keeps ticker setup, quote context, strategy, moneyness, sizing, and refresh in a sticky left sidebar. Below 64rem the same controls live in an accessible Settings drawer beneath a compact ticker/price/status summary. The results canvas groups provider-returned contracts by expiration with exact strikes high to low.
+The desktop UI keeps ticker setup, strategy, moneyness, sizing, refresh, and quote context in a sticky left sidebar. Interactive controls precede the quote card so loading and completed quotes cannot move a control during a click. Below 64rem the same controls live in an accessible Settings drawer beneath a compact ticker/price/status summary. The results canvas groups provider-returned contracts by expiration with exact strikes high to low.
 
 The app binds to loopback only (`127.0.0.1`). Market data is fetched unofficially from public Nasdaq JSON endpoints for personal local use and is not affiliated with Nasdaq.
 
@@ -187,7 +187,7 @@ The [source-rights audit](docs/source-rights.md) explains why this release does 
 (cd frontend && npx --no-install playwright test)
 ```
 
-Playwright starts a mocked FastAPI server with a fresh temporary data directory for each lifespan, independent of the workstation data directory. Fixture data is removed after background jobs finish. It also starts Vite, then proves the `/api` proxy and that the browser never calls Nasdaq. Install the pinned Chromium before the first local run; `npm install` does not download it. Use the project-pinned Playwright command; do not run a global `npx playwright`.
+Playwright starts a mocked FastAPI server with a fresh temporary data directory for each lifespan, independent of the workstation data directory. Fixture data is removed after background jobs finish. It also starts Vite, then proves the `/api` proxy and that the browser never calls Nasdaq. Install the pinned Chromium before the first local run; `npm install` does not download it. Use the project-pinned Playwright command; do not run a global `npx playwright`. Failed browser tests retain traces; chain and strategy-loading tests also attach URL, control, error and request timing diagnostics. The fixture server supplies backend duration through `Server-Timing`. CI uploads only `frontend/test-results/` when verification fails, with five-day retention; local artifacts remain gitignored.
 
 ## Verification gates
 
