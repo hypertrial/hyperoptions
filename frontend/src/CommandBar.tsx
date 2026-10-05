@@ -75,31 +75,6 @@ function MarketControls({
 
       <TickerPicker ticker={ticker} onSelect={onSelectTicker} />
 
-      <section className="quote-card" aria-label={`${ticker} market summary`} aria-busy={quoteLoading}>
-        <div className="quote-identity">
-          <span>{ticker}</span>
-          {page?.name ? <p title={page.name}>{page.name}</p> : null}
-        </div>
-        {quoteLoading ? (
-          <div className="quote-loading">
-            <RefreshCw className="animate-spin" aria-hidden="true" />
-            <div>
-              <strong>Loading {ticker} quote</strong>
-              <span>Fetching price and market session…</span>
-            </div>
-          </div>
-        ) : (
-          <>
-            <p className="quote-price font-mono">{moneyCents(page?.current_cents)}</p>
-            <MarketStatus session={session} />
-            <dl className="quote-details">
-              <div><dt>Price source</dt><dd>{currentSource}</dd></div>
-              <div><dt>Quote time</dt><dd>{quoteStamp || "Unavailable"}</dd></div>
-              <div><dt>Fetched</dt><dd>{page ? dateTime(page.fetched_at) : "Unavailable"}</dd></div>
-            </dl>
-          </>
-        )}
-      </section>
 
       <div className="market-control-stack">
         <StrategyToggle value={side} onChange={onSelectSide} />
@@ -131,6 +106,32 @@ function MarketControls({
         <RefreshCw className={loading ? "animate-spin" : undefined} aria-hidden="true" />
         {loading && page ? "Refreshing" : "Refresh data"}
       </Button>
+
+      <section className="quote-card" aria-label={`${ticker} market summary`} aria-busy={quoteLoading}>
+        <div className="quote-identity">
+          <span>{ticker}</span>
+          {page?.name ? <p title={page.name}>{page.name}</p> : null}
+        </div>
+        {quoteLoading ? (
+          <div className="quote-loading">
+            <RefreshCw className="animate-spin" aria-hidden="true" />
+            <div>
+              <strong>Loading {ticker} quote</strong>
+              <span>Fetching price and market session…</span>
+            </div>
+          </div>
+        ) : (
+          <>
+            <p className="quote-price font-mono">{moneyCents(page?.current_cents)}</p>
+            <MarketStatus session={session} />
+            <dl className="quote-details">
+              <div><dt>Price source</dt><dd>{currentSource}</dd></div>
+              <div><dt>Quote time</dt><dd>{quoteStamp || "Unavailable"}</dd></div>
+              <div><dt>Fetched</dt><dd>{page ? dateTime(page.fetched_at) : "Unavailable"}</dd></div>
+            </dl>
+          </>
+        )}
+      </section>
     </div>
   )
 }
