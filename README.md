@@ -62,7 +62,7 @@ Displayed decision metrics, for one contract:
 - `Premium (net) = 100 × (bid − intrinsic)`. This is time value only. A bid below intrinsic is negative and fails a positive minimum.
 - Call `APR (net) = net premium / (100 × (current − bid)) × 365 / DTE`. Put `APR (net) = net premium / (100 × (strike − bid)) × 365 / DTE`. APR is blank when capital is 0 or less, or when DTE is 0.
 - Call `Breakeven = current − bid`. Put `Breakeven = strike − bid`.
-- `% to assignment = (strike − current) / current` for calls and `(current − strike) / current` for puts. Positive is room left before the strike. Negative means the stock is already through the strike. The bid is not used.
+- `% to assignment = |strike − current| / current` for calls and puts. It is the distance to the strike, so an ITM contract and an OTM contract both compare against Min % to assignment. The bid is not used.
 
 Older buy-write and cash-secured-put fields remain on each contract for compatibility. They are not columns.
 

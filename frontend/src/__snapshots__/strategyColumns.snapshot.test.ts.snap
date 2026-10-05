@@ -69,7 +69,7 @@ exports[`strategy column metadata > matches the call snapshot 1`] = `
     "abbrev": true,
     "heatmap": true,
     "id": "breakeven_change_pct_tenths",
-    "info": "Percent the stock must rise from the current price to the strike before assignment. Negative when the stock is already above the strike. Contracts does not scale this.",
+    "info": "Absolute percent from the current price to the strike: |strike − current| / current. Contracts does not scale this.",
     "label": "% to assignment",
   },
 ]
@@ -144,7 +144,7 @@ exports[`strategy column metadata > matches the put snapshot 1`] = `
     "abbrev": true,
     "heatmap": true,
     "id": "breakeven_change_pct_tenths",
-    "info": "Percent the stock must fall from the current price to the strike before assignment. Negative when the stock is already below the strike. Contracts does not scale this.",
+    "info": "Absolute percent from the current price to the strike: |strike − current| / current. Contracts does not scale this.",
     "label": "% to assignment",
   },
 ]

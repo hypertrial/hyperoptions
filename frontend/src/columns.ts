@@ -111,9 +111,7 @@ export function chainColumns(side: Side): ColumnDef[] {
     {
       id: "breakeven_change_pct_tenths",
       label: "% to assignment",
-      info: side === "call"
-        ? "Percent the stock must rise from the current price to the strike before assignment. Negative when the stock is already above the strike. Contracts does not scale this."
-        : "Percent the stock must fall from the current price to the strike before assignment. Negative when the stock is already below the strike. Contracts does not scale this.",
+      info: "Absolute percent from the current price to the strike: |strike − current| / current. Contracts does not scale this.",
       abbrev: true,
       heatmap: true,
       accessor: (row) => row.breakeven_change_pct_tenths,

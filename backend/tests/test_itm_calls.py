@@ -816,7 +816,7 @@ def _net_metrics(side: str, current: Decimal, strike: Decimal, bid: Decimal, dte
     apr = None
     if capital > D(0) and dte > 0:
         apr = net / capital * D(365) / D(dte) * D(100)
-    move = (strike - current) if side == "call" else (current - strike)
+    move = abs((strike - current) if side == "call" else (current - strike))
     return (
         to_cents(net),
         None if apr is None else to_pct_tenths(apr),
@@ -876,10 +876,11 @@ def test_net_premium_apr_and_breakeven_follow_moneyness() -> None:
     assert missing.net_apr_pct_tenths is None
     assert missing.breakeven_cents is None
     assert missing.breakeven_change_pct_tenths == to_pct_tenths(
-        (D(45) - current) / current * D(100)
+        abs(D(45) - current) / current * D(100)
     )
+    assert missing.breakeven_change_pct_tenths > 0
     assert calls[("2026-09-18", 6000)].breakeven_change_pct_tenths > otm.breakeven_change_pct_tenths
-    assert weekly.breakeven_change_pct_tenths < 0
+    assert weekly.breakeven_change_pct_tenths > below.breakeven_change_pct_tenths > 0
     assert atm.breakeven_change_pct_tenths == 0
     expired = calls[("2026-09-11", 4000)]
     assert expired.dte == 0
@@ -908,7 +909,7 @@ def test_net_premium_apr_and_breakeven_follow_moneyness() -> None:
     itm_put = puts[5500]
     assert itm_put.in_the_money is True
     _seen(itm_put, "put", D(55), D(8), 7)
-    assert itm_put.breakeven_change_pct_tenths < 0
+    assert itm_put.breakeven_change_pct_tenths > 0
     otm_put = puts[4000]
     assert otm_put.in_the_money is False
     _seen(otm_put, "put", D(40), D("1.5"), 7)

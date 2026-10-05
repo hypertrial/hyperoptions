@@ -173,7 +173,8 @@ def _intrinsic(side: Side, current: Decimal, strike: Decimal) -> Decimal:
 
 def _to_assignment_pct(side: Side, current: Decimal, strike: Decimal) -> Decimal | None:
     move = strike - current if side == "call" else current - strike
-    return _ratio_pct(move, current)
+    ratio = _ratio_pct(move, current)
+    return None if ratio is None else abs(ratio)
 
 
 def _decision_metrics(
