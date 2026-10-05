@@ -122,7 +122,6 @@ def _install_inputs(
 
 
 @pytest.mark.asyncio
-@pytest.mark.asyncio
 async def test_page_pricing_context_matches_the_refresh_entry_quote(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
