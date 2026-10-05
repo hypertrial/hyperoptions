@@ -30,12 +30,19 @@ def main() -> None:
     run = commands.add_parser("run", help="Verify a snapshot and execute all three studies")
     run.add_argument("--snapshot", type=Path, default=root / "snapshot-v1")
     run.add_argument("--output", type=Path, default=root / "run-v1")
+    wheel = commands.add_parser("wheel", help="Research characteristics for the next wheel leg")
+    wheel.add_argument("--snapshot", type=Path, default=root / "snapshot-v2")
+    wheel.add_argument("--output", type=Path, default=root / "wheel-v1")
     args = parser.parse_args()
     try:
         if args.command == "freeze":
             result = freeze_snapshot(args.source, args.prices, args.flat_cache, args.output)
-        else:
+        elif args.command == "run":
             result = run_snapshot(args.snapshot, args.output)
+        else:
+            from stocksweeper.research.historical_options.wheel import run_wheel
+
+            result = run_wheel(args.snapshot, args.output)
     except (OSError, ValueError) as exc:
         parser.exit(1, f"Research command failed: {exc}\n")
     print(json.dumps({
