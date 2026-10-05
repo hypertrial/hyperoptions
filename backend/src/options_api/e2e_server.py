@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from time import perf_counter
 
 import httpx
 import uvicorn
@@ -117,6 +118,13 @@ def create_fixture_app() -> FastAPI:
         research_settings=settings,
     )
     lifespan = app.router.lifespan_context
+
+    @app.middleware("http")
+    async def fixture_timing(request, call_next):
+        started = perf_counter()
+        response = await call_next(request)
+        response.headers["Server-Timing"] = f"fixture;dur={(perf_counter() - started) * 1000:.3f}"
+        return response
 
     @asynccontextmanager
     async def isolated_lifespan(app: FastAPI) -> AsyncIterator[None]:
