@@ -9,6 +9,7 @@ export default function IvDetails({ row, contractLabel, inline = false }: { row:
   const disclosure = useRef<HTMLDetailsElement>(null)
   const summary = useRef<HTMLElement>(null)
   const panel = useRef<HTMLDivElement>(null)
+  const pointerCloseIntent = useRef(false)
   const usePopover = !inline && typeof HTMLElement !== "undefined" && "showPopover" in HTMLElement.prototype
   const close = () => {
     if (panel.current?.matches(":popover-open")) panel.current.hidePopover()
@@ -25,7 +26,15 @@ export default function IvDetails({ row, contractLabel, inline = false }: { row:
       if (event.currentTarget.open && !panel.current.matches(":popover-open")) panel.current.showPopover({ source: summary.current ?? undefined })
       else if (!event.currentTarget.open && panel.current.matches(":popover-open")) panel.current.hidePopover()
     }}>
-      <summary ref={summary} aria-controls={id} aria-label={`IV details for ${contractLabel}: ${value} · ${action}`}>
+      <summary ref={summary} aria-controls={id} aria-label={`IV details for ${contractLabel}: ${value} · ${action}`}
+        onPointerDown={() => { pointerCloseIntent.current = usePopover && panel.current?.matches(":popover-open") === true }}
+        onPointerCancel={() => { pointerCloseIntent.current = false }}
+        onClick={(event) => {
+          // Light dismissal can close details before its default click activation.
+          const intendedClose = event.detail > 0 && pointerCloseIntent.current
+          pointerCloseIntent.current = false
+          if (usePopover && intendedClose) { event.preventDefault(); close() }
+        }}>
         <span className="iv-midpoint font-mono">{value}</span> · {action}
       </summary>
       <div ref={panel} id={id} className="iv-details-content" popover={usePopover ? "auto" : undefined}

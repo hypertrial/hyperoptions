@@ -39,12 +39,47 @@ function ivSummary(page: Page, strike = "85.000") {
 
 const openPanels = (page: Page) => page.locator(".iv-details-content:popover-open")
 
+async function recordIvDismissalEvents(page: Page) {
+  await page.evaluate(() => {
+    const recorded: unknown[] = []
+    ;(window as unknown as { ivDismissalEvents: unknown[] }).ivDismissalEvents = recorded
+    const state = () => [...document.querySelectorAll<HTMLDetailsElement>(".iv-details")].map((details) => ({
+      label: details.querySelector("summary")?.getAttribute("aria-label"),
+      detailsOpen: details.open,
+      popoverOpen: details.querySelector("[popover]")?.matches(":popover-open"),
+    }))
+    const append = (value: unknown) => { if (recorded.length < 1_000) recorded.push(value) }
+    for (const type of ["pointerdown", "pointerup", "pointercancel", "mousedown", "mouseup", "click", "keydown", "beforetoggle", "toggle"]) {
+      for (const capture of [true, false]) document.addEventListener(type, (event) => {
+        const toggle = event as Event & { oldState?: string; newState?: string; source?: Element }
+        const target = event.target instanceof Element ? event.target : null
+        append({
+          type, phase: capture ? "capture" : "bubble", target: target?.tagName,
+          oldState: toggle.oldState, newState: toggle.newState,
+          source: toggle.source?.getAttribute("aria-label"), state: state(),
+        })
+      }, capture)
+    }
+    for (const details of document.querySelectorAll(".iv-details")) {
+      new MutationObserver(() => append({ type: "details-mutation", state: state() }))
+        .observe(details, { attributes: true, attributeFilter: ["open"] })
+    }
+  })
+}
+
+test.afterEach(async ({ page }, info) => {
+  if (info.status === info.expectedStatus) return
+  const events = await page.evaluate(() => (window as unknown as { ivDismissalEvents?: unknown[] }).ivDismissalEvents)
+  if (events) await info.attach("iv-dismissal-events", { body: JSON.stringify(events, null, 2), contentType: "application/json" })
+})
+
 test("desktop IV uses a native popover without resizing the table and restores focus", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const requests = await installApi(page)
   await page.goto("/")
   const summary = ivSummary(page)
   await summary.scrollIntoViewIfNeeded()
+  await recordIvDismissalEvents(page)
   const table = page.getByRole("table")
   const before = await table.boundingBox()
   const requestCount = requests()
@@ -99,6 +134,69 @@ test("desktop IV uses a native popover without resizing the table and restores f
   await expect(openPanels(page)).toHaveCount(0)
   await expect(theme).toBeFocused()
   expect(requests()).toBe(requestCount)
+})
+
+test("an IV trigger click closes when native dismissal precedes its click event", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await installApi(page)
+  await page.goto("/")
+  const summary = ivSummary(page)
+  await summary.scrollIntoViewIfNeeded()
+  await recordIvDismissalEvents(page)
+  await summary.click()
+  await expect(openPanels(page)).toHaveCount(1)
+  await page.setViewportSize({ width: 1440, height: 1800 })
+  const trigger = await summary.boundingBox()
+  const panel = await openPanels(page).boundingBox()
+  expect(trigger!.y + trigger!.height).toBeLessThan(panel!.y)
+
+  await page.mouse.move(trigger!.x + trigger!.width / 2, trigger!.y + trigger!.height / 2)
+  await page.mouse.down()
+  // Chromium may dismiss at mousedown or pointerup. Exercise the observed
+  // ordering independently of which native event performs light dismissal.
+  await page.locator(".iv-details-content[popover]").evaluateAll((panels) => {
+    for (const panel of panels) if (panel.matches(":popover-open")) (panel as HTMLElement).hidePopover()
+  })
+  await expect(openPanels(page)).toHaveCount(0)
+  await expect(summary.locator("..")).not.toHaveAttribute("open", "")
+  await page.mouse.up()
+  await expect(openPanels(page)).toHaveCount(0)
+  await expect(summary.locator("..")).not.toHaveAttribute("open", "")
+  await expect(summary).toBeFocused()
+
+  await summary.click()
+  await expect(openPanels(page)).toHaveCount(1)
+  await openPanels(page).getByRole("button", { name: "Close", exact: true }).click()
+  await expect(openPanels(page)).toHaveCount(0)
+  await expect(summary).toBeFocused()
+})
+
+test("a canceled IV trigger pointer gesture leaves keyboard activation usable", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await installApi(page)
+  await page.goto("/")
+  const summary = ivSummary(page)
+  await summary.scrollIntoViewIfNeeded()
+  await recordIvDismissalEvents(page)
+  await summary.click()
+  await expect(openPanels(page)).toHaveCount(1)
+  await page.setViewportSize({ width: 1440, height: 1800 })
+  const trigger = await summary.boundingBox()
+  await page.mouse.move(trigger!.x + trigger!.width / 2, trigger!.y + trigger!.height / 2)
+  await page.mouse.down()
+  await summary.dispatchEvent("pointercancel", { pointerId: 1, pointerType: "mouse", isPrimary: true })
+  await page.locator(".iv-details-content[popover]").evaluateAll((panels) => {
+    for (const panel of panels) if (panel.matches(":popover-open")) (panel as HTMLElement).hidePopover()
+  })
+  await page.mouse.move(1, 1)
+  await page.mouse.up()
+  await expect(openPanels(page)).toHaveCount(0)
+  await summary.press("Enter")
+  await expect(openPanels(page)).toHaveCount(1)
+  await expect(summary.locator("..")).toHaveAttribute("open", "")
+  await summary.press("Space")
+  await expect(openPanels(page)).toHaveCount(0)
+  await expect(summary.locator("..")).not.toHaveAttribute("open", "")
 })
 
 test("opening another contract replaces the popover and its recorded strike", async ({ page }) => {

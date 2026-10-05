@@ -256,6 +256,77 @@ class DownloadTests(unittest.TestCase):
 
 
 class FlatFileTests(unittest.TestCase):
+    def test_missing_windows_use_exchange_sessions_and_requested_bounds(self):
+        cases = [
+            # Holiday/weekend year edges remain valid requested dates.
+            (date(2024, 1, 1), date(2024, 1, 5),
+             {date(2024, 1, 2), date(2024, 1, 4), date(2024, 1, 5)},
+             [(date(2024, 1, 3), date(2024, 1, 3))]),
+            (date(2024, 1, 1), date(2024, 1, 1), set(), []),
+            (date(2023, 12, 28), date(2023, 12, 31), {date(2023, 12, 28)},
+             [(date(2023, 12, 29), date(2023, 12, 29))]),
+            (date(2023, 12, 31), date(2023, 12, 31), set(), []),
+            # Consecutive uncovered sessions are batched across a weekend.
+            (date(2024, 10, 4), date(2024, 10, 8), {date(2024, 10, 8)},
+             [(date(2024, 10, 4), date(2024, 10, 7))]),
+            # Thanksgiving is closed; the early-close Friday is still a session.
+            (date(2024, 11, 27), date(2024, 12, 1), {date(2024, 11, 27)},
+             [(date(2024, 11, 29), date(2024, 11, 29))]),
+            # The Carter mourning holiday must not become a REST gap.
+            (date(2025, 1, 8), date(2025, 1, 10), {date(2025, 1, 8), date(2025, 1, 10)}, []),
+            (date(2024, 10, 5), date(2024, 10, 6), set(), []),
+        ]
+        for start, end, captured, expected in cases:
+            with self.subTest(start=start):
+                self.assertEqual(loader.missing_daily_windows(start, end, frozenset(captured)), expected)
+
+    def test_missing_coverage_requests_stop_at_contract_expiry(self):
+        requests = []
+
+        class Client:
+            def get(self, url, params=None):
+                requests.append(url)
+                return {"status": "OK", "results": []}
+
+        contract = dict(listed_contract(), expiration_date="2024-10-09")
+        _, _, _, fetch = loader.fetch_contract(
+            Client(), contract, date(2024, 10, 7), date(2024, 10, 18), {},
+            frozenset({date(2024, 10, 8)})
+        )
+        self.assertEqual(len(requests), 2)
+        self.assertTrue(requests[0].endswith("/2024-10-07/2024-10-07"))
+        self.assertTrue(requests[1].endswith("/2024-10-09/2024-10-09"))
+        self.assertEqual(fetch["to_date"], "2024-10-09")
+        self.assertEqual(fetch["source"], "mixed")
+
+    def test_partial_listing_recovers_leading_interior_and_trailing_sessions(self):
+        sessions = [date(2024, 10, day) for day in (7, 8, 9, 10, 11)]
+        for missing in (sessions[0], sessions[2], sessions[-1]):
+            with self.subTest(missing=missing):
+                captured = [(day, str(day)) for day in sessions if day != missing]
+                with patch.object(loader, "flatfile_keys", return_value=captured), patch.object(
+                    loader, "_download_day", return_value={}
+                ):
+                    lookup, coverage = loader.load_daily_lookup(
+                        object(), [listed_contract()], sessions[0], sessions[-1]
+                    )
+                calls = []
+
+                class Client:
+                    def get(self, url, params=None, day=missing, recorded=calls):
+                        recorded.append(url)
+                        result = daily(day, 5) if "/range/1/day/" in url else hourly(day, 10, 5)
+                        return {"status": "OK", "adjusted": True, "results": [result]}
+
+                bars, _, rows, fetch = loader.fetch_contract(
+                    Client(), listed_contract(), sessions[0], sessions[-1], lookup, coverage
+                )
+                self.assertEqual([row["bar_date"] for row in rows], [missing.isoformat()])
+                self.assertEqual(len(bars), 1)
+                self.assertTrue(rows[0]["adjusted"])
+                self.assertEqual(fetch["source"], "mixed")
+                self.assertEqual(len(calls), 2)
+
     def test_unknown_flatfile_coverage_falls_back_to_rest(self):
         day = date(2024, 10, 4)
         calls = []
@@ -284,7 +355,7 @@ class FlatFileTests(unittest.TestCase):
             def get(self, *args, **kwargs):
                 raise AssertionError("verified covered empty activity must not trigger REST")
         bars, fetch, rows, _ = loader.fetch_contract(
-            Client(), listed_contract(), day, day, {}, day
+            Client(), listed_contract(), day, day, {}, frozenset({day})
         )
         self.assertEqual((bars, rows), ([], []))
         self.assertEqual(fetch["hour_requests"], 0)
@@ -328,9 +399,9 @@ class FlatFileTests(unittest.TestCase):
             date(2024, 10, 1),
             date(2024, 10, 18),
             lookup,
-            date(2024, 10, 4),
+            frozenset(date(2024, 10, n) for n in range(1, 5)),
         )
-        self.assertEqual(daily_fetch["source"], "flatfile")
+        self.assertEqual(daily_fetch["source"], "mixed")
         self.assertEqual(sorted(row["bar_date"] for row in daily_rows), ["2024-10-04", "2024-10-07"])
         by_date = {row["bar_date"]: row["adjusted"] for row in daily_rows}
         self.assertFalse(by_date["2024-10-04"])

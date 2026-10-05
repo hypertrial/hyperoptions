@@ -7,7 +7,7 @@ import json
 import logging
 import math
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
@@ -184,12 +184,14 @@ class MarketWatchOdds:
         *,
         data_dir: Path | None = None,
         watched_contracts: Callable[[], Iterable[tuple[str, datetime]]] | None = None,
+        dividend_provider: Callable[[str, datetime], Awaitable[DividendStatus]] | None = None,
     ) -> None:
         self.service = service
         self.client = client
         self.clock = clock
         self._data_path = data_dir / "results.duckdb" if data_dir is not None else None
         self._watched_contracts = watched_contracts
+        self._dividend_provider = dividend_provider
         self._watched: dict[str, datetime] = {}
         self._last_good: dict[str, _LastGood] = {}
         self._last_good_session: date | None = None
@@ -897,7 +899,7 @@ class MarketWatchOdds:
         ttl = _REFRESH if cached is not None and cached.kind == "unknown" else _DIVIDEND_REFRESH
         if cached is not None and now - cached.as_of < ttl:
             return cached
-        status = await fetch_dividend_status(ticker, now)
+        status = await (self._dividend_provider or fetch_dividend_status)(ticker, now)
         self._dividends[ticker] = status
         if len(self._dividends) > _MAX_CACHED_TICKERS:
             self._dividends.pop(next(iter(self._dividends)))

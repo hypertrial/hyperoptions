@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { StrictMode } from "react"
 import { afterEach, expect, it, vi } from "vitest"
 import App from "../App"
 
@@ -43,6 +44,100 @@ afterEach(() => {
   vi.unstubAllGlobals()
   window.sessionStorage.clear()
   window.localStorage.clear()
+})
+
+function watchlistResponse(ticker = "IREN") {
+  return new Response(JSON.stringify({ items: [{ ...watched, id: `watch-${ticker}`, ticker, root: ticker }] }))
+}
+
+async function beginObsoleteRetry(path: "initial" | "stale") {
+  window.history.replaceState(null, "", "/watchlist")
+  let baselineReads = 0
+  let rejectRetry!: (cause: Error) => void
+  let resolveRetry!: (response: Response) => void
+  const obsoleteRetry = new Promise<Response>((resolve, reject) => { resolveRetry = resolve; rejectRetry = reject })
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    if (String(input).includes("forecast_model=student_t_ewma")) return Promise.resolve(watchlistResponse("CIFR"))
+    baselineReads += 1
+    if (baselineReads === (path === "initial" ? 1 : 2)) return Promise.reject(new Error("Baseline read failed"))
+    if (baselineReads === (path === "initial" ? 2 : 3)) return obsoleteRetry
+    return Promise.resolve(watchlistResponse(baselineReads === 1 ? "IREN" : "NBIS"))
+  }))
+  render(<App />)
+  if (path === "stale") {
+    await screen.findByRole("button", { name: /Remove IREN/ })
+    document.dispatchEvent(new Event("visibilitychange"))
+  }
+  await screen.findByRole("alert")
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }))
+  fireEvent.change(screen.getByRole("combobox", { name: "Stock forecast model" }), { target: { value: "student_t_ewma" } })
+  await screen.findByRole("button", { name: /Remove CIFR/ })
+  return { rejectRetry, resolveRetry }
+}
+
+it.each(["initial", "stale"] as const)("ignores an obsolete %s retry failure after a new model loads", async (path) => {
+  const retry = await beginObsoleteRetry(path)
+  await act(async () => { retry.rejectRetry(new Error("Obsolete EWMA retry failed")) })
+  expect(screen.queryByRole("alert")).toBeNull()
+  expect(screen.queryByRole("button", { name: /Remove CIFR/ })).not.toBeNull()
+  expect((screen.getByRole("combobox", { name: "Stock forecast model" }) as HTMLSelectElement).value).toBe("student_t_ewma")
+})
+
+it.each(["initial", "stale"] as const)("ignores an obsolete %s retry failure after switching away and back", async (path) => {
+  const retry = await beginObsoleteRetry(path)
+  fireEvent.change(screen.getByRole("combobox", { name: "Stock forecast model" }), { target: { value: "lognormal_ewma" } })
+  await screen.findByRole("button", { name: /Remove NBIS/ })
+  await act(async () => { retry.rejectRetry(new Error("Obsolete first EWMA retry failed")) })
+  expect(screen.queryByRole("alert")).toBeNull()
+  expect(screen.queryByRole("button", { name: /Remove NBIS/ })).not.toBeNull()
+  expect(screen.queryByRole("button", { name: /Remove IREN/ })).toBeNull()
+})
+
+it.each(["initial", "stale"] as const)("does not replace fresh cards with a successful obsolete %s retry after switching away and back", async (path) => {
+  const retry = await beginObsoleteRetry(path)
+  fireEvent.change(screen.getByRole("combobox", { name: "Stock forecast model" }), { target: { value: "lognormal_ewma" } })
+  await screen.findByRole("button", { name: /Remove NBIS/ })
+  await act(async () => { retry.resolveRetry(watchlistResponse("IREN")) })
+  expect(screen.queryByRole("alert")).toBeNull()
+  expect(screen.queryByRole("button", { name: /Remove NBIS/ })).not.toBeNull()
+  expect(screen.queryByRole("button", { name: /Remove IREN/ })).toBeNull()
+})
+
+it("keeps current-model initial retry failures visible, shares the in-flight poll, and recovers on retry", async () => {
+  window.history.replaceState(null, "", "/watchlist")
+  let reads = 0
+  let rejectRetry!: (cause: Error) => void
+  vi.stubGlobal("fetch", vi.fn(() => {
+    reads += 1
+    if (reads === 1) return Promise.reject(new Error("Initial read failed"))
+    if (reads === 2) return new Promise<Response>((_, reject) => { rejectRetry = reject })
+    return Promise.resolve(watchlistResponse())
+  }))
+  render(<App />)
+  await screen.findByRole("alert")
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }))
+  await act(async () => { document.dispatchEvent(new Event("visibilitychange")) })
+  expect(reads).toBe(2)
+  await act(async () => { rejectRetry(new Error("Current retry failed")) })
+  expect(screen.getByRole("alert").textContent).toContain("Current retry failed")
+  expect(screen.queryByRole("button", { name: /Remove IREN/ })).toBeNull()
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }))
+  await screen.findByRole("button", { name: /Remove IREN/ })
+  expect(screen.queryByRole("alert")).toBeNull()
+  expect(reads).toBe(3)
+})
+
+it("coalesces the unchanged-model mount read during StrictMode effect replay", async () => {
+  window.history.replaceState(null, "", "/watchlist")
+  let complete!: () => void
+  const pending = new Promise<void>((resolve) => { complete = resolve })
+  const fetchMock = vi.fn(async () => { await pending; return watchlistResponse() })
+  vi.stubGlobal("fetch", fetchMock)
+  render(<StrictMode><App /></StrictMode>)
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+  await act(async () => { complete() })
+  await screen.findByRole("button", { name: /Remove IREN/ })
+  expect(fetchMock).toHaveBeenCalledTimes(1)
 })
 
 it("shows dated market-implied ITM and OTM odds beside the expiry result", async () => {
