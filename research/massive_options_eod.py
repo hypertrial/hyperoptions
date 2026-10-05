@@ -375,7 +375,7 @@ def fetch_contract(
     expiration = date.fromisoformat(str(contract["expiration_date"])[:10])
     end = min(today, expiration)
     source = "rest"
-    if daily_lookup is None:
+    if daily_lookup is None or flat_through is None:
         raw_daily, daily_adjusted = daily_bars(client, contract["ticker"], start, end)
         for raw in raw_daily:
             raw["_adjusted"] = daily_adjusted

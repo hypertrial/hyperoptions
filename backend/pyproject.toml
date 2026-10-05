@@ -54,8 +54,8 @@ module-name = ["options_api", "stocksweeper"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-pythonpath = ["src"]
-testpaths = ["tests"]
+pythonpath = ["src", ".."]
+testpaths = ["tests", "../research/test_massive_options_eod.py"]
 filterwarnings = [
     "error::starlette.exceptions.StarletteDeprecationWarning",
 ]

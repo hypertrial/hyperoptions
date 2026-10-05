@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from options_api.contract_identity import make_watch_key, strike_exact
 from options_api.greeks import compute_greeks, risk_free_rate
-from options_api.market_calendar import expiry_session_completed
+from options_api.market_calendar import expiry_session_completed, latest_completed_session
 from options_api.memo import ContractMemo
 from options_api.models import (
     CashSecuredPutContract,
@@ -42,6 +42,7 @@ from options_api.money import (
     usable_price,
 )
 from options_api.nasdaq import NasdaqError
+from options_api.pricing_context import positive_close
 from options_api.service import OptionChainService
 
 _NY = ZoneInfo("America/New_York")
@@ -586,8 +587,13 @@ async def _load_side(
     rate: Decimal | None,
     clock: Callable[[], datetime] | None,
 ) -> LoadedChainPage:
+    history_from = (today_new_york(now) - timedelta(days=HISTORY_LOOKBACK_DAYS)).isoformat()
     chain, info, history = await _load_context(service, ticker, now)
     now = clock() if clock is not None else now
+    if positive_close(history.bars, latest_completed_session(now)) is None:
+        # A nonempty window can still predate the newly completed session.
+        # Evict its original key so the next page request can recover.
+        service.release_history(ticker, history_from)
     today = today_new_york(now)
     page = _assemble(
         spec,
