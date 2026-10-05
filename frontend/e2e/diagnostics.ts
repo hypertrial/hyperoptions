@@ -2,7 +2,7 @@ import { test as base, expect } from "@playwright/test"
 
 // Fixture-only browser evidence: no headers, bodies, credentials or environment dump.
 export const test = base.extend({
-  page: async ({ page }, use, testInfo) => {
+  page: async ({ page }, runPage, testInfo) => {
     const events: object[] = []
     const pending: Promise<void>[] = []
     const path = (url: string) => { const parsed = new URL(url); return parsed.pathname + parsed.search }
@@ -23,7 +23,7 @@ export const test = base.extend({
     page.on("console", (message) => {
       if (["error", "warning"].includes(message.type())) events.push({ event: "console", type: message.type(), message: message.text() })
     })
-    await use(page)
+    await runPage(page)
     if (testInfo.status !== testInfo.expectedStatus) {
       await Promise.allSettled(pending)
       const state = page.isClosed() ? { closed: true } : await page.evaluate(() => ({
