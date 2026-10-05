@@ -450,8 +450,13 @@ def _terminal_prices(spot: float, log_returns: np.ndarray) -> tuple[float, ...]:
 class PhysicalShadowForecaster:
     """Fit once per verified ticker/session without fetching on lookup."""
 
-    def __init__(self, forecaster: PredictiveForecaster) -> None:
+    def __init__(
+        self, forecaster: PredictiveForecaster, *, enforce_fit_latency: bool = True
+    ) -> None:
         self.forecaster = forecaster
+        # Offline replay accepts the same valid numerical fit regardless of machine speed.
+        # The live default, optimizer budgets, and convergence checks remain unchanged.
+        self._enforce_fit_latency = enforce_fit_latency
         self._fits: OrderedDict[tuple[str, date, str], _Fits] = OrderedDict()
         self._pooled_artifact: dict[str, object] | None = None
         self._pooled_reason: str | None = None
@@ -495,7 +500,7 @@ class PhysicalShadowForecaster:
         t_started = perf_counter()
         t_parameters, t_reason = _fit_student(returns, split_days)
         t_ms = (perf_counter() - t_started) * 1000
-        if t_ms > _T_FIT_LIMIT_MS:
+        if self._enforce_fit_latency and t_ms > _T_FIT_LIMIT_MS:
             t_parameters, t_reason = None, "student_fit_latency_exceeded"
         try:
             import arch  # noqa: F401 - keep the cold import outside the fit latency budget
@@ -504,7 +509,7 @@ class PhysicalShadowForecaster:
         gjr_started = perf_counter()
         gjr_parameters, gjr_reason = _fit_gjr(returns, split_days)
         gjr_ms = (perf_counter() - gjr_started) * 1000
-        if gjr_ms > _GJR_FIT_LIMIT_MS:
+        if self._enforce_fit_latency and gjr_ms > _GJR_FIT_LIMIT_MS:
             gjr_parameters, gjr_reason = None, "gjr_fit_latency_exceeded"
         fits = _Fits(returns, t_parameters, t_reason, gjr_parameters, gjr_reason, t_ms, gjr_ms)
         started_method = perf_counter()
@@ -512,8 +517,8 @@ class PhysicalShadowForecaster:
         elapsed = (perf_counter() - started_method) * 1000
         fits = replace(
             fits,
-            har_parameters=params if elapsed <= _NEW_FIT_LIMIT_MS else None,
-            har_reason=reason if elapsed <= _NEW_FIT_LIMIT_MS else "har_fit_latency_exceeded",
+            har_parameters=params if self._within_fit_limit(elapsed) else None,
+            har_reason=reason if self._within_fit_limit(elapsed) else "har_fit_latency_exceeded",
             har_fit_ms=elapsed,
         )
         started_method = perf_counter()
@@ -521,9 +526,9 @@ class PhysicalShadowForecaster:
         elapsed = (perf_counter() - started_method) * 1000
         fits = replace(
             fits,
-            skew_parameters=params if elapsed <= _NEW_FIT_LIMIT_MS else None,
+            skew_parameters=params if self._within_fit_limit(elapsed) else None,
             skew_reason=reason
-            if elapsed <= _NEW_FIT_LIMIT_MS
+            if self._within_fit_limit(elapsed)
             else "skew_ewma_fit_latency_exceeded",
             skew_fit_ms=elapsed,
         )
@@ -532,8 +537,9 @@ class PhysicalShadowForecaster:
         elapsed = (perf_counter() - started_method) * 1000
         fits = replace(
             fits,
-            egarch_parameters=params if elapsed <= _NEW_FIT_LIMIT_MS else None,
-            egarch_reason=reason if elapsed <= _NEW_FIT_LIMIT_MS else "egarch_fit_latency_exceeded",
+            egarch_parameters=params if self._within_fit_limit(elapsed) else None,
+            egarch_reason=reason
+            if self._within_fit_limit(elapsed) else "egarch_fit_latency_exceeded",
             egarch_fit_ms=elapsed,
         )
         started_method = perf_counter()
@@ -541,14 +547,18 @@ class PhysicalShadowForecaster:
         elapsed = (perf_counter() - started_method) * 1000
         fits = replace(
             fits,
-            markov_parameters=params if elapsed <= _NEW_FIT_LIMIT_MS else None,
-            markov_reason=reason if elapsed <= _NEW_FIT_LIMIT_MS else "markov_fit_latency_exceeded",
+            markov_parameters=params if self._within_fit_limit(elapsed) else None,
+            markov_reason=reason
+            if self._within_fit_limit(elapsed) else "markov_fit_latency_exceeded",
             markov_fit_ms=elapsed,
         )
         self._fits[key] = fits
         while len(self._fits) > _MAX_FIT_CACHE:
             self._fits.popitem(last=False)
         return fits, (perf_counter() - started) * 1000
+
+    def _within_fit_limit(self, elapsed_ms: float) -> bool:
+        return not self._enforce_fit_latency or elapsed_ms <= _NEW_FIT_LIMIT_MS
 
     def cached_candidate(
         self,
