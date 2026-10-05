@@ -256,6 +256,39 @@ class DownloadTests(unittest.TestCase):
 
 
 class FlatFileTests(unittest.TestCase):
+    def test_unknown_flatfile_coverage_falls_back_to_rest(self):
+        day = date(2024, 10, 4)
+        calls = []
+        class Client:
+            def get(self, url, params=None):
+                calls.append(url)
+                results = [daily(day, 5)] if "/range/1/day/" in url else [hourly(day, 10, 5)]
+                return {"status": "OK", "adjusted": True, "results": results}
+        with patch.object(loader, "flatfile_keys", return_value=[]):
+            lookup, through = loader.load_daily_lookup(object(), [listed_contract()], day, day)
+        self.assertEqual((lookup, through), ({}, None))
+        bars, fetch, rows, daily_fetch = loader.fetch_contract(
+            Client(), listed_contract(), day, day, lookup, through
+        )
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(bars), 1)
+        self.assertEqual(fetch["results_count"], 1)
+        self.assertEqual(fetch["daily_days"], 1)
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0]["adjusted"])
+        self.assertEqual(daily_fetch["source"], "rest")
+
+    def test_verified_empty_flatfile_activity_does_not_request_rest(self):
+        day = date(2024, 10, 4)
+        class Client:
+            def get(self, *args, **kwargs):
+                raise AssertionError("verified covered empty activity must not trigger REST")
+        bars, fetch, rows, _ = loader.fetch_contract(
+            Client(), listed_contract(), day, day, {}, day
+        )
+        self.assertEqual((bars, rows), ([], []))
+        self.assertEqual(fetch["hour_requests"], 0)
+
     def test_parse_filters_tickers_and_normalizes_midnight(self):
         noon = datetime(2024, 10, 4, 12, tzinfo=EASTERN)
         nanos = int(noon.timestamp() * 1_000_000_000)

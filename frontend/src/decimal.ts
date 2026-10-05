@@ -20,7 +20,6 @@ export function parseExactDecimal(raw: string): ExactDecimal | null {
 
 export function parseExactToken(raw: string, extras: RegExp): ExactDecimal | null {
   const text = raw.replace(extras, "").trim()
-  if (!text) return null
   return parseExactDecimal(text)
 }
 

@@ -19,6 +19,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from math import exp, sqrt
 from pathlib import Path
 from time import perf_counter
+from zoneinfo import ZoneInfo
 
 import polars as pl
 
@@ -210,7 +211,10 @@ def _replay_cohort(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("ticker", nargs="?", help="Nasdaq ticker with prepared Yahoo Close history")
-    parser.add_argument("--as-of", type=date.fromisoformat, help="completed session to evaluate")
+    parser.add_argument(
+        "--as-of", type=date.fromisoformat,
+        help="completed session; ledger cutoff is the end of this New York date",
+    )
     parser.add_argument("--data-dir", type=Path, help="override STOCKSWEEPER_DATA_DIR")
     parser.add_argument("--refresh", action="store_true", help="refresh Yahoo history first")
     parser.add_argument(
@@ -244,6 +248,8 @@ def main() -> None:
     calendar = SessionCalendar()
     data_dir = args.data_dir or load_settings().resolved_data_dir()
     if args.replay_cohort:
+        if args.as_of is not None:
+            parser.error("--as-of is not supported with --replay-cohort")
         if args.ticker or args.refresh or args.ledger_contest or not args.candidate:
             parser.error("--replay-cohort needs --candidate and no ticker, refresh, or ledger")
         try:
@@ -269,6 +275,12 @@ def main() -> None:
             parser.error("--ledger-contest needs --candidate and no ticker or --refresh")
         if args.period != "all" and args.holdout_start is None:
             parser.error("--period screen/holdout needs --holdout-start")
+        if args.as_of is not None and args.as_of > calendar.last_completed(datetime.now(UTC)):
+            parser.error("--as-of must be through a completed session")
+        cutoff = (
+            datetime.combine(args.as_of, time.max, ZoneInfo("America/New_York"))
+            if args.as_of is not None else None
+        )
         report = ledger_contest(
             ForecastLedger(data_dir),
             calendar,
@@ -276,6 +288,7 @@ def main() -> None:
             args.candidate,
             args.holdout_start,
             args.period,
+            as_of=cutoff,
         )
         print(json.dumps(report, sort_keys=True, indent=2, allow_nan=False))
         return

@@ -36,15 +36,40 @@ _SCHEDULE = re.compile(
     r"(?:earnings|financial results|quarterly results)\b.{0,180}?\bon\s+" + _DATE,
     re.IGNORECASE,
 )
+_RESULTS_OBJECT = (
+    r"(?:earnings|financial results|quarterly results)\b"
+    r"(?!\s+(?:release\s+)?(?:date|schedule|conference call|webcast)\b)"
+)
+_ACTUAL_OBJECT = (
+    r"\b(?:reported|announced|released)\b"
+    r"(?:(?!\b(?:date|schedule|conference call|webcast|upcoming|forthcoming)\b).){0,150}?"
+    r"\b" + _RESULTS_OBJECT
+)
 _ACTUAL_PREFIX = re.compile(
-    r"\bOn\s+" + _DATE + r"\b.{0,120}?\b(?:reported|announced|released)\b"
-    r".{0,150}?\b(?:earnings|financial results|quarterly results)\b",
+    r"\bOn\s+" + _DATE + r"\b.{0,120}?" + _ACTUAL_OBJECT,
     re.IGNORECASE,
 )
 _ACTUAL_SUFFIX = re.compile(
-    r"\b(?:reported|announced|released)\b.{0,150}?"
-    r"\b(?:earnings|financial results|quarterly results)\b.{0,100}?\bon\s+" + _DATE,
+    _ACTUAL_OBJECT + r".{0,100}?\bon\s+" + _DATE,
     re.IGNORECASE,
+)
+# Keep supported date and corporate abbreviations within their sentence.
+_SENTENCES = re.compile(
+    r"(?:\b(?:Inc|Corp|Co|Ltd|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\."
+    r"|[^.!?])+", re.IGNORECASE,
+)
+# Only a separate call-hosting clause may ignore its future auxiliary.
+# Keep its remaining text so "to release results" still fails closed.
+_FUTURE_CALL = re.compile(
+    r"(?:;|\band|\bbut)\s+(?:it\s+)?"
+    r"(?:will|would|shall|plans? to|expects? to|intends? to)\s+"
+    r"(?:host|hold|conduct)\s+(?:(?:a|an|the|its)\s+)?"
+    r"(?:earnings\s+)?(?:conference call|webcast)\b", re.IGNORECASE,
+)
+_FUTURE_RELEASE = re.compile(
+    r"\b(?:will|would|shall|plans? to|expects? to|expected to|intends? to|"
+    r"scheduled (?:to|for)|planned (?:to|for)|going to)\b"
+    r"|\bto\s+(?:be\s+)?(?:report(?:ed)?|release(?:d)?|announce(?:d)?)\b", re.IGNORECASE,
 )
 _TIME = re.compile(
     r"\bat\s+(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\s*(?:ET|EST|EDT|Eastern Time)\b",
@@ -261,7 +286,17 @@ def parse_actual_results(
     if len(content) > _MAX_BYTES or retrieved_at < accepted_at:
         raise ValueError("SEC actual-results content or retrieval time is invalid")
     text = _document_text(content)
-    matches = list(_ACTUAL_PREFIX.finditer(text)) + list(_ACTUAL_SUFFIX.finditer(text))
+    matches = []
+    for sentence in _SENTENCES.finditer(text):
+        evidence = sentence.group()
+        if _FUTURE_RELEASE.search(_FUTURE_CALL.sub("", evidence)):
+            continue
+        future_call = _FUTURE_CALL.search(evidence)
+        if future_call is not None:
+            # The call's purpose cannot supply a results object for a past verb.
+            evidence = evidence[:future_call.start()]
+        for pattern in (_ACTUAL_PREFIX, _ACTUAL_SUFFIX):
+            matches.extend(pattern.finditer(evidence))
     if len(matches) != 1:
         return None
     match = matches[0]
@@ -278,7 +313,7 @@ def parse_actual_results(
         event_date,
         url,
         hashlib.sha256(content).hexdigest(),
-        text[match.start() : match.end()][:300],
+        match.group()[:300],
     )
 
 

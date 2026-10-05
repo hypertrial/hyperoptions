@@ -10,9 +10,7 @@ export function moneyCents(value: number | null | undefined): string {
   const abs = Math.abs(value)
   const whole = Math.trunc(abs / 100)
   const frac = abs % 100
-  const formatted = `${dollars.format(whole)}.${String(frac).padStart(2, "0")}`
-  if (!sign) return formatted
-  return formatted.startsWith("-") ? formatted : `-${formatted}`
+  return `${sign}${dollars.format(whole)}.${String(frac).padStart(2, "0")}`
 }
 
 export function moneyStrike(exact: string | null | undefined, cents: number): string {

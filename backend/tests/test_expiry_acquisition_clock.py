@@ -102,7 +102,10 @@ async def test_loader_clock_updates_new_york_date_but_fixed_now_stays_determinis
         return context
 
     monkeypatch.setattr("options_api.chain._load_context", acquire)
-    service = SimpleNamespace(memo=ContractMemo())
+    released = []
+    service = SimpleNamespace(
+        memo=ContractMemo(), release_history=lambda *args: released.append(args)
+    )
     load = load_covered_calls if side == "call" else load_cash_secured_puts
     fixed = await load(service, "IREN", before, moneyness="itm")
     live = await load(service, "IREN", before, moneyness="itm", clock=lambda: after)
@@ -111,3 +114,5 @@ async def test_loader_clock_updates_new_york_date_but_fixed_now_stays_determinis
     assert live.page.fetched_at == after
     assert live.page.expirations[0].dte == 3
     assert live.page.chain_fetched_at == context[0].fetched_at
+    # Both calls acquired the original NY-date key, including the midnight crossing.
+    assert released == [("IREN", "2025-08-13"), ("IREN", "2025-08-13")]
