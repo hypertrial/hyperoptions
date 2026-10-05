@@ -25,7 +25,7 @@ from options_api.intraday_capture import capture_intraday_window
 from options_api.iv_diagnostics import iv_details_for_contract
 from options_api.live_quant import SSVI_VERSION, quant_for_contract
 from options_api.market_calendar import first_session_after_completed
-from options_api.market_sources import fetch_treasury_curve
+from options_api.market_sources import DividendStatus, fetch_treasury_curve
 from options_api.market_watch import MarketWatchOdds
 from options_api.models import (
     CashSecuredPutPage,
@@ -456,6 +456,7 @@ def create_app(
     close_provider: CloseProvider | None = None,
     predictive_forecaster: PredictiveForecaster | None = None,
     predictive_refresh: bool = True,
+    dividend_provider: Callable[[str, datetime], Awaitable[DividendStatus]] | None = None,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -485,6 +486,7 @@ def create_app(
                 client,
                 app.state.clock,
                 data_dir=settings.resolved_data_dir(),
+                dividend_provider=dividend_provider,
                 watched_contracts=lambda: (
                     (record.watch_key, record.created_at)
                     for record in app.state.watchlist.store.list()

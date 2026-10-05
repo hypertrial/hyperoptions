@@ -105,8 +105,9 @@ its temporary files and leaves no destination that could look complete.
     lock = output.parent / f".{output.name}.publish.lock"
     descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     os.close(descriptor)
-    stage = Path(tempfile.mkdtemp(prefix=f".{output.name}.", dir=output.parent))
+    stage = None
     try:
+        stage = Path(tempfile.mkdtemp(prefix=f".{output.name}.", dir=output.parent))
         yield stage
         if not (stage / "manifest.json").is_file():
             raise ValueError("cannot publish an incomplete research artifact")
@@ -115,7 +116,7 @@ its temporary files and leaves no destination that could look complete.
             raise FileExistsError("research destination appeared during publication")
         _publish_exclusive(stage, output)
     finally:
-        if stage.exists():
+        if stage is not None and stage.exists():
             shutil.rmtree(stage)
         lock.unlink(missing_ok=True)
 

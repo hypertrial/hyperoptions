@@ -14,6 +14,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from options_api.main import create_app
+from options_api.market_sources import DividendStatus
 from options_api.nasdaq import HTTP_TIMEOUT
 from stocksweeper.config import Settings
 
@@ -109,6 +110,11 @@ def create_mock_client() -> httpx.AsyncClient:
     )
 
 
+async def fixture_dividend_status(_ticker: str, as_of: datetime) -> DividendStatus:
+    # Dividend history is absent from these fixtures; preserve that uncertainty offline.
+    return DividendStatus(kind="unknown", as_of=as_of, acquisition_failed=True)
+
+
 def create_fixture_app() -> FastAPI:
     settings = Settings()
     app = create_app(
@@ -116,6 +122,7 @@ def create_fixture_app() -> FastAPI:
         clock=lambda: NOW,
         predictive_refresh=False,
         research_settings=settings,
+        dividend_provider=fixture_dividend_status,
     )
     lifespan = app.router.lifespan_context
 

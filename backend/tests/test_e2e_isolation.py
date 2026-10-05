@@ -3,8 +3,38 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 
+import httpx
+import pytest
+import yfinance
+
 from options_api import e2e_server
 from stocksweeper.storage.db import connect
+
+
+@pytest.mark.parametrize("ticker,status", [("NONE", 404), ("NOOPT", 200), ("IREN", 200)])
+def test_fixture_chain_and_background_inputs_never_call_yahoo(monkeypatch, ticker, status):
+    attempts = []
+
+    def forbidden(symbol):
+        attempts.append(symbol)
+        raise AssertionError("fixture must not query Yahoo")
+
+    monkeypatch.setattr(yfinance, "Ticker", forbidden)
+    app = e2e_server.create_fixture_app()
+
+    async def exercise():
+        async with app.router.lifespan_context(app), httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1"
+        ) as client:
+            response = await client.get(f"/api/covered-calls/{ticker}")
+            assert response.status_code == status
+            await asyncio.gather(*app.state.market_odds._page_inputs)
+            dividend = await app.state.market_odds._dividend_status(ticker, e2e_server.NOW)
+            assert dividend.kind == "unknown"
+            assert dividend.as_of == e2e_server.NOW
+        assert not attempts
+
+    asyncio.run(exercise())
 
 
 def test_fixture_lifespans_isolate_operator_jobs_and_clean_up(tmp_path, monkeypatch):

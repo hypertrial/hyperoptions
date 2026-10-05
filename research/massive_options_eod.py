@@ -24,7 +24,8 @@ import threading
 import time
 import urllib.parse
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
+from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -364,18 +365,51 @@ def _normalize_daily(raw_rows: list[dict]) -> list[dict]:
     return [deduped[stamp] for stamp in sorted(deduped)]
 
 
+@lru_cache(maxsize=16)
+def _session_calendar(first_year: int, last_year: int):
+    import exchange_calendars
+
+    return exchange_calendars.get_calendar(
+        "XNYS", start=f"{first_year - 1}-01-01", end=f"{last_year + 1}-12-31"
+    )
+
+
+def missing_daily_windows(
+    start: date, end: date, captured: frozenset[date]
+) -> list[tuple[date, date]]:
+    """Batch uncovered exchange sessions; absent objects never prove zero activity."""
+    if end < start:
+        return []
+    sessions = _session_calendar(start.year, end.year).sessions_in_range(start, end)
+    windows = []
+    first = last = None
+    for stamp in sessions:
+        day = stamp.date()
+        if day in captured:
+            if first is not None:
+                windows.append((first, last))
+                first = last = None
+        else:
+            if first is None:
+                first = day
+            last = day
+    if first is not None:
+        windows.append((first, last))
+    return windows
+
+
 def fetch_contract(
     client: MassiveClient,
     contract: dict,
     start: date,
     today: date,
     daily_lookup: dict[str, list[dict]] | None = None,
-    flat_through: date | None = None,
+    flat_days: frozenset[date] | None = None,
 ) -> tuple[list[dict], dict, list[dict], dict]:
     expiration = date.fromisoformat(str(contract["expiration_date"])[:10])
     end = min(today, expiration)
     source = "rest"
-    if daily_lookup is None or flat_through is None:
+    if daily_lookup is None or flat_days is None:
         raw_daily, daily_adjusted = daily_bars(client, contract["ticker"], start, end)
         for raw in raw_daily:
             raw["_adjusted"] = daily_adjusted
@@ -386,17 +420,14 @@ def fetch_contract(
                 row = dict(raw)
                 row["_adjusted"] = False
                 raw_daily.append(row)
-        flat_count = len(raw_daily)
-        source = "flatfile" if flat_count else "rest"
-        if flat_through is not None and end > flat_through:
-            gap_start = flat_through + timedelta(days=1)
-            if gap_start <= end:
-                extra, adjusted = daily_bars(client, contract["ticker"], gap_start, end)
-                for raw in extra:
-                    raw["_adjusted"] = adjusted
-                raw_daily.extend(extra)
-                if extra and not flat_count:
-                    source = "rest"
+        windows = missing_daily_windows(start, end, flat_days)
+        covered = any(start <= day <= end for day in flat_days)
+        source = "mixed" if covered and windows else "flatfile" if covered else "rest"
+        for gap_start, gap_end in windows:
+            extra, adjusted = daily_bars(client, contract["ticker"], gap_start, gap_end)
+            for raw in extra:
+                raw["_adjusted"] = adjusted
+            raw_daily.extend(extra)
     raw_daily = _normalize_daily(raw_daily)
     daily_rows = [bar_row(contract, raw, bool(raw.get("_adjusted", False))) for raw in raw_daily]
     fetched_at = datetime.now(EASTERN).isoformat(timespec="seconds")
@@ -552,7 +583,7 @@ def load_daily_lookup(
     contracts: list[dict],
     start: date,
     today: date,
-) -> tuple[dict[str, list[dict]], date | None]:
+) -> tuple[dict[str, list[dict]], frozenset[date] | None]:
     wanted = {contract["ticker"] for contract in contracts}
     keys = flatfile_keys(client, start, today)
     if not keys:
@@ -570,7 +601,7 @@ def load_daily_lookup(
                 lookup.setdefault(ticker, []).append(bar)
     for bars in lookup.values():
         bars.sort(key=lambda raw: int(raw["t"]))
-    return lookup, keys[-1][0]
+    return lookup, frozenset(day for day, _key in keys)
 
 
 def relation(connection, table: str) -> str | None:
@@ -696,7 +727,7 @@ def download_hours(
     today: date,
     workers: int,
     daily_lookup: dict[str, list[dict]] | None = None,
-    flat_through: date | None = None,
+    flat_days: frozenset[date] | None = None,
 ) -> int:
     if not pending:
         print("failed: 0", flush=True)
@@ -749,7 +780,7 @@ def download_hours(
             except StopIteration:
                 return False
             future = pool.submit(
-                fetch_contract, client, contract, start, today, daily_lookup, flat_through
+                fetch_contract, client, contract, start, today, daily_lookup, flat_days
             )
             inflight[future] = contract
             return True
@@ -858,13 +889,12 @@ def main() -> int:
     load_rows(pipe, [("option_contracts", "ticker", contracts)])
 
     daily_lookup = None
-    flat_through = None
+    flat_days = None
     if flatfiles_enabled(args.no_flatfiles):
         try:
-            daily_lookup, flat_through = load_daily_lookup(flatfile_client(), contracts, start, today)
+            daily_lookup, flat_days = load_daily_lookup(flatfile_client(), contracts, start, today)
             covered = len(daily_lookup)
-            through = flat_through.isoformat() if flat_through else "none"
-            print(f"flat files through {through} covering {covered} contracts", flush=True)
+            print(f"flat files captured {len(flat_days or ())} dates covering {covered} contracts", flush=True)
         except Exception as exc:
             print(
                 f"flat files unavailable ({redact(str(exc), api_key)}); using REST daily bars",
@@ -872,14 +902,14 @@ def main() -> int:
                 flush=True,
             )
             daily_lookup = None
-            flat_through = None
+            flat_days = None
 
     pending = [contract for contract in contracts if contract["ticker"] not in done]
     if args.max_contracts is not None:
         pending = pending[: args.max_contracts]
     print(f"hour fetches pending: {len(pending)} (already fetched {len(done)})", flush=True)
     failed = download_hours(
-        client, pipe, pending, start, today, args.workers, daily_lookup, flat_through
+        client, pipe, pending, start, today, args.workers, daily_lookup, flat_days
     )
     print_summary()
     return 1 if failed else 0

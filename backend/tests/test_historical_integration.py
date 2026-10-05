@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+import errno
 import importlib.util
 import json
 import socket
@@ -42,6 +43,31 @@ def _forbid_network_and_refresh(monkeypatch):
 def _source_hashes(sources):
     db, prices, flat = sources
     return {path: hash_file(path) for path in (db, *prices.iterdir(), *flat.iterdir())}
+
+
+def test_staging_allocation_failure_releases_lock_and_allows_retry(tmp_path, monkeypatch):
+    output = tmp_path / "run"
+    with monkeypatch.context() as patch:
+        def full_disk(**_kwargs):
+            raise OSError(errno.ENOSPC, "disk full")
+        patch.setattr(artifacts.tempfile, "mkdtemp", full_disk)
+        with pytest.raises(OSError, match="disk full"), atomic_directory(output):
+            pytest.fail("allocation must fail before yielding")
+    _assert_no_publication(output)
+    with atomic_directory(output) as stage:
+        (stage / "summary.json").write_text("{}")
+        finalize_manifest(stage, {"version": 1})
+    verify_artifact(output)
+
+
+def test_competing_publication_lock_is_preserved(tmp_path):
+    output = tmp_path / "run"
+    lock = tmp_path / ".run.publish.lock"
+    lock.write_text("other writer")
+    with pytest.raises(FileExistsError), atomic_directory(output):
+        pytest.fail("competing lock must prevent entry")
+    assert lock.read_text() == "other writer"
+    assert not output.exists()
 
 
 def _assert_no_publication(output):

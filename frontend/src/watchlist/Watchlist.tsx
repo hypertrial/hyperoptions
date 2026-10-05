@@ -29,9 +29,16 @@ export default function Watchlist({ chainUrl = "/", forecastModel = DEFAULT_FORE
   const [jobId, setJobId] = useState<string | null>(readWatchJob)
   const [job, setJob] = useState<Job | null>(null)
   const mutationVersion = useRef(0)
-  const pendingLoad = useRef<{ model: PhysicalModel; promise: Promise<void> } | null>(null)
+  const pendingLoad = useRef<{ generation: number; version: number; promise: Promise<void> } | null>(null)
+  const modelGeneration = useRef(0)
   const activeModel = useRef(forecastModel)
-  useEffect(() => { activeModel.current = forecastModel }, [forecastModel])
+  useEffect(() => {
+    if (activeModel.current !== forecastModel) {
+      activeModel.current = forecastModel
+      modelGeneration.current += 1
+    }
+    setRetrying(false)
+  }, [forecastModel])
 
   const applyResponse = useCallback((response: WatchlistResponse) => {
     setItems(response.items)
@@ -48,17 +55,21 @@ export default function Watchlist({ chainUrl = "/", forecastModel = DEFAULT_FORE
   }, [])
 
   const load = useCallback(() => {
-    if (pendingLoad.current?.model === forecastModel) return pendingLoad.current.promise
+    if (activeModel.current !== forecastModel) return Promise.resolve()
+    const generation = modelGeneration.current
     const version = mutationVersion.current
+    if (pendingLoad.current?.generation === generation && pendingLoad.current.version === version) return pendingLoad.current.promise
+    const current = () => activeModel.current === forecastModel && generation === modelGeneration.current && version === mutationVersion.current
     const pending = getWatchlist(forecastModel)
       .then((response) => {
-        if (version === mutationVersion.current && activeModel.current === forecastModel) {
+        if (current()) {
           applyResponse(response)
           setLoadedModel(forecastModel)
         }
       })
+      .catch((cause: unknown) => { if (current()) throw cause })
       .finally(() => { if (pendingLoad.current?.promise === pending) pendingLoad.current = null })
-    pendingLoad.current = { model: forecastModel, promise: pending }
+    pendingLoad.current = { generation, version, promise: pending }
     return pending
   }, [applyResponse, forecastModel])
 
@@ -143,14 +154,22 @@ export default function Watchlist({ chainUrl = "/", forecastModel = DEFAULT_FORE
     }
   }
 
-  const retryStale = async () => {
-    setRetrying(true)
+  const retry = async (stale: boolean) => {
+    const generation = modelGeneration.current
+    if (stale) setRetrying(true)
+    else setLoading(true)
     try {
       await load()
     } catch (cause) {
-      setStaleError(message(cause))
+      if (generation === modelGeneration.current) {
+        if (stale) setStaleError(message(cause))
+        else setError(message(cause))
+      }
     } finally {
-      setRetrying(false)
+      if (generation === modelGeneration.current) {
+        if (stale) setRetrying(false)
+        else setLoading(false)
+      }
     }
   }
 
@@ -194,8 +213,8 @@ export default function Watchlist({ chainUrl = "/", forecastModel = DEFAULT_FORE
       {jobBusy && !job ? <p role="status">Checking expiry results…</p> : null}
       {notice ? <p className="watch-notice" role="status">{notice}</p> : null}
       {loading || (!error && loadedModel !== forecastModel) ? <p role="status">Loading watched contracts for the selected model…</p> : null}
-      {error ? <div className="watch-error" role="alert"><p>Could not load the watchlist. {error}</p><Button variant="outline" type="button" onClick={() => { setLoading(true); void load().catch((cause) => setError(message(cause))).finally(() => setLoading(false)) }}>Retry</Button></div> : null}
-      {staleError && !error ? <div className="watch-error" role="alert"><p>Could not refresh the watchlist. Showing the last loaded watchlist{lastLoadedAt ? ` from ${dateTime(lastLoadedAt)}` : ""}. {staleError}</p><Button variant="outline" type="button" disabled={retrying} onClick={() => { void retryStale() }}>{retrying ? "Retrying…" : "Retry"}</Button></div> : null}
+      {error ? <div className="watch-error" role="alert"><p>Could not load the watchlist. {error}</p><Button variant="outline" type="button" onClick={() => { void retry(false) }}>Retry</Button></div> : null}
+      {staleError && !error ? <div className="watch-error" role="alert"><p>Could not refresh the watchlist. Showing the last loaded watchlist{lastLoadedAt ? ` from ${dateTime(lastLoadedAt)}` : ""}. {staleError}</p><Button variant="outline" type="button" disabled={retrying} onClick={() => { void retry(true) }}>{retrying ? "Retrying…" : "Retry"}</Button></div> : null}
       {!loading && !error && loadedModel === forecastModel && items.length === 0 ? (
         <div className="watch-empty"><h2>No watched contracts yet</h2><p>Open the option chain and use Watch on a supported contract.</p><Link to={chainUrl}>Browse option chain</Link></div>
       ) : null}
